@@ -2,3 +2,16 @@ __pycache__/
 venv/
 .env
 *.log
+*.json
+*.txt
+!README.md
+!requirements.txt
+!fix_auth_url.py
+!manual_auth.py
+!exchange_token.py
+!analyze_qnap.py
+!summarize_analysis.py
+!propose_mapping.py
+!count_unprocessed.py
+!organize_qnap.py
+!get_auth_url.py
