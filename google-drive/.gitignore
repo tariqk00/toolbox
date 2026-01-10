@@ -1,0 +1,13 @@
+# Secrets
+gemini_secret
+token*.json
+credentials.json
+client_secret*.json
+
+# Data
+*.csv
+__pycache__/
+*.pdf
+mystery_files/
+venv/
+ai_audit_venv/

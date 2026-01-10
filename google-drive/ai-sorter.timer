@@ -1,0 +1,10 @@
+[Unit]
+Description=Timer for AI Drive Sorter (Hourly)
+
+[Timer]
+OnBootSec=5min
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
