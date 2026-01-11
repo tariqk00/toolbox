@@ -5,6 +5,7 @@ import csv
 import argparse
 import sys
 import re
+import datetime
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -13,7 +14,7 @@ import io
 from google import genai
 from google.genai import types
 
-__version__ = "0.3.0"
+__version__ = "0.3.3"
 
 # --- CONFIG ---
 TOKEN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_full_drive.json')
@@ -29,7 +30,10 @@ FOLDER_MAP = {
     'House': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX',    # 02 - Personal
     'Personal': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX', # 02 - Personal
     'Auto': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX',     # 02 - Personal
-    'Education': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX' # 02 - Personal
+    'Education': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX', # 02 - Personal
+    'PKM': '1HNKo72TkLeurAi6g7X0C90OzqF2z3YB7',      # 01 - Second Brain/Inbox
+    'Source_Material': '1BNwYqECrR9oPDC5os5uZcxKbaL7lRCoe', # Archive (AI Sources)
+    'Work': '1zX-rciEeZnHsRrAwuxM8H8YC9bdnMVCa'      # 01 - Second Brain/Work
 }
 
 def load_api_key():
@@ -45,19 +49,23 @@ GEMINI_API_KEY = load_api_key()
 # --- PROMPT ---
 SYSTEM_PROMPT = """
 You are a personal file assistant. Analyze the image or document provided.
+CONTEXT: {context_hint}
+
 Extract the following fields into a pure JSON object (no markdown formatting):
-{
+{{
   "doc_date": "YYYY-MM-DD",
   "entity": "Name of Vendor/Person/Organization",
-  "category": "One of [Finance, Health, Personal, House, Auto, Education, Tech, Other]",
+  "category": "One of [Finance, Health, Personal, House, Auto, Education, Tech, Work, PKM, Source_Material, Other]",
   "summary": "Very short 3-5 word description",
   "confidence": "High/Medium/Low"
-}
+}}
 
 Rules:
 - If date is ambiguous, use the creation date or null.
 - "entity" should be clean (e.g. "Home Depot", not "THE HOME DEPOT INC").
 - "summary" should be specific (e.g. "Paint Supplies", not "Shopping").
+- Use category "Source_Material" for raw transcripts or logs.
+- Use category "PKM" for notes, journals, or summaries.
 """
 
 def get_drive_service():
@@ -89,7 +97,7 @@ def download_file_content(service, file_id, mime_type):
         status, done = downloader.next_chunk()
     return fh.getvalue()
 
-def analyze_with_gemini(content_bytes, mime_type):
+def analyze_with_gemini(content_bytes, mime_type, context_hint=""):
     """
     Sends content to Gemini-1.5-Flash for analysis using the new google.genai SDK.
     """
@@ -97,10 +105,6 @@ def analyze_with_gemini(content_bytes, mime_type):
         raise ValueError("Gemini API Key missing")
         
     client = genai.Client(api_key=GEMINI_API_KEY)
-    
-    # Map Drive mime types to Generative AI mime types if needed, 
-    # but 'application/pdf' and 'image/jpeg' usually work directly if passed as data.
-    # For robust PDF handling with the API, we interpret bytes.
     
     ai_mime = mime_type
     if 'pdf' in mime_type:
@@ -110,25 +114,38 @@ def analyze_with_gemini(content_bytes, mime_type):
     elif mime_type == 'text/plain' or 'markdown' in mime_type or 'document' in mime_type:
         ai_mime = 'text/plain' # Treat text/md/gdoc-export as text
         
-    print(f"  Sending to Gemini as {ai_mime}...")
+    print(f"  Sending to Gemini as {ai_mime} (Context: {context_hint})...")
+    
+    # Inject context into prompt
+    prompt_with_context = SYSTEM_PROMPT.format(context_hint=context_hint)
+    
     try:
         response = client.models.generate_content(
             model='gemini-2.0-flash',
             contents=[
-                SYSTEM_PROMPT,
+                prompt_with_context,
                 types.Part.from_bytes(data=content_bytes, mime_type=ai_mime)
             ]
         )
         
         # Parse JSON from response
         text = response.text.strip()
-        # Cleanup markdown code blocks if present
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.endswith("```"):
-            text = text[:-3]
         
-        return json.loads(text)
+        # Robust JSON extraction: Find first '{' and last '}'
+        start_idx = text.find('{')
+        end_idx = text.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1:
+            json_text = text[start_idx:end_idx+1]
+            try:
+                return json.loads(json_text)
+            except json.JSONDecodeError as je:
+                 print(f"    [JSON Error] Raw text: {text}")
+                 raise je
+        else:
+             print(f"    [No JSON] Raw text: {text}")
+             raise ValueError("No JSON found in response")
+
     except Exception as e:
         print(f"Gemini Error: {e}")
         return {
@@ -139,12 +156,61 @@ def analyze_with_gemini(content_bytes, mime_type):
             "confidence": "Low"
         }
 
-def generate_new_name(analysis, original_name):
-    ext = os.path.splitext(original_name)[1]
-    date = analysis.get('doc_date', '0000-00-00')
-    if date is None:
-        date = "0000-00-00"
+def get_time_context(created_time_str):
+    """
+    Analyzes creation time (UTC string) to determine if it's likely Work or Personal.
+    Rule: Work = Mon-Fri, 08:00 - 18:00 Local Time (Assuming UTC-5/EST roughly for now)
+    """
+    if not created_time_str:
+        return ""
         
+    try:
+        # Parse RFC 3339 format e.g., 2023-10-27T10:00:00.000Z
+        # We'll use a simple offset for EST (UTC-5) since standard libraries on NUC might vary
+        # Ideally use pytz but sticking to stdlib if possible
+        dt_utc = datetime.datetime.strptime(created_time_str[:19], "%Y-%m-%dT%H:%M:%S")
+        
+        # Adjust for EST (UTC-5) - Simplification without pytz
+        dt_local = dt_utc - datetime.timedelta(hours=5)
+        
+        day_of_week = dt_local.weekday() # 0=Mon, 6=Sun
+        hour = dt_local.hour
+        
+        is_weekday = 0 <= day_of_week <= 4
+        is_work_hours = 8 <= hour < 18
+        
+        day_str = dt_local.strftime("%A")
+        time_str = dt_local.strftime("%I:%M %p")
+        
+        if is_weekday and is_work_hours:
+            return f"Time: {day_str} {time_str} (Work Hours)."
+        else:
+            return f"Time: {day_str} {time_str} (Likely Personal/After Hours)."
+            
+    except Exception as e:
+        return ""
+
+def generate_new_name(analysis, original_name, created_time_str):
+    ext = os.path.splitext(original_name)[1]
+    
+    # 1. Content Date (from AI) - Default
+    date = analysis.get('doc_date', '0000-00-00')
+    if date is None: 
+        date = '0000-00-00'
+
+    # 2. Filename Date (Regex) - Priority if AI failed or matched "0000-00-00"
+    if date == '0000-00-00':
+        match = re.search(r'(\d{4}-\d{2}-\d{2})', original_name)
+        if match:
+            date = match.group(1)
+            # print(f"    [Date] Used Filename: {date}")
+
+    # 3. Created Date (Metadata) - Fallback
+    if date == '0000-00-00' and created_time_str:
+        # created_time_str e.g. "2023-10-27T10:00:00Z"
+        date = created_time_str[:10]
+        # print(f"    [Date] Used CreatedTime: {date}")
+
     entity = analysis.get('entity', 'Unknown')
     summary = analysis.get('summary', 'Doc')
     
@@ -152,20 +218,25 @@ def generate_new_name(analysis, original_name):
     safe_entity = "".join([c for c in entity if c.isalnum() or c in [' ', '_', '-']]).strip().replace(" ", "_")
     safe_summary = "".join([c for c in summary if c.isalnum() or c in [' ', '_', '-']]).strip().replace(" ", "_")
     
+    # Last resort fallback not needed as created_time is robust
     if date == "0000-00-00" or not date:
-         # Fallback to preserving original name if AI failed completely on date
          safe_summary = f"{safe_summary}_(NoDate)"
     
     return f"{date} - {safe_entity} - {safe_summary}{ext}"
 
-def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan'):
+def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan', parent_context="Inbox"):
     service = get_drive_service()
     
-    folder_name = "Inbox" if folder_id == INBOX_ID else folder_id
-    print(f"Scanning folder {folder_name}...")
+    # Get actual folder name if just ID passed (rudimentary check)
+    folder_context = parent_context
+    if folder_id == INBOX_ID:
+        folder_context = "Inbox"
+    
+    print(f"Scanning folder {folder_context} ({folder_id})...")
+    
     results = service.files().list(
         q=f"'{folder_id}' in parents and trashed = false",
-        fields="files(id, name, mimeType)"
+        fields="files(id, name, mimeType, createdTime)"
     ).execute()
     files = results.get('files', [])
     
@@ -176,7 +247,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
     
-    print(f"Found {len(files)} files. Processing...")
+    print(f"Found {len(files)} files in {folder_context}. Processing...")
     
     processed_count = 0
     for f in files:
@@ -190,15 +261,20 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
         
         # Check if already processed (Regex: YYYY-MM-DD - Entity - Summary)
         # Matches: 2024-01-01 - Vendor - Desc.pdf
+        # BUT: Do not skip if the date is 0000-00-00 (Failed Date)
         if re.match(r'^\d{4}-\d{2}-\d{2} - .* - .*\.\w+$', name):
-            print(f"  [Skip - Done] {name}")
-            continue
+            if name.startswith("0000-00-00"):
+                # Force re-process to fix date
+                pass 
+            else:
+                print(f"  [Skip - Done] {name}")
+                continue
 
-        # Skip folders
+        # Recursively Scan Subfolders
         if mime == 'application/vnd.google-apps.folder':
-            # print(f"  [Folder] Entering {name}...")
-            # scan_folder(fid, dry_run, csv_path, limit, mode)
-            print(f"  [Skip] Folder: {name}")
+            print(f"  [Folder] Recursing into {name}...")
+            # Recursive call with updated context
+            scan_folder(fid, dry_run, csv_path, limit, mode, parent_context=f"{folder_context}/{name}")
             continue
             
         # Download & Process (Images, PDFs, Text, Docs)
@@ -211,8 +287,20 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                  print(f"  [Skip] Empty Content: {name}")
                  continue
 
-            analysis = analyze_with_gemini(content, mime)
-            new_name = generate_new_name(analysis, name)
+            # Pass Folder Context as Hint
+            context_hint = f"File located in folder: {folder_context}."
+            if "Plaud" in folder_context:
+                context_hint += " Source: Plaud.ai (Voice Recorder/Transcript)."
+            elif "Gemini" in folder_context:
+                context_hint += " Source: Gemini (AI Session Summary)."
+            
+            # Append Time Context
+            time_context = get_time_context(f.get('createdTime'))
+            if time_context:
+                 context_hint += f" {time_context}"
+                
+            analysis = analyze_with_gemini(content, mime, context_hint)
+            new_name = generate_new_name(analysis, name, f.get('createdTime'))
             
             print(f"  [AI] {name} -> {new_name}")
             
