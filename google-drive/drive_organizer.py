@@ -10,7 +10,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import io
-import google.generativeai as genai
+from google import genai
+from google.genai import types
+
+__version__ = "0.2.0"
 
 # --- CONFIG ---
 TOKEN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_full_drive.json')
@@ -74,13 +77,12 @@ def download_file_content(service, file_id, mime_type):
 
 def analyze_with_gemini(content_bytes, mime_type):
     """
-    Sends content to Gemini-1.5-Flash for analysis.
+    Sends content to Gemini-1.5-Flash for analysis using the new google.genai SDK.
     """
     if not GEMINI_API_KEY:
         raise ValueError("Gemini API Key missing")
         
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-flash-latest')
+    client = genai.Client(api_key=GEMINI_API_KEY)
     
     # Map Drive mime types to Generative AI mime types if needed, 
     # but 'application/pdf' and 'image/jpeg' usually work directly if passed as data.
@@ -94,13 +96,13 @@ def analyze_with_gemini(content_bytes, mime_type):
         
     print("  Sending to Gemini...")
     try:
-        response = model.generate_content([
-            SYSTEM_PROMPT,
-            {
-                "mime_type": ai_mime,
-                "data": content_bytes
-            }
-        ])
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=[
+                SYSTEM_PROMPT,
+                types.Part.from_bytes(data=content_bytes, mime_type=ai_mime)
+            ]
+        )
         
         # Parse JSON from response
         text = response.text.strip()
@@ -124,6 +126,9 @@ def analyze_with_gemini(content_bytes, mime_type):
 def generate_new_name(analysis, original_name):
     ext = os.path.splitext(original_name)[1]
     date = analysis.get('doc_date', '0000-00-00')
+    if date is None:
+        date = "0000-00-00"
+        
     entity = analysis.get('entity', 'Unknown')
     summary = analysis.get('summary', 'Doc')
     
