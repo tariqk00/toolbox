@@ -13,7 +13,7 @@ import io
 from google import genai
 from google.genai import types
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # --- CONFIG ---
 TOKEN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_full_drive.json')
@@ -66,8 +66,22 @@ def get_drive_service():
 
 def download_file_content(service, file_id, mime_type):
     """Downloads file content to memory for AI analysis"""
-    print(f"  Downloading content for {file_id}...")
-    request = service.files().get_media(fileId=file_id)
+    print(f"  Downloading content for {file_id} ({mime_type})...")
+    
+    if mime_type.startswith('application/vnd.google-apps.'):
+        # Export Google Docs/Sheets to text/PDF
+        if 'document' in mime_type:
+            request = service.files().export_media(fileId=file_id, mimeType='text/plain')
+        elif 'spreadsheet' in mime_type:
+             # Spreadsheets are better as CSV for AI usually, or PDF
+            request = service.files().export_media(fileId=file_id, mimeType='application/pdf')
+        else:
+             # Default fallback for slides etc
+            request = service.files().export_media(fileId=file_id, mimeType='text/plain')
+    else:
+        # Download Binary / Text
+        request = service.files().get_media(fileId=file_id)
+        
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
     done = False
@@ -92,9 +106,11 @@ def analyze_with_gemini(content_bytes, mime_type):
     if 'pdf' in mime_type:
         ai_mime = 'application/pdf'
     elif 'image' in mime_type:
-        ai_mime = 'image/jpeg' # Simplification, normally match exact type
+        ai_mime = 'image/jpeg' # Simplification
+    elif mime_type == 'text/plain' or 'markdown' in mime_type or 'document' in mime_type:
+        ai_mime = 'text/plain' # Treat text/md/gdoc-export as text
         
-    print("  Sending to Gemini...")
+    print(f"  Sending to Gemini as {ai_mime}...")
     try:
         response = client.models.generate_content(
             model='gemini-2.0-flash',
@@ -185,54 +201,58 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             print(f"  [Skip] Folder: {name}")
             continue
             
-        # Download (if image/pdf)
-        if 'image' in mime or 'pdf' in mime:
-            try:
-                content = download_file_content(service, fid, mime)
-                analysis = analyze_with_gemini(content, mime)
-                new_name = generate_new_name(analysis, name)
-                
-                print(f"  [AI] {name} -> {new_name}")
-                
-                # Write IMMEDIATE to CSV (Append)
-                with open(csv_path, 'a', newline='') as csvfile:
-                    fieldnames = ['id', 'original', 'proposed', 'category', 'confidence']
-                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                    writer.writerow({
-                        'id': fid,
-                        'original': name,
-                        'proposed': new_name,
-                        'category': analysis.get('category'),
-                        'confidence': analysis.get('confidence')
-                    })
-                
-                # INBOX AUTO-EXECUTE LOGIC
-                if mode == 'inbox' and not dry_run:
-                    # 1. Rename File
-                    print(f"  [EXECUTE] Renaming...")
-                    service.files().update(fileId=fid, body={'name': new_name}).execute()
-                    
-                    # Log Rename
-                    with open('renaming_history.csv', 'a', newline='') as history_file:
-                        writer = csv.writer(history_file)
-                        writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name])
+        # Download & Process (Images, PDFs, Text, Docs)
+        try:
+             # Now processing EVERYTHING that isn't a folder
+            content = download_file_content(service, fid, mime)
+            
+            # If content is empty (e.g. empty Google Doc), skip
+            if not content:
+                 print(f"  [Skip] Empty Content: {name}")
+                 continue
 
-                    # 2. Move File (if High Confidence)
-                    category = analysis.get('category')
-                    confidence = analysis.get('confidence')
-                    target_id = FOLDER_MAP.get(category)
-                    
-                    if confidence == 'High' and target_id:
-                        move_file(service, fid, target_id, new_name)
-                    else:
-                        print(f"  [Stay] Low Confidence ({confidence}) or Unmapped Category ({category})")
-                    
-                processed_count += 1
-                    
-            except Exception as e:
-                print(f"  [Error] {name}: {e}")
-        else:
-            print(f"  [Skip] {name} (Type: {mime})")
+            analysis = analyze_with_gemini(content, mime)
+            new_name = generate_new_name(analysis, name)
+            
+            print(f"  [AI] {name} -> {new_name}")
+            
+            # Write IMMEDIATE to CSV (Append)
+            with open(csv_path, 'a', newline='') as csvfile:
+                fieldnames = ['id', 'original', 'proposed', 'category', 'confidence']
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writerow({
+                    'id': fid,
+                    'original': name,
+                    'proposed': new_name,
+                    'category': analysis.get('category'),
+                    'confidence': analysis.get('confidence')
+                })
+            
+            # INBOX AUTO-EXECUTE LOGIC
+            if mode == 'inbox' and not dry_run:
+                # 1. Rename File
+                print(f"  [EXECUTE] Renaming...")
+                service.files().update(fileId=fid, body={'name': new_name}).execute()
+                
+                # Log Rename
+                with open('renaming_history.csv', 'a', newline='') as history_file:
+                    writer = csv.writer(history_file)
+                    writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name])
+
+                # 2. Move File (if High Confidence)
+                category = analysis.get('category')
+                confidence = analysis.get('confidence')
+                target_id = FOLDER_MAP.get(category)
+                
+                if confidence == 'High' and target_id:
+                    move_file(service, fid, target_id, new_name)
+                else:
+                    print(f"  [Stay] Low Confidence ({confidence}) or Unmapped Category ({category})")
+                
+            processed_count += 1
+                
+        except Exception as e:
+            print(f"  [Error] {name}: {e}")
 
 def process_inbox(dry_run=True, csv_path='sorter_dry_run.csv', limit=None):
     """Specialized scan for Inbox that MOVES files on success"""
