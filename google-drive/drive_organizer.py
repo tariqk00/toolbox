@@ -14,7 +14,7 @@ import io
 from google import genai
 from google.genai import types
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 # --- CONFIG ---
 TOKEN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_full_drive.json')
@@ -262,13 +262,21 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
         # Check if already processed (Regex: YYYY-MM-DD - Entity - Summary)
         # Matches: 2024-01-01 - Vendor - Desc.pdf
         # BUT: Do not skip if the date is 0000-00-00 (Failed Date)
-        if re.match(r'^\d{4}-\d{2}-\d{2} - .* - .*\.\w+$', name):
-            if name.startswith("0000-00-00"):
-                # Force re-process to fix date
-                pass 
+        # UPDATE v0.3.3: Do not continue; falling through allows AI to categorize and MOVE the file.
+        # Check if already processed (Regex: YYYY-MM-DD - Entity - Summary)
+        # Matches: 2024-01-01 - Vendor - Desc.pdf
+        is_valid_name = re.match(r'^\d{4}-\d{2}-\d{2} - .* - .*\.\w+$', name)
+        
+        if is_valid_name and not name.startswith("0000-00-00"):
+            # MODE SPLIT:
+            if mode == 'inbox':
+                # Inbox Mode: Fall through to check if we can MOVE it (Cleanup)
+                print(f"  [chk] Valid Name: {name} (Proceeding to Categorize/Move)")
             else:
-                print(f"  [Skip - Done] {name}")
+                # Maintenance Mode: STRICT IDEMPOTENCY. Leave valid files alone.
+                print(f"  [Skip - Valid] {name} (Maintenance Mode)")
                 continue
+
 
         # Recursively Scan Subfolders
         if mime == 'application/vnd.google-apps.folder':
@@ -317,25 +325,52 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                 })
             
             # INBOX AUTO-EXECUTE LOGIC
-            if mode == 'inbox' and not dry_run:
-                # 1. Rename File
-                print(f"  [EXECUTE] Renaming...")
-                service.files().update(fileId=fid, body={'name': new_name}).execute()
-                
-                # Log Rename
-                with open('renaming_history.csv', 'a', newline='') as history_file:
-                    writer = csv.writer(history_file)
-                    writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name])
+            # AUTO-EXECUTE LOGIC
+            if not dry_run:
+                # INBOX MODE: Rename & Move
+                if mode == 'inbox':
+                    # 1. Rename
+                    if new_name != name:
+                        print(f"  [EXECUTE] Renaming...")
+                        service.files().update(fileId=fid, body={'name': new_name}).execute()
+                        # Log Rename
+                        with open('renaming_history.csv', 'a', newline='') as history_file:
+                            writer = csv.writer(history_file)
+                            writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name])
+                    else:
+                        print(f"  [Same Name] Skipping rename.")
 
-                # 2. Move File (if High Confidence)
-                category = analysis.get('category')
-                confidence = analysis.get('confidence')
-                target_id = FOLDER_MAP.get(category)
+                    # 2. Move
+                    category = analysis.get('category')
+                    confidence = analysis.get('confidence')
+                    target_id = FOLDER_MAP.get(category)
+                    
+                    if confidence == 'High' and target_id:
+                        move_file(service, fid, target_id, new_name)
+                    else:
+                        print(f"  [Stay] Low Confidence ({confidence}) or Unmapped Category ({category})")
                 
-                if confidence == 'High' and target_id:
-                    move_file(service, fid, target_id, new_name)
+                # MAINTENANCE MODE: Rename Only (If necessary), Recommendation for Moves
                 else:
-                    print(f"  [Stay] Low Confidence ({confidence}) or Unmapped Category ({category})")
+                    # 1. Rename (Only if it was an invalid name to begin with)
+                    if new_name != name and confidence == 'High':
+                         print(f"  [MAINTENANCE] Renaming {name} -> {new_name}...")
+                         service.files().update(fileId=fid, body={'name': new_name}).execute()
+                         # Log
+                         with open('renaming_history.csv', 'a', newline='') as history_file:
+                             writer = csv.writer(history_file)
+                             writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name])
+                    
+                    # 2. Audit / Recommend Move
+                    category = analysis.get('category')
+                    target_id = FOLDER_MAP.get(category)
+                    
+                    # We can't easily check 'current folder ID' vs 'target ID' without an extra API call or passing parent ID.
+                    # Ideally, if target_id exists, we recommend it.
+                    if target_id:
+                        print(f"  [RECOMMENDATION] Move to Category: {category} (Target ID: {target_id})")
+                    else:
+                         print(f"  [Audit] Category: {category} (No specific target mapped)")
                 
             processed_count += 1
                 

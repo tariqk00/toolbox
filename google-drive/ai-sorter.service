@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 %h/github/tariqk00/toolbox/google-drive/drive_organizer.py --inbox --execute
-WorkingDirectory=%h/github/tariqk00/toolbox/google-drive
+ExecStart=/home/tariqk/github/tariqk00/toolbox/google-drive/venv/bin/python3 /home/tariqk/github/tariqk00/toolbox/google-drive/drive_organizer.py --inbox --execute
+WorkingDirectory=/home/tariqk/github/tariqk00/toolbox/google-drive
 StandardOutput=journal
 StandardError=journal
 
