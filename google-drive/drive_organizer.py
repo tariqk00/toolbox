@@ -9,12 +9,12 @@ import datetime
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 import io
 from google import genai
 from google.genai import types
 
-__version__ = "0.3.4"
+__version__ = "0.4.0"
 
 # --- CONFIG ---
 TOKEN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_full_drive.json')
@@ -35,6 +35,8 @@ FOLDER_MAP = {
     'Source_Material': '1BNwYqECrR9oPDC5os5uZcxKbaL7lRCoe', # Archive (AI Sources)
     'Work': '1zX-rciEeZnHsRrAwuxM8H8YC9bdnMVCa'      # 01 - Second Brain/Work
 }
+
+METADATA_FOLDER_ID = '1kwJ59bxRgYJgtv1c3sO-hhrvfIeD0JW0'
 
 def load_api_key():
     try:
@@ -67,6 +69,39 @@ Rules:
 - Use category "Source_Material" for raw transcripts or logs.
 - Use category "PKM" for notes, journals, or summaries.
 """
+
+def sync_history_to_drive():
+    """Uploads the local renaming_history.csv to the Metadata Archive folder."""
+    history_file = 'renaming_history.csv'
+    if not os.path.exists(history_file):
+        return
+
+    try:
+        service = get_drive_service()
+        
+        # Check if file exists in Metadata folder to update it, or create new
+        query = f"'{METADATA_FOLDER_ID}' in parents and name = '{history_file}' and trashed = false"
+        results = service.files().list(q=query, fields="files(id)").execute()
+        files = results.get('files', [])
+
+        media = MediaFileUpload(history_file, mimetype='text/csv')
+
+        if files:
+            # Update existing
+            file_id = files[0]['id']
+            service.files().update(fileId=file_id, media_body=media).execute()
+            print(f"  [Sync] Updated history log in Drive ({file_id})")
+        else:
+            # Create new
+            file_metadata = {
+                'name': history_file,
+                'parents': [METADATA_FOLDER_ID]
+            }
+            service.files().create(body=file_metadata, media_body=media).execute()
+            print(f"  [Sync] Uploaded new history log to Drive.")
+            
+    except Exception as e:
+        print(f"  [Sync Error] Failed to upload history: {e}")
 
 def get_drive_service():
     creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
@@ -336,7 +371,9 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                         # Log Rename
                         with open('renaming_history.csv', 'a', newline='') as history_file:
                             writer = csv.writer(history_file)
-                            writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name])
+                            # [Timestamp, ID, Original, New, Target_Folder, Run_Type]
+                            target_id = FOLDER_MAP.get(analysis.get('category'), 'Inbox/Unknown')
+                            writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, 'Auto'])
                     else:
                         print(f"  [Same Name] Skipping rename.")
 
@@ -359,7 +396,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                          # Log
                          with open('renaming_history.csv', 'a', newline='') as history_file:
                              writer = csv.writer(history_file)
-                             writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name])
+                             writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, 'None', 'Auto-Maintenance'])
                     
                     # 2. Audit / Recommend Move
                     category = analysis.get('category')
@@ -434,13 +471,62 @@ def execute_plan(csv_path):
             # Log to History
             with open('renaming_history.csv', 'a', newline='') as history_file:
                 writer = csv.writer(history_file)
-                # Timestamp, ID, Original, New
-                writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, original, new_name])
+                # Timestamp, ID, Original, New, Target_Folder, Run_Type
+                target_id = FOLDER_MAP.get(row.get('category'), 'Unknown')
+                writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, original, new_name, target_id, 'Manual'])
                 
         except Exception as e:
              print(f"  [Error] Failed to rename {fid}: {e}")
 
+def migrate_history_schema():
+    """Ensures renaming_history.csv has the latest columns."""
+    history_file = 'renaming_history.csv'
+    headers = ['Timestamp', 'ID', 'Original', 'New', 'Target_Folder', 'Run_Type']
+    
+    if not os.path.exists(history_file):
+        with open(history_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+        return
+
+    # Read existing
+    with open(history_file, 'r', newline='') as f:
+        reader = csv.reader(f)
+        data = list(reader)
+
+    if not data:
+        return
+
+    # Check header
+    if len(data[0]) < 6:
+        print("  [Migration] Upgrading history file schema...")
+        new_data = [headers]
+        # Skip old header if it exists but is short, or treat first row as data if no header? 
+        # Assuming no header in old version based on previous 'cat' output, wait.
+        # The previous output showed: 2026-01-14 13:24:34,1X... 
+        # It seems existing file HAS NO HEADER. It's just data.
+        
+        for row in data:
+            # Check if row looks like a header
+            if row[0] == 'Timestamp': 
+                continue # Skip old header if present
+            
+            # Pad row to 6 columns
+            # Old schema: [Timestamp, ID, Original, New] (4 cols)
+            # New schema: + [Target_Folder, Run_Type]
+            while len(row) < 4:
+                row.append("Unknown")
+            
+            row = row[:4] + ["Unknown", "Legacy"]
+            new_data.append(row)
+            
+        with open(history_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(new_data)
+
 if __name__ == "__main__":
+    migrate_history_schema()
+
     parser = argparse.ArgumentParser(description="AI Drive Sorter")
     parser.add_argument('--scan', action='store_true', help="Scan folders and generate CSV plan")
     parser.add_argument('--execute', action='store_true', help="Execute renames from CSV plan")
@@ -462,6 +548,9 @@ if __name__ == "__main__":
         print("\n--- Processing Inbox (Auto-Sort Mode) ---")
         scan_folder(INBOX_ID, dry_run=(not args.execute), csv_path=CSV_FILE, limit=args.limit, mode='inbox')
         
+        if args.execute:
+             sync_history_to_drive()
+        
     elif args.scan:
         # Note: Appending to existing CSV if present
         
@@ -471,5 +560,6 @@ if __name__ == "__main__":
             
     elif args.execute:
         execute_plan(CSV_FILE)
+        sync_history_to_drive()
     else:
         print("Please specify --scan or --execute")
