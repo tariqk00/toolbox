@@ -364,16 +364,11 @@ def download_file_content(service, file_id, mime_type):
         else:
             request = service.files().export_media(fileId=file_id, mimeType='application/pdf')
     elif mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-        # Attempt to export XLSX to PDF if Drive supports it (service-side)
-        try:
-            request = service.files().export_media(fileId=file_id, mimeType='application/pdf')
-        except:
-            request = service.files().get_media(fileId=file_id)
+        # XLSX is binary, just download directly
+        request = service.files().get_media(fileId=file_id)
     elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        try:
-            request = service.files().export_media(fileId=file_id, mimeType='application/pdf')
-        except:
-            request = service.files().get_media(fileId=file_id)
+        # DOCX is binary, just download directly
+        request = service.files().get_media(fileId=file_id)
     else:
         # Download Binary / Text
         request = service.files().get_media(fileId=file_id)
@@ -408,6 +403,11 @@ def analyze_with_gemini(content_bytes, mime_type, filename, context_hint=""):
     
     logger.info(f"  Sending to Gemini as {ai_mime} (Original: {mime_type})...")
     
+    # 3. Size limit for text content to prevent truncation
+    if ai_mime == 'text/plain' and len(content_bytes) > 1024 * 100:
+        logger.info(f"  [Info] Truncating large text file ({len(content_bytes)} bytes) to 100KB for AI.")
+        content_bytes = content_bytes[:1024 * 100]
+    
     # Inject context into prompt
     categories_str = get_category_prompt_str()
     prompt_with_context = SYSTEM_PROMPT.format(
@@ -430,21 +430,30 @@ def analyze_with_gemini(content_bytes, mime_type, filename, context_hint=""):
         
         # Robust JSON extraction
         try:
-             # Case 1: Wrapped in markdown code block
-             if "```json" in text:
-                 text = text.split("```json")[1].split("```")[0].strip()
-             elif "```" in text:
-                 text = text.split("```")[1].split("```")[0].strip()
+            # 1. Find the start of the JSON block
+            start_idx = text.find('{')
+            if start_idx == -1:
+                raise ValueError("No JSON-like structure found")
+            
+            json_snippet = text[start_idx:]
+            
+            # 2. Use raw_decode to take only the first valid JSON object
+            # This handles "Extra data" (chatty text trailing the JSON) gracefully
+            decoder = json.JSONDecoder()
+            data, end_pos = decoder.raw_decode(json_snippet)
+            
+            # (Optional) Clean up nested markdown if it was caught inside
+            if isinstance(data, str) and "```json" in data:
+                 json_text = data.split("```json")[-1].split("```")[0].strip()
+                 data = json.loads(json_text)
 
-             data = json.loads(text)
-             
-             # Handle List response (take first item)
-             if isinstance(data, list):
-                 if len(data) > 0:
-                     return data[0]
-                 else:
-                     raise ValueError("Empty JSON list returned")
-             return data
+            # Handle List response (take first item)
+            if isinstance(data, list):
+                if len(data) > 0:
+                    return data[0]
+                else:
+                    raise ValueError("Empty JSON list returned")
+            return data
 
         except json.JSONDecodeError:
              # Fallback: legacy regex extraction
@@ -564,9 +573,12 @@ def generate_new_name(analysis, original_name, created_time_str):
     entity = analysis.get('entity', 'Unknown')
     summary = analysis.get('summary', 'Doc')
     
-    # Cleanup strings
-    safe_entity = "".join([c for c in entity if c.isalnum() or c in [' ', '_', '-']]).strip().replace(" ", "_")
-    safe_summary = "".join([c for c in summary if c.isalnum() or c in [' ', '_', '-']]).strip().replace(" ", "_")
+    # Cleanup strings - force to string in case Gemini returned null/None
+    str_entity = str(entity or "Unknown")
+    str_summary = str(summary or "Doc")
+    
+    safe_entity = "".join([c for c in str_entity if c.isalnum() or c in [' ', '_', '-']]).strip().replace(" ", "_")
+    safe_summary = "".join([c for c in str_summary if c.isalnum() or c in [' ', '_', '-']]).strip().replace(" ", "_")
     
     # Last resort fallback not needed as created_time is robust
     if date == "0000-00-00" or not date:
