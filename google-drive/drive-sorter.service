@@ -1,0 +1,10 @@
+[Unit]
+Description=Google Drive Inbox Auto-Sorter
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/takhan/github/tariqk00/toolbox/google-drive/drive_organizer.py --inbox --execute
+WorkingDirectory=/home/takhan/github/tariqk00/toolbox/google-drive
+StandardOutput=journal
+StandardError=journal
