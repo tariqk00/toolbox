@@ -67,6 +67,10 @@ def get_category_list():
             categories.append(f"{parent}/{sub}")
     return sorted(list(set(categories + ["Other"])))
 
+def get_category_prompt_str():
+    """Returns categories as a clean comma-separated string."""
+    return ", ".join(get_category_list())
+
 def resolve_folder_id(category_str):
     """Resolves a category string (e.g. 'Finance/Receipts') to a folder ID."""
     mappings = FOLDER_CONFIG.get('mappings', {})
@@ -356,11 +360,20 @@ def download_file_content(service, file_id, mime_type):
         if 'document' in mime_type:
             request = service.files().export_media(fileId=file_id, mimeType='text/plain')
         elif 'spreadsheet' in mime_type:
-             # Spreadsheets are better as CSV for AI usually, or PDF
             request = service.files().export_media(fileId=file_id, mimeType='application/pdf')
         else:
-             # Default fallback for slides etc
-            request = service.files().export_media(fileId=file_id, mimeType='text/plain')
+            request = service.files().export_media(fileId=file_id, mimeType='application/pdf')
+    elif mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+        # Attempt to export XLSX to PDF if Drive supports it (service-side)
+        try:
+            request = service.files().export_media(fileId=file_id, mimeType='application/pdf')
+        except:
+            request = service.files().get_media(fileId=file_id)
+    elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        try:
+            request = service.files().export_media(fileId=file_id, mimeType='application/pdf')
+        except:
+            request = service.files().get_media(fileId=file_id)
     else:
         # Download Binary / Text
         request = service.files().get_media(fileId=file_id)
@@ -372,30 +385,36 @@ def download_file_content(service, file_id, mime_type):
         status, done = downloader.next_chunk()
     return fh.getvalue()
 
-def analyze_with_gemini(content_bytes, mime_type, context_hint=""):
+def analyze_with_gemini(content_bytes, mime_type, filename, context_hint=""):
     """
     Sends content to Gemini-1.5-Flash for analysis using the new google.genai SDK.
     """
     if not GEMINI_API_KEY:
         raise ValueError("Gemini API Key missing")
         
+    ai_mime = get_ai_supported_mime(mime_type, filename)
+    
+    if not ai_mime:
+        logger.warning(f"  [Skip] Unsupported file type for AI: {filename} ({mime_type})")
+        return {
+            "doc_date": "0000-00-00",
+            "entity": "Unknown", 
+            "category": "Other", 
+            "summary": "Unsupported_Format",
+            "confidence": "Low"
+        }
+
     client = genai.Client(api_key=GEMINI_API_KEY)
     
-    ai_mime = mime_type
-    if 'pdf' in mime_type:
-        ai_mime = 'application/pdf'
-    elif 'image' in mime_type:
-        ai_mime = 'image/jpeg' # Simplification
-    elif mime_type == 'text/plain' or 'markdown' in mime_type or 'document' in mime_type:
-        ai_mime = 'text/plain' # Treat text/md/gdoc-export as text
-        
-    print(f"  Sending to Gemini as {ai_mime} (Context: {context_hint})...")
+    logger.info(f"  Sending to Gemini as {ai_mime} (Original: {mime_type})...")
     
     # Inject context into prompt
+    categories_str = get_category_prompt_str()
     prompt_with_context = SYSTEM_PROMPT.format(
         context_hint=context_hint,
-        categories=get_category_list()
+        categories=categories_str
     )
+    
     
     try:
         response = client.models.generate_content(
@@ -444,7 +463,7 @@ def analyze_with_gemini(content_bytes, mime_type, context_hint=""):
                   raise ValueError("No JSON found in response")
 
     except Exception as e:
-        print(f"Gemini Error: {e}")
+        logger.error(f"Gemini Error during analysis: {e}", exc_info=True)
         return {
             "doc_date": "0000-00-00",
             "entity": "Unknown", 
@@ -452,6 +471,26 @@ def analyze_with_gemini(content_bytes, mime_type, context_hint=""):
             "summary": "AI_Error",
             "confidence": "Low"
         }
+
+def get_ai_supported_mime(mime_type, filename=None):
+    """Returns a Gemini-supported MIME type or None if unsupported."""
+    
+    # 1. Direct PDF/Image support
+    if 'pdf' in mime_type: return 'application/pdf'
+    if 'image' in mime_type: return 'image/jpeg' # Gemini handles most common images as jpeg/png
+    
+    # 2. Known Text types
+    supported_text = ['text/plain', 'text/csv', 'text/markdown', 'text/html', 'application/json']
+    if any(st in mime_type for st in supported_text):
+        return 'text/plain'
+        
+    # 3. Handle octet-stream/unknown via extension
+    if mime_type == 'application/octet-stream' or '/' not in mime_type:
+        ext = os.path.splitext(filename or "")[1].lower()
+        if ext in ['.txt', '.csv', '.md', '.log']:
+            return 'text/plain'
+            
+    return None
 
 def get_time_context(created_time_str):
     """
@@ -489,6 +528,7 @@ def get_time_context(created_time_str):
 
 def generate_new_name(analysis, original_name, created_time_str):
     ext = os.path.splitext(original_name)[1]
+    name_no_ext = os.path.splitext(original_name)[0]
     
     # 1. Content Date (from AI) - Default
     date = analysis.get('doc_date', '0000-00-00')
@@ -500,13 +540,26 @@ def generate_new_name(analysis, original_name, created_time_str):
         match = re.search(r'(\d{4}-\d{2}-\d{2})', original_name)
         if match:
             date = match.group(1)
-            # print(f"    [Date] Used Filename: {date}")
 
     # 3. Created Date (Metadata) - Fallback
     if date == '0000-00-00' and created_time_str:
-        # created_time_str e.g. "2023-10-27T10:00:00Z"
         date = created_time_str[:10]
-        # print(f"    [Date] Used CreatedTime: {date}")
+
+    # SPECIAL HANDLING FOR AI ERRORS / UNSUPPORTED
+    # Preserves history by keeping the original filename if AI fails
+    summary = analysis.get('summary', 'Doc')
+    if summary in ['AI_Error', 'Unsupported_Format']:
+        # Strip existing date prefix if present to avoid "2024-01-01 - 2024-01-01 - filename"
+        clean_oname = re.sub(r'^\d{4}-\d{2}-\d{2}\s*-\s*', '', name_no_ext).strip()
+        # Strip any previously inserted error tags
+        clean_oname = clean_oname.replace("Unknown - AI_Error", "").replace("Unknown - Unsupported_Format", "").strip("- ").strip()
+        
+        # If the original name was JUST the error name, we can't recover much, 
+        # but for future runs this prevents truncation.
+        if not clean_oname:
+            clean_oname = "Unknown_File"
+            
+        return f"{date} - {clean_oname}{ext}"
 
     entity = analysis.get('entity', 'Unknown')
     summary = analysis.get('summary', 'Doc')
@@ -604,7 +657,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             if time_context:
                  context_hint += f" {time_context}"
                 
-            analysis = analyze_with_gemini(content, mime, context_hint)
+            analysis = analyze_with_gemini(content, mime, name, context_hint)
             new_name = generate_new_name(analysis, name, f.get('createdTime'))
             
             print(f"  [AI] {name} -> {new_name}")
@@ -704,7 +757,8 @@ def move_file(service, file_id, target_folder_id, processed_name):
     try:
         # Retrieve the existing parents to remove
         file = service.files().get(fileId=file_id, fields='parents').execute()
-        previous_parents = ",".join(file.get('parents'))
+        parents = file.get('parents', [])
+        previous_parents = ",".join(parents) if parents else ""
         
         # Move the file by adding the new parent and removing the old one
         service.files().update(
