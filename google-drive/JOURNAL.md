@@ -1,0 +1,1 @@
+- **2026-01-17**: Fully deployed  to NUC (Production). Configured SSH deploy keys, cloned repo, and restored . Automation is now live on git-tracked code.
