@@ -16,7 +16,7 @@ from logging.handlers import RotatingFileHandler
 from google import genai
 from google.genai import types
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 # --- CONFIG ---
 TOKEN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_full_drive.json')

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.2] - 2026-01-17
+
+### Fixed
+
+- **MIME Type Validation**: Implemented strict whitelist to skip unsupported binary formats (`.mdi`, `.xls`, `.mny`, `.pptx`) and prevent Gemini 400 errors.
+- **Resilient Naming**: Updated name generation to preserve original filenames on AI failure or unsupported formats.
+- **Move Logic Hardening**: Fixed a `NoneType` error when moving files without parent metadata.
+- **Recovery Success**: Reverted 25 files corrupted by "AI Error" renames using historical logs.
+
 ## [0.4.1] - 2026-01-17
 
 ### Added
