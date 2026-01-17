@@ -14,4 +14,5 @@ venv/
 !propose_mapping.py
 !count_unprocessed.py
 !organize_qnap.py
-!get_auth_url.py
+!folder_config.json
+!category_recommendations.json

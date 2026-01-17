@@ -1,0 +1,23 @@
+{
+  "mappings": {
+    "Finance": {
+      "id": "1tKdysRukqbkzDuI1fomvSrYDhA3cr2mx",
+      "subcategories": {
+        "Receipts": "13-dNYJ-UaRsrGfB80bip6jOkMg9081PT",
+        "Taxes": "0B5ksOv75_RfJOE1BV2RYOE15anc",
+        "Statements": "15GoIrKjwACd7bQMOSj4iJ1vc6HZfke8f",
+        "Insurance": "1q7T8zFSvt6EZqpKV0VdyO-TB4TsFcHe0",
+        "Invoices": "1TZlGjfSr8dc8thWqM2rxWpUMVgXBxmBA"
+      }
+    },
+    "Health": { "id": "1yruR1fC4TAR4U-Irb48p7tIERCDgg_PI" },
+    "Library": { "id": "1SHzgwpYJ8K1d9wGNHQPGP68zVIz13ymI" },
+    "Personal": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
+    "House": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
+    "Auto": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
+    "Education": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
+    "PKM": { "id": "1HNKo72TkLeurAi6g7X0C90OzqF2z3YB7" },
+    "Source_Material": { "id": "1BNwYqECrR9oPDC5os5uZcxKbaL7lRCoe" },
+    "Work": { "id": "1zX-rciEeZnHsRrAwuxM8H8YC9bdnMVCa" }
+  }
+}

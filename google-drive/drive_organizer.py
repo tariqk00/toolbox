@@ -11,32 +11,208 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 import io
+import logging
+from logging.handlers import RotatingFileHandler
 from google import genai
 from google.genai import types
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 # --- CONFIG ---
 TOKEN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_full_drive.json')
 SECRET_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gemini_secret')
-SCOPES = ['https://www.googleapis.com/auth/drive']
+SCOPES = [
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/spreadsheets'
+]
 
-# Folder Mapping constants
+# --- CONFIG & MAPPINGS ---
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'folder_config.json')
+RECOMMENDATIONS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'category_recommendations.json')
+
+def load_folder_config():
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading folder_config.json: {e}")
+    return {"mappings": {}}
+
+FOLDER_CONFIG = load_folder_config()
+
+def save_recommendation(category_path):
+    """Logs a recommended category path that doesn't have a specific folder yet."""
+    try:
+        recommendations = {}
+        if os.path.exists(RECOMMENDATIONS_PATH):
+            with open(RECOMMENDATIONS_PATH, 'r') as f:
+                recommendations = json.load(f)
+        
+        recommendations[category_path] = recommendations.get(category_path, 0) + 1
+        
+        with open(RECOMMENDATIONS_PATH, 'w') as f:
+            json.dump(recommendations, f, indent=2)
+    except Exception as e:
+        print(f"Error saving recommendation: {e}")
+
+def get_category_list():
+    """Builds a flat list of categories and sub-categories for the AI prompt."""
+    categories = []
+    mappings = FOLDER_CONFIG.get('mappings', {})
+    for parent, data in mappings.items():
+        categories.append(parent)
+        subcats = data.get('subcategories', {})
+        for sub in subcats.keys():
+            categories.append(f"{parent}/{sub}")
+    return sorted(list(set(categories + ["Other"])))
+
+def resolve_folder_id(category_str):
+    """Resolves a category string (e.g. 'Finance/Receipts') to a folder ID."""
+    mappings = FOLDER_CONFIG.get('mappings', {})
+    
+    # Handle Finance/Receipts format
+    parts = [p.strip() for p in category_str.split('/')]
+    parent_name = parts[0]
+    sub_name = parts[1] if len(parts) > 1 else None
+    
+    parent_data = mappings.get(parent_name)
+    if not parent_data:
+        # Check for legacy flat mapping if logic evolved
+        return None
+    
+    parent_id = parent_data.get('id')
+    
+    if sub_name:
+        sub_id = parent_data.get('subcategories', {}).get(sub_name)
+        if sub_id:
+            return sub_id
+        else:
+            # Subcategory not found, log recommendation and fallback to parent
+            full_path = f"{parent_name}/{sub_name}"
+            save_recommendation(full_path)
+            return parent_id
+            
+    return parent_id
+
 INBOX_ID = '1c-7Wv9J-FPpc3tph7Ax1xx5bMI-5jcaG'
-FOLDER_MAP = {
-    'Finance': '1tKdysRukqbkzDuI1fomvSrYDhA3cr2mx', # 03 - Finance
-    'Health': '1yruR1fC4TAR4U-Irb48p7tIERCDgg_PI',  # 04 - Health
-    'Library': '1SHzgwpYJ8K1d9wGNHQPGP68zVIz13ymI', # 06 - Library
-    'House': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX',    # 02 - Personal
-    'Personal': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX', # 02 - Personal
-    'Auto': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX',     # 02 - Personal
-    'Education': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX', # 02 - Personal
-    'PKM': '1HNKo72TkLeurAi6g7X0C90OzqF2z3YB7',      # 01 - Second Brain/Inbox
-    'Source_Material': '1BNwYqECrR9oPDC5os5uZcxKbaL7lRCoe', # Archive (AI Sources)
-    'Work': '1zX-rciEeZnHsRrAwuxM8H8YC9bdnMVCa'      # 01 - Second Brain/Work
-}
 
 METADATA_FOLDER_ID = '1kwJ59bxRgYJgtv1c3sO-hhrvfIeD0JW0'
+HISTORY_SHEET_ID = '1N8xlrcCnj97uGPssXnGg_-1t2SvGZlnocc_7BNO28dY'
+
+# --- LOGGING SETUP ---
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+LOG_FILE = os.path.join(LOG_DIR, 'sorter.log')
+
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
+
+class RunStats:
+    def __init__(self):
+        self.processed = 0
+        self.moved = 0
+        self.renamed = 0
+        self.errors = 0
+        self.start_time = time.time()
+
+    def get_summary(self):
+        duration = int(time.time() - self.start_time)
+        if self.processed == 0 and self.errors == 0:
+            return f"Run completed in {duration}s. No files found to process."
+        return f"Run completed in {duration}s. Processed: {self.processed}, Moved: {self.moved}, Renamed: {self.renamed}, Errors: {self.errors}."
+
+stats = RunStats()
+logger = logging.getLogger("DriveSorter")
+logger.setLevel(logging.INFO)
+
+# Console Handler
+ch = logging.StreamHandler()
+ch.setFormatter(logging.Formatter('%(message)s'))
+logger.addHandler(ch)
+
+# Rotating File Handler
+fh = RotatingFileHandler(LOG_FILE, maxBytes=1*1024*1024, backupCount=5)
+fh.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
+logger.addHandler(fh)
+
+def sync_logs_to_drive():
+    """Uploads the local sorter.log to the Metadata/Logs folder on Drive."""
+    try:
+        service = get_drive_service()
+        
+        # 1. Find/Create 'Logs' folder in Metadata folder
+        query = f"name = 'Logs' and '{METADATA_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        results = service.files().list(q=query, fields="files(id)").execute()
+        files = results.get('files', [])
+        
+        if files:
+            logs_folder_id = files[0]['id']
+        else:
+            file_metadata = {
+                'name': 'Logs',
+                'mimeType': 'application/vnd.google-apps.folder',
+                'parents': [METADATA_FOLDER_ID]
+            }
+            folder = service.files().create(body=file_metadata, fields='id').execute()
+            logs_folder_id = folder.get('id')
+            logger.info(f"Created 'Logs' folder in Metadata (ID: {logs_folder_id})")
+
+        # 2. Find/Update 'sorter.log' in Logs folder
+        log_query = f"name = 'sorter.log' and '{logs_folder_id}' in parents and trashed = false"
+        log_results = service.files().list(q=log_query, fields="files(id)").execute()
+        log_files = log_results.get('files', [])
+        
+        media = MediaFileUpload(LOG_FILE, mimetype='text/plain', resumable=True)
+        
+        if log_files:
+            file_id = log_files[0]['id']
+            service.files().update(fileId=file_id, media_body=media).execute()
+        else:
+            file_metadata = {
+                'name': 'sorter.log',
+                'parents': [logs_folder_id]
+            }
+            service.files().create(body=file_metadata, media_body=media).execute()
+            
+        logger.info("Successfully synced sorter.log to Google Drive.")
+        
+    except Exception as e:
+        logger.error(f"Failed to sync logs to Drive: {e}")
+
+def update_manifest():
+    """Generates/Updates folder_manifest.md with current mappings and paths."""
+    manifest_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'folder_manifest.md')
+    service = get_drive_service()
+    
+    lines = [
+        "# Folder Manifest - AI Drive Sorter",
+        "",
+        "This manifest documents the current organization structure. It is used to refine the AI's filing logic and provides a clear view of where files will be placed.",
+        "",
+        "| Category | Type | Sub-Category | Full Drive Path | Folder ID |",
+        "| :--- | :--- | :--- | :--- | :--- |"
+    ]
+    
+    mappings = FOLDER_CONFIG.get('mappings', {})
+    for parent, data in sorted(mappings.items()):
+        parent_id = data.get('id')
+        parent_path = get_folder_path(service, parent_id)
+        lines.append(f"| **{parent}** | Parent | - | {parent_path} | `{parent_id}` |")
+        
+        subcats = data.get('subcategories', {})
+        for sub, sub_id in sorted(subcats.items()):
+            sub_path = get_folder_path(service, sub_id)
+            lines.append(f"| | Child | {sub} | {sub_path} | `{sub_id}` |")
+            
+    lines.append("\n---\n*Last Updated: " + time.strftime("%Y-%m-%d %H:%M:%S") + "*")
+    
+    try:
+        with open(manifest_path, 'w') as f:
+            f.write("\n".join(lines))
+        logger.info("Successfully updated folder_manifest.md.")
+    except Exception as e:
+        logger.error(f"Failed to update manifest: {e}")
+
 
 def load_api_key():
     try:
@@ -57,12 +233,13 @@ Extract the following fields into a pure JSON object (no markdown formatting):
 {{
   "doc_date": "YYYY-MM-DD",
   "entity": "Name of Vendor/Person/Organization",
-  "category": "One of [Finance, Health, Personal, House, Auto, Education, Tech, Work, PKM, Source_Material, Other]",
+  "category": "One of {categories}",
   "summary": "Very short 3-5 word description",
   "confidence": "High/Medium/Low"
 }}
 
 Rules:
+- Be as specific as possible with the category (e.g. use 'Finance/Receipts' instead of just 'Finance' if appropriate).
 - If date is ambiguous, use the creation date or null.
 - "entity" should be clean (e.g. "Home Depot", not "THE HOME DEPOT INC").
 - "summary" should be specific (e.g. "Paint Supplies", not "Shopping").
@@ -70,38 +247,101 @@ Rules:
 - Use category "PKM" for notes, journals, or summaries.
 """
 
-def sync_history_to_drive():
-    """Uploads the local renaming_history.csv to the Metadata Archive folder."""
-    history_file = 'renaming_history.csv'
-    if not os.path.exists(history_file):
+def get_folder_path(service, folder_id):
+    """Resolve full path from ID using FOLDER_MAP and API. Returns 'Folder / Subfolder'."""
+    
+    # Check Static Map first (Fastest) for Top-Level
+    # REMOVED: We want the REAL folder name (e.g. "03 - Finance"), not the Map Key ("Finance")
+    # for name, fid in FOLDER_MAP.items():
+    #     if fid == folder_id:
+    #          return name
+             
+    if not folder_id or folder_id in ["None", "Unknown", "Inbox/Unknown"]:
+        return "Unknown"
+
+    path_parts = []
+    current_id = folder_id
+    
+    # Walk up the tree (Max depth 3 to be safe)
+    for _ in range(5): 
+        if not current_id: break
+        
+        # Check cache/map at this level
+        # REMOVED: Force API Name
+        # found_in_map = False
+        # for name, fid in FOLDER_MAP.items():
+        #     if fid == current_id:
+        #         path_parts.insert(0, name)
+        #         # Map entries are usually top-level anchors, so we can stop? 
+        #         # Or continue if user wants "My Drive / Finance"? 
+        #         # Assuming Map keys are sufficient "Roots".
+        #         found_in_map = True
+        #         break
+        
+        # if found_in_map:
+        #     break
+            
+        try:
+             res = service.files().get(fileId=current_id, fields="name, parents").execute()
+             name = res.get('name', 'Unknown')
+             path_parts.insert(0, name)
+             
+             parents = res.get('parents')
+             current_id = parents[0] if parents else None
+        except Exception as e:
+             # print(f"Warning resolving path for {current_id}: {e}")
+             break
+             
+    if not path_parts:
+        return "Unknown Folder"
+        
+    return " / ".join(path_parts)
+
+def log_to_sheet(timestamp, file_id, original_name, new_name, target_folder_id, target_folder_name, run_type):
+    """Logs a single row to the History Google Sheet using HYPERLINK formulas."""
+    
+    if not HISTORY_SHEET_ID:
+        print("  [Log Warning] No HISTORY_SHEET_ID configured.")
         return
 
+    # Construct Hyperlinks
+    # Escape quotes for formula safety (Excel/Sheets uses double quotes to escape quotes)
+    safe_new_name = new_name.replace('"', '""')
+    
+    # New Name -> File Link
+    link_file = f'=HYPERLINK("https://drive.google.com/open?id={file_id}", "{safe_new_name}")'
+    
+    # Target Folder -> Folder Link
+    # Only link if we have a valid-looking ID (non-empty, not "None" or "Unknown")
+    ignore_ids = ["None", "Unknown", "Inbox/Unknown"]
+    
+    safe_target_name = target_folder_name.replace('"', '""')
+
+    if target_folder_id in ignore_ids or not target_folder_id:
+         link_folder = target_folder_name
+    else:
+         link_folder = f'=HYPERLINK("https://drive.google.com/drive/u/0/folders/{target_folder_id}", "{safe_target_name}")'
+
+    row_data = [timestamp, file_id, original_name, link_file, link_folder, run_type]
+
     try:
-        service = get_drive_service()
-        
-        # Check if file exists in Metadata folder to update it, or create new
-        query = f"'{METADATA_FOLDER_ID}' in parents and name = '{history_file}' and trashed = false"
-        results = service.files().list(q=query, fields="files(id)").execute()
-        files = results.get('files', [])
-
-        media = MediaFileUpload(history_file, mimetype='text/csv')
-
-        if files:
-            # Update existing
-            file_id = files[0]['id']
-            service.files().update(fileId=file_id, media_body=media).execute()
-            print(f"  [Sync] Updated history log in Drive ({file_id})")
-        else:
-            # Create new
-            file_metadata = {
-                'name': history_file,
-                'parents': [METADATA_FOLDER_ID]
-            }
-            service.files().create(body=file_metadata, media_body=media).execute()
-            print(f"  [Sync] Uploaded new history log to Drive.")
-            
+        service = get_sheets_service()
+        body = {'values': [row_data]}
+        service.spreadsheets().values().append(
+            spreadsheetId=HISTORY_SHEET_ID, range="Log!A:A",
+            valueInputOption="USER_ENTERED", body=body
+        ).execute()
+        # print(f"  [Log] Saved to History Sheet.")
     except Exception as e:
-        print(f"  [Sync Error] Failed to upload history: {e}")
+        print(f"  [Log Error] Failed to write to Sheet: {e}")
+        # Fallback to local CSV if Sheet fails (plain text)
+        with open('renaming_history_fallback.csv', 'a', newline='') as f:
+             writer = csv.writer(f)
+             writer.writerow([timestamp, file_id, original_name, new_name, target_folder_id, run_type])
+
+def get_sheets_service():
+    creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+    return build('sheets', 'v4', credentials=creds)
 
 def get_drive_service():
     creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
@@ -152,7 +392,10 @@ def analyze_with_gemini(content_bytes, mime_type, context_hint=""):
     print(f"  Sending to Gemini as {ai_mime} (Context: {context_hint})...")
     
     # Inject context into prompt
-    prompt_with_context = SYSTEM_PROMPT.format(context_hint=context_hint)
+    prompt_with_context = SYSTEM_PROMPT.format(
+        context_hint=context_hint,
+        categories=get_category_list()
+    )
     
     try:
         response = client.models.generate_content(
@@ -166,20 +409,39 @@ def analyze_with_gemini(content_bytes, mime_type, context_hint=""):
         # Parse JSON from response
         text = response.text.strip()
         
-        # Robust JSON extraction: Find first '{' and last '}'
-        start_idx = text.find('{')
-        end_idx = text.rfind('}')
-        
-        if start_idx != -1 and end_idx != -1:
-            json_text = text[start_idx:end_idx+1]
-            try:
-                return json.loads(json_text)
-            except json.JSONDecodeError as je:
-                 print(f"    [JSON Error] Raw text: {text}")
-                 raise je
-        else:
-             print(f"    [No JSON] Raw text: {text}")
-             raise ValueError("No JSON found in response")
+        # Robust JSON extraction
+        try:
+             # Case 1: Wrapped in markdown code block
+             if "```json" in text:
+                 text = text.split("```json")[1].split("```")[0].strip()
+             elif "```" in text:
+                 text = text.split("```")[1].split("```")[0].strip()
+
+             data = json.loads(text)
+             
+             # Handle List response (take first item)
+             if isinstance(data, list):
+                 if len(data) > 0:
+                     return data[0]
+                 else:
+                     raise ValueError("Empty JSON list returned")
+             return data
+
+        except json.JSONDecodeError:
+             # Fallback: legacy regex extraction
+             start_idx = text.find('{')
+             end_idx = text.rfind('}')
+             
+             if start_idx != -1 and end_idx != -1:
+                json_text = text[start_idx:end_idx+1]
+                try:
+                    return json.loads(json_text)
+                except json.JSONDecodeError as je:
+                     print(f"    [JSON Error] Raw text: {text}")
+                     raise je
+             else:
+                  print(f"    [No JSON] Raw text: {text}")
+                  raise ValueError("No JSON found in response")
 
     except Exception as e:
         print(f"Gemini Error: {e}")
@@ -364,55 +626,74 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             if not dry_run:
                 # INBOX MODE: Rename & Move
                 if mode == 'inbox':
-                    # 1. Rename
                     if new_name != name:
-                        print(f"  [EXECUTE] Renaming...")
-                        service.files().update(fileId=fid, body={'name': new_name}).execute()
-                        # Log Rename
-                        with open('renaming_history.csv', 'a', newline='') as history_file:
-                            writer = csv.writer(history_file)
-                            # [Timestamp, ID, Original, New, Target_Folder, Run_Type]
-                            target_id = FOLDER_MAP.get(analysis.get('category'), 'Inbox/Unknown')
-                            writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, 'Auto'])
+                        logger.info(f"  [Auto] Rename: {name} -> {new_name}")
+                        stats.renamed += 1
+                        
+                        folder_category = analysis.get('category')
+                        target_fid = resolve_folder_id(folder_category) or 'Inbox/Unknown'
+                        target_fname = get_folder_path(service, target_fid)
+
+                        log_to_sheet(
+                            time.strftime("%Y-%m-%d %H:%M:%S"), 
+                            fid, name, new_name, 
+                            target_fid, target_fname,
+                            'Auto'
+                        )
                     else:
                         print(f"  [Same Name] Skipping rename.")
 
                     # 2. Move
                     category = analysis.get('category')
                     confidence = analysis.get('confidence')
-                    target_id = FOLDER_MAP.get(category)
+                    target_id = resolve_folder_id(category)
                     
                     if confidence == 'High' and target_id:
-                        move_file(service, fid, target_id, new_name)
+                        if move_file(service, fid, target_id, new_name):
+                             stats.moved += 1
+                             full_path = get_folder_path(service, target_id)
+                             logger.info(f"  [Auto] Move: {new_name} -> {full_path}")
+                             # Log only if we didn't log a rename (or log as "Move")
+                             if name == new_name:
+                                 target_name = get_folder_path(service, target_id)
+                                 log_to_sheet(
+                                     time.strftime("%Y-%m-%d %H:%M:%S"),
+                                     fid, name, new_name,
+                                     target_id, target_name,
+                                     'Auto-Move'
+                                 )
                     else:
-                        print(f"  [Stay] Low Confidence ({confidence}) or Unmapped Category ({category})")
+                        if name != new_name:
+                             reason = "low confidence" if confidence != 'High' else "missing target folder"
+                             logger.warning(f"  [Auto] Renamed but not moved ({reason}): {new_name}")
+                        else:
+                             print(f"  [Stay] Low Confidence ({confidence}) or Unmapped Category ({category})")
                 
                 # MAINTENANCE MODE: Rename Only (If necessary), Recommendation for Moves
                 else:
                     # 1. Rename (Only if it was an invalid name to begin with)
                     if new_name != name and confidence == 'High':
-                         print(f"  [MAINTENANCE] Renaming {name} -> {new_name}...")
+                         logger.info(f"  [MAINTENANCE] Rename: {name} -> {new_name}")
+                         stats.renamed += 1
                          service.files().update(fileId=fid, body={'name': new_name}).execute()
                          # Log
-                         with open('renaming_history.csv', 'a', newline='') as history_file:
-                             writer = csv.writer(history_file)
-                             writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, 'None', 'Auto-Maintenance'])
+                         log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, 'None', 'None', 'Auto-Maintenance')
                     
                     # 2. Audit / Recommend Move
                     category = analysis.get('category')
-                    target_id = FOLDER_MAP.get(category)
+                    target_id = resolve_folder_id(category)
                     
-                    # We can't easily check 'current folder ID' vs 'target ID' without an extra API call or passing parent ID.
-                    # Ideally, if target_id exists, we recommend it.
                     if target_id:
                         print(f"  [RECOMMENDATION] Move to Category: {category} (Target ID: {target_id})")
                     else:
                          print(f"  [Audit] Category: {category} (No specific target mapped)")
                 
+            stats.processed += 1
             processed_count += 1
                 
         except Exception as e:
-            print(f"  [Error] {name}: {e}")
+            logger.error(f"  [Error] {name}: {e}")
+            stats.errors += 1
 
 def process_inbox(dry_run=True, csv_path='sorter_dry_run.csv', limit=None):
     """Specialized scan for Inbox that MOVES files on success"""
@@ -467,99 +748,74 @@ def execute_plan(csv_path):
             # Execute Rename
             body = {'name': new_name}
             service.files().update(fileId=fid, body=body).execute()
+            logger.info(f"  [Manual] Rename: {original} -> {new_name}")
+            stats.renamed += 1
             
             # Log to History
-            with open('renaming_history.csv', 'a', newline='') as history_file:
-                writer = csv.writer(history_file)
-                # Timestamp, ID, Original, New, Target_Folder, Run_Type
-                target_id = FOLDER_MAP.get(row.get('category'), 'Unknown')
-                writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), fid, original, new_name, target_id, 'Manual'])
+            # Log to History
+            # Log to History
+            target_id = resolve_folder_id(row.get('category')) or 'Unknown'
+            target_name = get_folder_path(service, target_id)
+            log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, original, new_name, target_id, target_name, 'Manual')
                 
         except Exception as e:
-             print(f"  [Error] Failed to rename {fid}: {e}")
+             logger.error(f"  [Error] Failed to rename {fid}: {e}")
+             stats.errors += 1
+        
+        stats.processed += 1
 
 def migrate_history_schema():
     """Ensures renaming_history.csv has the latest columns."""
-    history_file = 'renaming_history.csv'
-    headers = ['Timestamp', 'ID', 'Original', 'New', 'Target_Folder', 'Run_Type']
-    
-    if not os.path.exists(history_file):
-        with open(history_file, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(headers)
-        return
-
-    # Read existing
-    with open(history_file, 'r', newline='') as f:
-        reader = csv.reader(f)
-        data = list(reader)
-
-    if not data:
-        return
-
-    # Check header
-    if len(data[0]) < 6:
-        print("  [Migration] Upgrading history file schema...")
-        new_data = [headers]
-        # Skip old header if it exists but is short, or treat first row as data if no header? 
-        # Assuming no header in old version based on previous 'cat' output, wait.
-        # The previous output showed: 2026-01-14 13:24:34,1X... 
-        # It seems existing file HAS NO HEADER. It's just data.
-        
-        for row in data:
-            # Check if row looks like a header
-            if row[0] == 'Timestamp': 
-                continue # Skip old header if present
-            
-            # Pad row to 6 columns
-            # Old schema: [Timestamp, ID, Original, New] (4 cols)
-            # New schema: + [Target_Folder, Run_Type]
-            while len(row) < 4:
-                row.append("Unknown")
-            
-            row = row[:4] + ["Unknown", "Legacy"]
-            new_data.append(row)
-            
-        with open(history_file, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerows(new_data)
+    # history_file = 'renaming_history.csv'
+    # headers = ['Timestamp', 'ID', 'Original', 'New', 'Target_Folder', 'Run_Type']
+    # Legacy migration removed as we use Google Sheets now
+    pass
 
 if __name__ == "__main__":
-    migrate_history_schema()
-
-    parser = argparse.ArgumentParser(description="AI Drive Sorter")
-    parser.add_argument('--scan', action='store_true', help="Scan folders and generate CSV plan")
-    parser.add_argument('--execute', action='store_true', help="Execute renames from CSV plan")
-    parser.add_argument('--inbox', action='store_true', help="Process Inbox: Auto-Rename and Move High Confidence files")
-    parser.add_argument('--limit', type=int, default=None, help="Limit number of files to process per folder")
-    args = parser.parse_args()
-
-    CSV_FILE = 'sorter_dry_run.csv'
-
-    # Target Folders
-    TARGETS = [
-        {'id': '1tKdysRukqbkzDuI1fomvSrYDhA3cr2mx', 'name': '03 - Finance'},
-        {'id': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX', 'name': '02 - Personal'},
-        {'id': '1yruR1fC4TAR4U-Irb48p7tIERCDgg_PI', 'name': '04 - Health'},
-        {'id': '1SHzgwpYJ8K1d9wGNHQPGP68zVIz13ymI', 'name': '06 - Library'}
-    ]
+    logger.info(f"--- Run Started: {time.strftime('%Y-%m-%d %H:%M:%S')} (v{__version__}) ---")
     
-    if args.inbox:
-        print("\n--- Processing Inbox (Auto-Sort Mode) ---")
-        scan_folder(INBOX_ID, dry_run=(not args.execute), csv_path=CSV_FILE, limit=args.limit, mode='inbox')
+    try:
+        migrate_history_schema()
+
+        parser = argparse.ArgumentParser(description="AI Drive Sorter")
+        parser.add_argument('--scan', action='store_true', help="Scan folders and generate CSV plan")
+        parser.add_argument('--execute', action='store_true', help="Execute renames from CSV plan")
+        parser.add_argument('--inbox', action='store_true', help="Process Inbox: Auto-Rename and Move High Confidence files")
+        parser.add_argument('--limit', type=int, default=None, help="Limit number of files to process per folder")
+        args = parser.parse_args()
+
+        CSV_FILE = 'sorter_dry_run.csv'
+
+        # Target Folders
+        TARGETS = [
+            {'id': '1tKdysRukqbkzDuI1fomvSrYDhA3cr2mx', 'name': '03 - Finance'},
+            {'id': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX', 'name': '02 - Personal'},
+            {'id': '1yruR1fC4TAR4U-Irb48p7tIERCDgg_PI', 'name': '04 - Health'},
+            {'id': '1SHzgwpYJ8K1d9wGNHQPGP68zVIz13ymI', 'name': '06 - Library'}
+        ]
         
-        if args.execute:
-             sync_history_to_drive()
-        
-    elif args.scan:
-        # Note: Appending to existing CSV if present
-        
-        for t in TARGETS:
-            print(f"\n--- Scanning {t['name']} ---")
-            scan_folder(t['id'], dry_run=True, csv_path=CSV_FILE, limit=args.limit)
+        if args.inbox:
+            logger.info("Mode: Inbox (Auto-Sort)")
+            scan_folder(INBOX_ID, dry_run=(not args.execute), csv_path=CSV_FILE, limit=args.limit, mode='inbox')
             
-    elif args.execute:
-        execute_plan(CSV_FILE)
-        sync_history_to_drive()
-    else:
-        print("Please specify --scan or --execute")
+        elif args.scan:
+            logger.info("Mode: Scan (Planning)")
+            for t in TARGETS:
+                print(f"\n--- Scanning {t['name']} ---")
+                scan_folder(t['id'], dry_run=True, csv_path=CSV_FILE, limit=args.limit)
+                
+        elif args.execute:
+            logger.info("Mode: Execute (Manual Plan)")
+            execute_plan(CSV_FILE)
+        else:
+            parser.print_help()
+            sys.exit(0)
+
+    except Exception as e:
+        logger.error(f"Fatal Error: {e}")
+    finally:
+        logger.info(stats.get_summary())
+        sync_logs_to_drive()
+        update_manifest()
+
+
