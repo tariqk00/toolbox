@@ -1,18 +1,45 @@
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
 venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Environment Variables & Secrets
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+credentials.json
+token.json
+client_secret*.json
+
+# Configs & Cache
+google-drive/gemini_cache.json
+google-drive/test_config.json
+
+# Logs & Reports
 *.log
-*.json
-*.txt
-!README.md
-!requirements.txt
-!fix_auth_url.py
-!manual_auth.py
-!exchange_token.py
-!analyze_qnap.py
-!summarize_analysis.py
-!propose_mapping.py
-!count_unprocessed.py
-!organize_qnap.py
-!folder_config.json
-!category_recommendations.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+plaud_report.md
+sorter_dry_run.csv
+server_history_log.md
+
+# OS
+.DS_Store
+.Trashes
+thumbs.db
+
+# Agentic
+.agent/brain/
+.agent/memory/

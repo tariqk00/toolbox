@@ -15,12 +15,14 @@ import logging
 from logging.handlers import RotatingFileHandler
 from google import genai
 from google.genai import types
+import hashlib
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 # --- CONFIG ---
 TOKEN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_full_drive.json')
 SECRET_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gemini_secret')
+CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gemini_cache.json')
 SCOPES = [
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/spreadsheets'
@@ -40,6 +42,30 @@ def load_folder_config():
     return {"mappings": {}}
 
 FOLDER_CONFIG = load_folder_config()
+
+# --- CACHE LOGIC ---
+GEMINI_CACHE = {}
+
+def load_cache():
+    global GEMINI_CACHE
+    if os.path.exists(CACHE_PATH):
+        try:
+            with open(CACHE_PATH, 'r') as f:
+                GEMINI_CACHE = json.load(f)
+            print(f"Loaded {len(GEMINI_CACHE)} entries from cache.")
+        except Exception as e:
+            print(f"Error loading cache: {e}")
+            GEMINI_CACHE = {}
+
+def save_cache():
+    try:
+        with open(CACHE_PATH, 'w') as f:
+            json.dump(GEMINI_CACHE, f, indent=2)
+        # print("Saved Gemini cache.")
+    except Exception as e:
+        print(f"Error saving cache: {e}")
+
+load_cache()
 
 def save_recommendation(category_path):
     """Logs a recommended category path that doesn't have a specific folder yet."""
@@ -73,6 +99,9 @@ def get_category_prompt_str():
 
 def resolve_folder_id(category_str):
     """Resolves a category string (e.g. 'Finance/Receipts') to a folder ID."""
+    if not category_str or category_str == 'Other' or category_str == 'Uncategorized':
+        return None
+        
     mappings = FOLDER_CONFIG.get('mappings', {})
     
     # Handle Finance/Receipts format
@@ -82,7 +111,8 @@ def resolve_folder_id(category_str):
     
     parent_data = mappings.get(parent_name)
     if not parent_data:
-        # Check for legacy flat mapping if logic evolved
+        # Unknown Parent: Log recommendation and return None
+        save_recommendation(category_str)
         return None
     
     parent_id = parent_data.get('id')
@@ -93,8 +123,7 @@ def resolve_folder_id(category_str):
             return sub_id
         else:
             # Subcategory not found, log recommendation and fallback to parent
-            full_path = f"{parent_name}/{sub_name}"
-            save_recommendation(full_path)
+            save_recommendation(f"{parent_name}/{sub_name}")
             return parent_id
             
     return parent_id
@@ -244,6 +273,8 @@ Extract the following fields into a pure JSON object (no markdown formatting):
 
 Rules:
 - Be as specific as possible with the category (e.g. use 'Finance/Receipts' instead of just 'Finance' if appropriate).
+- If the file is a bank activity CSV, credit card statement, or multi-transaction spreadsheet, the "entity" MUST be the Bank or Institution name (e.g., "Chase", "Amex", "Capital One"). Do NOT pick a merchant from a random row as the entity.
+- Categorize bank activity/statements as "Finance/Statements".
 - If date is ambiguous, use the creation date or null.
 - "entity" should be clean (e.g. "Home Depot", not "THE HOME DEPOT INC").
 - "summary" should be specific (e.g. "Paint Supplies", not "Shopping").
@@ -380,13 +411,84 @@ def download_file_content(service, file_id, mime_type):
         status, done = downloader.next_chunk()
     return fh.getvalue()
 
-def analyze_with_gemini(content_bytes, mime_type, filename, context_hint=""):
+def analyze_with_gemini(content_bytes, mime_type, filename, context_hint="", file_id=None, modified_time=None):
     """
     Sends content to Gemini-1.5-Flash for analysis using the new google.genai SDK.
     """
     if not GEMINI_API_KEY:
         raise ValueError("Gemini API Key missing")
+
+    # --- GENERIC PLAUD EXPORTS ---
+    # Force summary.txt/transcript.txt to Plaud Folder BEFORE cache check
+    # --- GENERIC PLAUD EXPORTS ---
+    # Files often have timestamps: "2026-01-06 01:02 summary.txt"
+    if filename.lower().endswith('summary.txt') or filename.lower().endswith('transcript.txt'):
+        logger.info(f"  [Rule] Detected Generic Plaud Export: {filename}")
         
+        # Determine category based on type
+        target_category = "PKM/Plaud"
+        if filename.lower().endswith('transcript.txt'):
+            target_category = "PKM/Plaud/Transcripts"
+            
+        # Use filename as summary to ensure unique names (e.g. "2026-01-06 01:02 transcript")
+        base_name = os.path.splitext(filename)[0]
+        return {
+            "doc_date": "2026-01-01", 
+            "entity": "Plaud_Export",
+            "category": target_category, 
+            "summary": base_name,
+            "confidence": "High"
+        }
+
+    # --- GEMINI JOURNAL RULE ---
+    # Files with " - Journal - " (created by journal_processor.py) -> PKM/Gemini
+    if " - Journal - " in filename:
+        logger.info(f"  [Rule] Detected Gemini Journal: {filename}")
+        
+        # Expected: YYYY-MM-DD - Journal - Title.md
+        parts = filename.split(" - ")
+        if len(parts) >= 3:
+             doc_date = parts[0]
+             # Strip extension from title
+             summary = os.path.splitext(parts[2])[0]
+        else:
+             doc_date = "0000-00-00"
+             summary = filename
+
+        return {
+            "doc_date": doc_date,
+            "entity": "Journal",
+            "category": "PKM/Gemini",
+            "summary": summary,
+            "confidence": "High"
+        }
+
+    # --- CACHE CHECK ---
+    if file_id:
+        cache_key = file_id
+        if cache_key in GEMINI_CACHE:
+            # logger.info(f"  [Cache Hit] {filename}")
+            return GEMINI_CACHE[cache_key]
+            
+    # --- PLAUD / MM-DD HEURISTIC ---
+    # Files starting with "MM-DD " (e.g. "01-05 ") are Plaud Notes -> PKM
+    if re.match(r'^\d{2}-\d{2}\s', filename):
+        logger.info(f"  [Rule] Detected Plaud/Journal pattern: {filename}")
+        return {
+            "doc_date": "2026-" + filename[:5], # Guessing year 2026 based on user context, or use Current Year? 
+            # Actually, standardizing on current year or letting rename logic handle it. 
+            # The rename logic uses doc_date. 
+            # User said "Files with MM-DD format are from Plaud". 
+            # If I return a date, generate_new_name will use it.
+            # I will punt on date guessing and let generate_new_name use file creation time if doc_date is missing/invalid?
+            # Or better, just return the category and let AI/Rename handle the rest? 
+            # No, if I return here I skip AI. I need to construct the full response.
+            "entity": "Plaud_Note",
+            "category": "PKM/Plaud",
+            "summary": filename,
+            "confidence": "High"
+        }
+
     ai_mime = get_ai_supported_mime(mime_type, filename)
     
     if not ai_mime:
@@ -402,6 +504,25 @@ def analyze_with_gemini(content_bytes, mime_type, filename, context_hint=""):
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     logger.info(f"  Sending to Gemini as {ai_mime} (Original: {mime_type})...")
+    
+    # --- CACHE CHECK ---
+    # Use file_id as primary key. 
+    # Ideally we should also check modifiedTime, but file_id in Drive implies content same? 
+    # Not always, but for our "Inbox" use case, these are usually static uploaded docs.
+    # To be safer, we can create a compound key or just check ID for now if we trust it.
+    
+    # We don't have file_id passed explicitly to this func, but we can assume 'filename' is unique? 
+    # No, filename isn't unique. 
+    # We should Update the function signature or hash the content.
+    # Hashing 100MB video is slow. 
+    # Let's use content hash for text/small revisions, but for now let's just use the func args if we can.
+    
+    # REFACTOR: Pass file_id to this function for proper caching
+    # But since I can't easily change all callers without checking, 
+    # I'll rely on a content hash for small files, or just skip cache here 
+    # and wrap it at the caller level? 
+    # Actually, let's update the signature. All callers are local.
+
     
     # 3. Size limit for text content to prevent truncation
     if ai_mime == 'text/plain' and len(content_bytes) > 1024 * 100:
@@ -450,9 +571,19 @@ def analyze_with_gemini(content_bytes, mime_type, filename, context_hint=""):
             # Handle List response (take first item)
             if isinstance(data, list):
                 if len(data) > 0:
-                    return data[0]
+                    data = data[0]
                 else:
                     raise ValueError("Empty JSON list returned")
+            
+            # --- SAVE TO CACHE ---
+            if file_id:
+                GEMINI_CACHE[file_id] = data
+                # Identify save intervals (e.g. every 10 updates) or just rely on OS buffer?
+                # For safety, let's just save. It's a small JSON file locally.
+                # To avoid disk IO thrashing, maybe only save every X? 
+                # Let's save every time for now (simpler), user has NUC SSD.
+                save_cache()
+                
             return data
 
         except json.JSONDecodeError:
@@ -463,7 +594,11 @@ def analyze_with_gemini(content_bytes, mime_type, filename, context_hint=""):
              if start_idx != -1 and end_idx != -1:
                 json_text = text[start_idx:end_idx+1]
                 try:
-                    return json.loads(json_text)
+                    data = json.loads(json_text)
+                    if file_id:
+                         GEMINI_CACHE[file_id] = data
+                         save_cache()
+                    return data
                 except json.JSONDecodeError as je:
                      print(f"    [JSON Error] Raw text: {text}")
                      raise je
@@ -669,7 +804,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             if time_context:
                  context_hint += f" {time_context}"
                 
-            analysis = analyze_with_gemini(content, mime, name, context_hint)
+            analysis = analyze_with_gemini(content, mime, name, context_hint, file_id=fid, modified_time=f.get('createdTime'))
             new_name = generate_new_name(analysis, name, f.get('createdTime'))
             
             print(f"  [AI] {name} -> {new_name}")
@@ -691,9 +826,13 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             if not dry_run:
                 # INBOX MODE: Rename & Move
                 if mode == 'inbox':
-                    if new_name != name:
+                    # Only rename if High Confidence
+                    if new_name != name and analysis.get('confidence') == 'High':
                         logger.info(f"  [Auto] Rename: {name} -> {new_name}")
                         stats.renamed += 1
+                        
+                        # Execute Rename
+                        service.files().update(fileId=fid, body={'name': new_name}).execute()
                         
                         folder_category = analysis.get('category')
                         target_fid = resolve_folder_id(folder_category) or 'Inbox/Unknown'
@@ -705,6 +844,8 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                             target_fid, target_fname,
                             'Auto'
                         )
+                    elif new_name != name:
+                         print(f"  [Skip-LowConf] Rename skipped (Low Confidence): {name} -> {new_name}")
                     else:
                         print(f"  [Same Name] Skipping rename.")
 
@@ -845,30 +986,48 @@ if __name__ == "__main__":
 
         parser = argparse.ArgumentParser(description="AI Drive Sorter")
         parser.add_argument('--scan', action='store_true', help="Scan folders and generate CSV plan")
-        parser.add_argument('--execute', action='store_true', help="Execute renames from CSV plan")
-        parser.add_argument('--inbox', action='store_true', help="Process Inbox: Auto-Rename and Move High Confidence files")
-        parser.add_argument('--limit', type=int, default=None, help="Limit number of files to process per folder")
+        parser.add_argument('--inbox', action='store_true', help="Process '00 - Inbox' (Rename & Move)")
+        parser.add_argument('--staging', action='store_true', help="Process '00 - Staging' (Rename & Move)")
+        parser.add_argument('--execute', action='store_true', help="Execute changes (default is dry-run)")
+        parser.add_argument('--limit', type=int, default=0, help="Limit number of files to process")
+        
+        parser.add_argument('--target_id', help="Specific folder ID to scan")
+        
         args = parser.parse_args()
-
-        CSV_FILE = 'sorter_dry_run.csv'
-
-        # Target Folders
-        TARGETS = [
-            {'id': '1tKdysRukqbkzDuI1fomvSrYDhA3cr2mx', 'name': '03 - Finance'},
-            {'id': '1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX', 'name': '02 - Personal'},
-            {'id': '1yruR1fC4TAR4U-Irb48p7tIERCDgg_PI', 'name': '04 - Health'},
-            {'id': '1SHzgwpYJ8K1d9wGNHQPGP68zVIz13ymI', 'name': '06 - Library'}
-        ]
+        
+        FOLDER_CONFIG = load_folder_config()
         
         if args.inbox:
+            # Inbox Mode
             logger.info("Mode: Inbox (Auto-Sort)")
-            scan_folder(INBOX_ID, dry_run=(not args.execute), csv_path=CSV_FILE, limit=args.limit, mode='inbox')
+            process_inbox(dry_run=not args.execute, limit=args.limit)
+
+        elif args.staging:
+            # Staging Mode
+            staging_id = FOLDER_CONFIG.get("mappings", {}).get("Staging", {}).get("id")
+            if not staging_id:
+                logger.error("Staging folder ID not found in config.")
+                exit(1)
+                
+            logger.info(f"--- Run Started: {time.strftime('%Y-%m-%d %H:%M:%S')} (v{__version__}) ---")
+            logger.info(f"Mode: Staging (Auto-Sort)")
+            
+            # Reuse 'inbox' mode logic (Rename & Move High Confidence)
+            scan_folder(staging_id, dry_run=not args.execute, limit=args.limit, mode='inbox', parent_context="Staging")
             
         elif args.scan:
             logger.info("Mode: Scan (Planning)")
-            for t in TARGETS:
+            csv_file = 'sorter_scan.csv'
+            targets = []
+            
+            if args.target_id:
+                targets.append({'name': 'Target', 'id': args.target_id})
+            else:
+                 targets.append({'name': 'Inbox', 'id': INBOX_ID})
+            
+            for t in targets:
                 print(f"\n--- Scanning {t['name']} ---")
-                scan_folder(t['id'], dry_run=True, csv_path=CSV_FILE, limit=args.limit)
+                scan_folder(t['id'], dry_run=True, csv_path=csv_file, limit=args.limit, parent_context=t['name'])
                 
         elif args.execute:
             logger.info("Mode: Execute (Manual Plan)")

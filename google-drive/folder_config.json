@@ -7,17 +7,33 @@
         "Taxes": "0B5ksOv75_RfJOE1BV2RYOE15anc",
         "Statements": "15GoIrKjwACd7bQMOSj4iJ1vc6HZfke8f",
         "Insurance": "1q7T8zFSvt6EZqpKV0VdyO-TB4TsFcHe0",
-        "Invoices": "1TZlGjfSr8dc8thWqM2rxWpUMVgXBxmBA"
+        "Invoices": "1TZlGjfSr8dc8thWqM2rxWpUMVgXBxmBA",
+        "Tracking": "1v5WcVF-y3cObTYC1AY8ixANbMHgrYSb_",
+        "Paycheck": "1U03vqs0KEK8PODoQmMXDpZ0ApxRDxRKH"
       }
     },
     "Health": { "id": "1yruR1fC4TAR4U-Irb48p7tIERCDgg_PI" },
     "Library": { "id": "1SHzgwpYJ8K1d9wGNHQPGP68zVIz13ymI" },
-    "Personal": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
+    "Personal": {
+      "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX",
+      "subcategories": {
+        "ID": "1yZQudKliU0Yn_28i-MNYKSKr2glXw8HI"
+      } 
+    },
     "House": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
     "Auto": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
     "Education": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
-    "PKM": { "id": "1HNKo72TkLeurAi6g7X0C90OzqF2z3YB7" },
+    "PKM": {
+        "id": "1HNKo72TkLeurAi6g7X0C90OzqF2z3YB7",
+        "subcategories": {
+            "Plaud": "1lDD6SUh918U6oXjOBB5I9SjFVDAlqjzR",
+            "Gemini": "1UD26uo314ds0BJzmzLuGnrhpLJ0LtxKx",
+            "Transcripts": "1ZZf0FAoIXR6T_PzlibUEp7fQxiUbrZST"
+        }
+    },
     "Source_Material": { "id": "1BNwYqECrR9oPDC5os5uZcxKbaL7lRCoe" },
-    "Work": { "id": "1zX-rciEeZnHsRrAwuxM8H8YC9bdnMVCa" }
+    "Work": { "id": "1zX-rciEeZnHsRrAwuxM8H8YC9bdnMVCa" },
+    "Other": { "id": "1dGVQsCzMdXDYl0VaEomEOysWcTlNUxmA" },
+    "Staging": { "id": "1sJD2HGHXD7biGsiQg535xxw_luFfsD8J" }
   }
 }
