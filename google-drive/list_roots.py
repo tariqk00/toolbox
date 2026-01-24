@@ -1,7 +1,7 @@
 """
 Lists all folders present at the root level of Google Drive.
 """
-from drive_organizer import get_drive_service
+from toolbox.lib.drive_utils import get_drive_service
 
 def list_root_folders():
     service = get_drive_service()

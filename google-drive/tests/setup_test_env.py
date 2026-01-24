@@ -10,7 +10,7 @@ from googleapiclient.http import MediaIoBaseUpload
 
 # Add parent directory to path to import drive_organizer
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from drive_organizer import get_drive_service
+from toolbox.lib.drive_utils import get_drive_service
 
 TEST_ROOT_NAME = "_TEST_SUITE_ANTIGRAVITY"
 

@@ -2,7 +2,7 @@
 One-time migration script to move local CSV logs (`renaming_history.csv`) 
 into a Google Sheet (`AI_Sorter_History`) for better tracking.
 """
-from drive_organizer import get_drive_service, METADATA_FOLDER_ID
+from toolbox.lib.drive_utils import get_drive_service, METADATA_FOLDER_ID
 from googleapiclient.discovery import build
 import csv
 import os

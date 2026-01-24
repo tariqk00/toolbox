@@ -1,22 +1,33 @@
 """
-Creates the '00 - Staging' folder if it does not exist.
-This folder is used as an intermediate holding area before final sorting.
+Ensures the '99 - Other' folder exists at the root (or specified location).
+Acts as a catch-all for uncategorized items.
 """
 
 import sys
 import os
 import json
 
-sys.path.append(os.path.join(os.getcwd(), 'google-drive'))
-from drive_organizer import get_drive_service
+
+import sys
+import os
+# Add repo root to path
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO_ROOT not in sys.path:
+    sys.path.append(REPO_ROOT)
+
+from toolbox.lib.drive_utils import get_drive_service
 
 service = get_drive_service()
 
-folder_name = '00 - Staging'
+# Create '99 - Other' at root (or My Drive) if not exists
+folder_name = '99 - Other'
+parent_id = None # Root
 
 print(f"Checking for '{folder_name}'...")
 
 query = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+# If we want it in specific parent, add parent check. Assuming Root for now as "Separate folder".
+
 results = service.files().list(q=query, fields="files(id, name)").execute()
 files = results.get('files', [])
 
@@ -33,4 +44,4 @@ else:
     print(f"  [Created] {folder_name}: {file.get('id')}")
     folder_id = file.get('id')
 
-print(json.dumps({"Staging": folder_id}))
+print(json.dumps({"Other": folder_id}))

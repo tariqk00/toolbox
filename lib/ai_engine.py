@@ -18,7 +18,7 @@ logger = logging.getLogger("DriveSorter.AI")
 # This file is in toolbox/core/ai.py
 # Root is toolbox/ 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
-CONFIG_DIR = os.path.join(BASE_DIR, 'google-drive') 
+CONFIG_DIR = os.path.join(BASE_DIR, 'config') 
 SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_secret')
 CACHE_PATH = os.path.join(CONFIG_DIR, 'gemini_cache.json')
 RECOMMENDATIONS_PATH = os.path.join(CONFIG_DIR, 'category_recommendations.json')

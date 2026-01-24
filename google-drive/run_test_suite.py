@@ -2,7 +2,7 @@
 Verification wrapper. Runs the `scan_folder` logic against a dedicated 
 Test Folder to ensure sorting logic is correct without affecting real data.
 """
-from drive_organizer import scan_folder
+from toolbox.services.drive_organizer.main import scan_folder
 
 TEST_FOLDER_ID = '1yFgFzqduuqa68RsxLe5-ndX3fvlrvFEO'
 scan_folder(TEST_FOLDER_ID, dry_run=True, csv_path='test_suite_results.csv', mode='scan')

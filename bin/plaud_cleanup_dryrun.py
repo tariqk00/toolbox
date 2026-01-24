@@ -7,8 +7,15 @@ import sys
 import os
 import re
 
-sys.path.append(os.path.join(os.getcwd(), 'google-drive'))
-from drive_organizer import get_drive_service
+
+import sys
+import os
+# Add repo root to path
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO_ROOT not in sys.path:
+    sys.path.append(REPO_ROOT)
+
+from toolbox.lib.drive_utils import get_drive_service
 
 service = get_drive_service()
 SOURCE_ID = "1NiTBFVY_u9MmSv1LJJOIZERiwlJgOPB9"
@@ -97,5 +104,4 @@ with open(report_path, "w") as f:
             f.write(f"| **{d_disp}** | `{t_name}` | `{n_name}` |\n")
 
 print(f"Report generated at {os.path.abspath(report_path)}")
-
 

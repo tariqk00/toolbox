@@ -17,28 +17,23 @@ repo_root = os.path.dirname(os.path.dirname(current_dir))
 if repo_root not in sys.path:
     sys.path.append(repo_root)
 
-from toolbox.core.ai import analyze_with_gemini
-from toolbox.core.drive import (
+from toolbox.lib.ai_engine import analyze_with_gemini
+from toolbox.lib.drive_utils import (
     get_drive_service, get_sheets_service, 
     download_file_content, move_file, 
     get_folder_path, resolve_folder_id,
     get_category_prompt_str, FOLDER_CONFIG,
-    load_folder_config
+    load_folder_config,
+    INBOX_ID, METADATA_FOLDER_ID, HISTORY_SHEET_ID
 )
-
-__version__ = "0.5.0"
 
 # --- CONFIG ---
 # LOGGING
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'logs')
 LOG_FILE = os.path.join(LOG_DIR, 'sorter.log')
 
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
-
-INBOX_ID = '1c-7Wv9J-FPpc3tph7Ax1xx5bMI-5jcaG'
-METADATA_FOLDER_ID = '1kwJ59bxRgYJgtv1c3sO-hhrvfIeD0JW0'
-HISTORY_SHEET_ID = '1N8xlrcCnj97uGPssXnGg_-1t2SvGZlnocc_7BNO28dY'
 
 stats = None # Global stats placeholder
 

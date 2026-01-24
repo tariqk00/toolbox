@@ -1,3 +1,11 @@
+
+import sys
+import os
+# Add repo root to path
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO_ROOT not in sys.path:
+    sys.path.append(REPO_ROOT)
+
 """
 Parses `sorter_dry_run.csv` to generate a markdown table of proposed file moves.
 Maps Category tags to full human-readable folder paths for review.

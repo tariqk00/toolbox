@@ -9,7 +9,8 @@ import datetime
 import argparse
 from google.genai import types
 from google import genai
-from drive_organizer import get_drive_service, load_api_key, SECRET_PATH
+from toolbox.lib.drive_utils import get_drive_service
+from toolbox.lib.ai_engine import load_api_key, SECRET_PATH
 
 # --- CONFIG ---
 # Folder IDs from discovery

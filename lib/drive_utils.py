@@ -7,15 +7,20 @@ import io
 import json
 import logging
 from googleapiclient.http import MediaIoBaseDownload
-from toolbox.core.google import GoogleAuth
+from toolbox.lib.google_api import GoogleAuth
 
 logger = logging.getLogger("DriveSorter.Drive")
 
 # --- CONFIG ---
-# This file is in toolbox/core/drive.py
+# This file is in toolbox/lib/drive_utils.py
 # Root is toolbox/
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_PATH = os.path.join(BASE_DIR, 'google-drive', 'folder_config.json')
+CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'folder_config.json')
+
+# Constants
+INBOX_ID = '1c-7Wv9J-FPpc3tph7Ax1xx5bMI-5jcaG'
+METADATA_FOLDER_ID = '1kwJ59bxRgYJgtv1c3sO-hhrvfIeD0JW0'
+HISTORY_SHEET_ID = '1N8xlrcCnj97uGPssXnGg_-1t2SvGZlnocc_7BNO28dY'
 
 def load_folder_config():
     try:
@@ -27,16 +32,17 @@ def load_folder_config():
     return {"mappings": {}}
 
 FOLDER_CONFIG = load_folder_config()
+FOLDER_MAP = FOLDER_CONFIG.get('mappings', {})
 
 def get_drive_service():
-    auth = GoogleAuth(base_dir=os.path.join(BASE_DIR, 'google-drive'))
-    # Assuming standard token names in that dir
-    creds = auth.get_credentials(token_filename='token_full_drive.json', credentials_filename='credentials.json')
+    auth = GoogleAuth(base_dir=BASE_DIR)
+    # Creds in config/
+    creds = auth.get_credentials(token_filename='token_full_drive.json', credentials_filename='config/credentials.json')
     return auth.get_service('drive', 'v3', creds)
 
 def get_sheets_service():
-    auth = GoogleAuth(base_dir=os.path.join(BASE_DIR, 'google-drive'))
-    creds = auth.get_credentials(token_filename='token_full_drive.json', credentials_filename='credentials.json')
+    auth = GoogleAuth(base_dir=BASE_DIR)
+    creds = auth.get_credentials(token_filename='token_full_drive.json', credentials_filename='config/credentials.json')
     return auth.get_service('sheets', 'v4', creds)
 
 def get_category_list():

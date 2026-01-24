@@ -10,7 +10,8 @@ import re
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from drive_organizer import scan_folder, get_drive_service, FOLDER_MAP
+from toolbox.lib.drive_utils import get_drive_service, FOLDER_MAP
+from toolbox.services.drive_organizer.main import scan_folder
 
 # --- MOCK THE FOLDER MAP FOR TESTING ---
 # We need to inject the TEST IDs into the FOLDER_MAP used by scan_folder

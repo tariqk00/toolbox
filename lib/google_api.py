@@ -18,17 +18,17 @@ class GoogleAuth:
             # Repo root would be ../../
             self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             
-    def get_credentials(self, token_filename='token_full_drive.json', credentials_filename='google-drive/credentials.json', scopes=None):
+    def get_credentials(self, token_filename='token_full_drive.json', credentials_filename='config/credentials.json', scopes=None):
         if scopes is None:
             scopes = ['https://www.googleapis.com/auth/drive']
             
-        token_path = os.path.join(self.base_dir, token_filename)
+        token_path = os.path.join(self.base_dir, 'config', token_filename)
         # Search for credentials in multiple common spots if mostly hardcoded
         creds_path = os.path.join(self.base_dir, credentials_filename)
         
         # Fallback for simpler structures
         if not os.path.exists(creds_path):
-             creds_path = os.path.join(self.base_dir, 'credentials.json')
+             creds_path = os.path.join(self.base_dir, 'config/credentials.json')
 
         creds = None
         if os.path.exists(token_path):

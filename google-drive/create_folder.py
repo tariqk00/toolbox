@@ -2,7 +2,7 @@
 Creates the 'Work' folder within the Second Brain structure.
 Legacy/Specific folder creation script.
 """
-from drive_organizer import get_drive_service
+from toolbox.lib.drive_utils import get_drive_service
 
 def create_work_folder():
     service = get_drive_service()

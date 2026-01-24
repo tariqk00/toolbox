@@ -1,29 +1,30 @@
 """
-Diagnostic script to verify if high-priority folders (Finance, Personal) 
-are correctly resolvable via the `folder_config.json` mapping.
+Refined diagnostic script that uses the shared `drive_organizer` module 
+to test folder resolution for Finance, Personal, and House categories.
 """
 
+import sys
 import os
 import json
-from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
 
-# Load existing config to get parent IDs
+# Add module path
+
+
+import sys
+import os
+# Add repo root to path
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO_ROOT not in sys.path:
+    sys.path.append(REPO_ROOT)
+
+from toolbox.lib.drive_utils import get_drive_service, INBOX_ID
+
+# Load config
 config_path = 'google-drive/folder_config.json'
 with open(config_path, 'r') as f:
     config = json.load(f)
 
-SCOPES = ['https://www.googleapis.com/auth/drive']
-creds = None
-if os.path.exists('google-drive/token.json'):
-    creds = Credentials.from_authorized_user_file('google-drive/token.json', SCOPES)
-
-if not creds or not creds.valid:
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-
-service = build('drive', 'v3', credentials=creds)
+service = get_drive_service()
 
 parent_map = {
     'Finance': config['mappings']['Finance']['id'],
@@ -34,11 +35,12 @@ targets = [
     ('Finance', 'Tracking'),
     ('Finance', 'Paycheck'),
     ('Personal', 'ID'),
-    ('House', 'House') # House mapping is seemingly direct or undefined subcat? Config says House -> id.
+    ('House', 'House')
 ]
 
 found = {}
 
+print("Searching...")
 for parent_name, child_name in targets:
     if parent_name not in parent_map:
         print(f"Parent {parent_name} not found in config.")
@@ -46,16 +48,17 @@ for parent_name, child_name in targets:
     
     parent_id = parent_map[parent_name]
     
-    # Search for child folder inside parent
+    # Search
     query = f"'{parent_id}' in parents and name = '{child_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     results = service.files().list(q=query, fields="files(id, name)").execute()
     files = results.get('files', [])
     
     if files:
         print(f"Found {parent_name}/{child_name}: {files[0]['id']}")
-        found[f"{parent_name}/{child_name}"] = files[0]['id']
+        found[child_name] = files[0]['id']
     else:
         print(f"NOT Found {parent_name}/{child_name}")
 
-print("--- RESULTS ---")
+# Print JSON for easy parsing
+print("--- JSON ---")
 print(json.dumps(found))
