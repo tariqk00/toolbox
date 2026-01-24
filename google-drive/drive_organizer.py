@@ -22,7 +22,7 @@ from toolbox.core.drive import (
     load_folder_config
 )
 
-__version__ = "0.5.0-refactor"
+__version__ = "0.5.0"
 
 # --- CONFIG ---
 # LOGGING
