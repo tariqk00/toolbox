@@ -1,3 +1,7 @@
+"""
+Lists all direct child files/folders of a hardcoded Parent ID.
+Simple diagnostic tool for inspecting folder contents.
+"""
 
 import sys
 import os

@@ -1,3 +1,7 @@
+"""
+Analyzes files in the Plaud cabinet to identify related groups (e.g., Audio + Transcript).
+Uses regex normalization to match filenames despite suffixes like 'Summary' or 'Transcript'.
+"""
 
 import sys
 import os

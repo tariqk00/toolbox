@@ -1,3 +1,7 @@
+"""
+Ensures the '99 - Other' folder exists at the root (or specified location).
+Acts as a catch-all for uncategorized items.
+"""
 
 import sys
 import os

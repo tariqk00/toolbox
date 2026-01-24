@@ -1,3 +1,7 @@
+"""
+Performs a global Drive search for files with 'transcript' in the name.
+Useful for locating misplaced Plaud exports.
+"""
 
 import sys
 import os

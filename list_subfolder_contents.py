@@ -1,3 +1,7 @@
+"""
+Performs a deep scan of subfolders within a specific parent (Inbox/Cabinet).
+Used to verify content migration success.
+"""
 
 import sys
 import os

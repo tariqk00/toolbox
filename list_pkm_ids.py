@@ -1,3 +1,7 @@
+"""
+Searches for the 'Plaud' folder specifically within the PKM hierarchy 
+to confirm the correct folder ID for uploads.
+"""
 
 import sys
 import os

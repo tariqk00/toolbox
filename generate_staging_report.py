@@ -1,3 +1,7 @@
+"""
+Parses `sorter_dry_run.csv` to generate a markdown table of proposed file moves.
+Maps Category tags to full human-readable folder paths for review.
+"""
 
 import csv
 import os

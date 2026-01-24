@@ -1,3 +1,7 @@
+"""
+Batch creates standard subfolder structures (Tracking, Paycheck, ID) 
+based on the `folder_config.json` definitions for Finance and Personal categories.
+"""
 
 import sys
 import os

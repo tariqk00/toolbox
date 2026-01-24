@@ -1,3 +1,7 @@
+"""
+Lists files in the 'Incoming & Inbox' folder with metadata (Size, Created Time).
+Useful for identifying large files or stale items.
+"""
 from drive_organizer import get_drive_service, INBOX_ID
 
 def check_sizes():

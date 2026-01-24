@@ -1,3 +1,7 @@
+"""
+Creates the 'Plaud' folder within the PKM (Personal Knowledge Management) structure.
+Destination for raw Plaud note uploads.
+"""
 
 import sys
 import os

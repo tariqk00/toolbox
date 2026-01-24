@@ -1,3 +1,7 @@
+"""
+Creates the '00 - Staging' folder if it does not exist.
+This folder is used as an intermediate holding area before final sorting.
+"""
 
 import sys
 import os

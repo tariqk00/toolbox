@@ -1,3 +1,7 @@
+"""
+Extracts the first 2000 characters of text from PDF files in the 'Stack'.
+Used to prepare data for AI-based analysis of unknown documents.
+"""
 import os
 import json
 import pypdf

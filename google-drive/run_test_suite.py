@@ -1,3 +1,7 @@
+"""
+Verification wrapper. Runs the `scan_folder` logic against a dedicated 
+Test Folder to ensure sorting logic is correct without affecting real data.
+"""
 from drive_organizer import scan_folder
 
 TEST_FOLDER_ID = '1yFgFzqduuqa68RsxLe5-ndX3fvlrvFEO'

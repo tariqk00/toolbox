@@ -1,3 +1,7 @@
+"""
+Locates the 'Plaud' folder within the PKM structure and prints its ID.
+Used to verify the destination for Voice Note uploads.
+"""
 
 import sys
 import os

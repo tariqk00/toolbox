@@ -1,3 +1,7 @@
+"""
+Executes the final migration of files from the 'Stack' to their target categories
+(Personal, Finance, etc.) based on patterns and AI audit results.
+"""
 import os.path
 import re
 from google.oauth2.credentials import Credentials

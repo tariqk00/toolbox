@@ -1,3 +1,7 @@
+"""
+Diagnostic tool to list contents of a specific nested 'Plaud' folder.
+Used to debug duplicate folder structures.
+"""
 
 import sys
 import os

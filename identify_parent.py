@@ -1,3 +1,7 @@
+"""
+Resolves a Google Drive Folder ID to its human-readable Name.
+Useful for identifying "Mystery" parent folders found in logs.
+"""
 
 import sys
 import os

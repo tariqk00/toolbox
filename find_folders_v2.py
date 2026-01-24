@@ -1,3 +1,7 @@
+"""
+Refined diagnostic script that uses the shared `drive_organizer` module 
+to test folder resolution for Finance, Personal, and House categories.
+"""
 
 import sys
 import os

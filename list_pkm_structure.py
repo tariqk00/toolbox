@@ -1,3 +1,6 @@
+"""
+Recursively lists the folder structure of the Second Brain (PKM).
+"""
 
 import sys
 import os

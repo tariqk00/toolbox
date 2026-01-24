@@ -1,3 +1,7 @@
+"""
+Explores the QNAP backup folder structure on Google Drive.
+Identifies the 'Unprocessed' folder for migration planning.
+"""
 import os.path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials

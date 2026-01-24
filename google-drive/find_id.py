@@ -1,3 +1,6 @@
+"""
+Simple utility to look up a Google Drive Folder ID by its name.
+"""
 from drive_organizer import get_drive_service
 
 def find_folder(name):

@@ -1,3 +1,7 @@
+"""
+Executed migration of legacy export files (Kindle, Plaud, Pocket, Evernote)
+from the 'Exports' folder to their new homes in the Second Brain.
+"""
 import os.path
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build

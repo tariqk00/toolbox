@@ -1,3 +1,7 @@
+"""
+Checks for the existence of specific n8n dump files (JSON) in the designated folder.
+Used to verify that upstream automation workflows are functioning.
+"""
 import os.path
 import json
 from google.auth.transport.requests import Request

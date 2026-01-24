@@ -1,3 +1,7 @@
+"""
+Centralized authentication wrapper.
+Delegates to `toolbox.core.google.GoogleAuth` for consistent token handling.
+"""
 import os
 import sys
 

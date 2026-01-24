@@ -1,3 +1,7 @@
+"""
+Processes raw transcripts using Gemini to generate structured "Knowledge Log" entries.
+Uploads the resulting Markdown journal to a 'Gemini' folder in Google Drive.
+"""
 import os
 import sys
 import json

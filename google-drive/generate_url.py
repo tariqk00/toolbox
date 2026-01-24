@@ -1,3 +1,7 @@
+"""
+Generates a new OAuth 2.0 Authorization URL for user consent.
+Run this when needing to re-authenticate or add scopes.
+"""
 from __future__ import print_function
 import os
 from google_auth_oauthlib.flow import InstalledAppFlow

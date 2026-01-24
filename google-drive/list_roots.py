@@ -1,3 +1,6 @@
+"""
+Lists all folders present at the root level of Google Drive.
+"""
 from drive_organizer import get_drive_service
 
 def list_root_folders():

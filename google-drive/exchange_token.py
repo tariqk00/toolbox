@@ -1,3 +1,7 @@
+"""
+One-off utility to exchange an OAuth authorization code for a Refresh Token.
+Used during initial setup or token rotation.
+"""
 from google_auth_oauthlib.flow import InstalledAppFlow
 import sys
 

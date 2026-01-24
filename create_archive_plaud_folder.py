@@ -1,3 +1,7 @@
+"""
+Creates the 'Plaud_Transcripts' folder within the designated Archive directory.
+Used for storing processed or old transcripts.
+"""
 
 import sys
 import os

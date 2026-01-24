@@ -1,4 +1,7 @@
-
+"""
+Checks if a specific Google Drive folder exists by ID.
+Useful for debugging folder accessibility.
+"""
 import sys
 import os
 import json

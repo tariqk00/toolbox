@@ -1,3 +1,7 @@
+"""
+Diagnostic script to verify if high-priority folders (Finance, Personal) 
+are correctly resolvable via the `folder_config.json` mapping.
+"""
 
 import os
 import json

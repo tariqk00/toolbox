@@ -1,3 +1,7 @@
+"""
+Audits a specific 'Stack' folder using regex patterns to categorize files.
+Generates a JSON report of potential categories (Personal, Finance, etc.).
+"""
 import os.path
 import json
 import re

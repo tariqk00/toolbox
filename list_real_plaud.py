@@ -1,3 +1,7 @@
+"""
+Lists and groups files in the authoritative 'Plaud' folder.
+Groups related files (audio + transcripts) by base name.
+"""
 
 import sys
 import os

@@ -1,3 +1,7 @@
+"""
+Creates a 'Transcripts' subfolder within the main Plaud directory.
+Target for text-only transcript exports.
+"""
 
 import sys
 import os

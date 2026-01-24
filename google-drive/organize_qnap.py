@@ -1,3 +1,7 @@
+"""
+Parsing engine for QNAP backups. Reads `qnap_analysis.json` and sorts files 
+into a standard Year/Month structured hierarchy.
+"""
 import os.path
 import json
 import re

@@ -1,3 +1,7 @@
+"""
+Converts the `sorter_dry_run.csv` log into a formatted Markdown report (`dry_run_report.md`).
+Used for reviewing proposed changes before execution.
+"""
 import csv
 import os
 

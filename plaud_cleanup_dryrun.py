@@ -1,3 +1,7 @@
+"""
+Analyzes the state of Plaud files to distinguish between Transcripts (Archive) 
+and Notes (Active Plaud). Generates a cleanup report.
+"""
 
 import sys
 import os

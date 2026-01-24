@@ -1,3 +1,7 @@
+"""
+Lists the top-level "Numbered Buckets" (e.g., 01 - Second Brain, 02 - Personal) 
+in the Drive root.
+"""
 import os.path
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build

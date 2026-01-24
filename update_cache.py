@@ -1,3 +1,7 @@
+"""
+Manually updates the `gemini_cache.json` database based on user overrides 
+provided in a local CSV file.
+"""
 
 import json
 import csv
