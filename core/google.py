@@ -1,3 +1,7 @@
+"""
+Authentication Handler.
+Manages OAuth 2.0 flows, token storage, and Service Object creation for Drive/Gmail/Sheets.
+"""
 import os
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow

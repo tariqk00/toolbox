@@ -1,3 +1,7 @@
+"""
+Documentation Generator.
+Scans the codebase using AST to extract docstrings and builds the `scriptReferences.md` map.
+"""
 import os
 import ast
 import argparse

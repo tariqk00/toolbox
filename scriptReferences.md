@@ -71,7 +71,7 @@ This file is auto-generated. It provides a high-level overview of the available 
 | **[toolbox/google-drive/discover_qnap.py](toolbox/google-drive/discover_qnap.py)** | Explores the QNAP backup folder structure on Google Drive. |
 | |   - `def get_drive_service`: <br>  - `def find_folder`: <br>  - `def list_contents`:  |
 
-| **[toolbox/google-drive/drive_organizer.py](toolbox/google-drive/drive_organizer.py)** |  |
+| **[toolbox/google-drive/drive_organizer.py](toolbox/google-drive/drive_organizer.py)** | Main entry point for the Drive Organizer service. |
 | |   - `class RunStats`: <br>  - `def log_to_sheet`: Logs to Google Sheet.<br>  - `def generate_new_name`: <br>  - `def scan_folder`: <br>  - `def sync_logs_to_drive`:  |
 
 | **[toolbox/google-drive/exchange_token.py](toolbox/google-drive/exchange_token.py)** | One-off utility to exchange an OAuth authorization code for a Refresh Token. |
@@ -115,22 +115,22 @@ This file is auto-generated. It provides a high-level overview of the available 
 | **[toolbox/google-drive/verify_n8n_output.py](toolbox/google-drive/verify_n8n_output.py)** | Checks for the existence of specific n8n dump files (JSON) in the designated folder. |
 | |   - `def verify_drive_folder`:  |
 
-| **[toolbox/google-drive/tests/run_tests.py](toolbox/google-drive/tests/run_tests.py)** |  |
+| **[toolbox/google-drive/tests/run_tests.py](toolbox/google-drive/tests/run_tests.py)** | Test Runner. |
 | |   - `def patch_folder_map`: <br>  - `def load_config`: <br>  - `def verify_file_count`: <br>  - `def verify_file_exists`: <br>  - `def main`:  |
 
-| **[toolbox/google-drive/tests/setup_test_env.py](toolbox/google-drive/tests/setup_test_env.py)** |  |
+| **[toolbox/google-drive/tests/setup_test_env.py](toolbox/google-drive/tests/setup_test_env.py)** | Test Environment Setup. |
 | |   - `def find_or_create_folder`: <br>  - `def delete_children`: <br>  - `def upload_file`: <br>  - `def main`:  |
 
-| **[toolbox/scripts/generate_references.py](toolbox/scripts/generate_references.py)** |  |
+| **[toolbox/scripts/generate_references.py](toolbox/scripts/generate_references.py)** | Documentation Generator. |
 | |   - `def get_docstring_summary`: Extracts the first line or summary from a docstring.<br>  - `def analyze_file`: Parses a Python file and returns a summary of its contents.<br>  - `def main`:  |
 
-| **[toolbox/core/ai.py](toolbox/core/ai.py)** |  |
+| **[toolbox/core/ai.py](toolbox/core/ai.py)** | AI Abstraction Layer. |
 | |   - `def load_api_key`: <br>  - `def load_cache`: <br>  - `def save_cache`: <br>  - `def save_recommendation`: Logs a recommended category path that doesn't have a specific folder yet.<br>  - `def get_ai_supported_mime`: Returns a Gemini-supported MIME type or None if unsupported.<br>  - `def analyze_with_gemini`: Sends content to Gemini-1.5-Flash for analysis using the new google.genai SDK. |
 
-| **[toolbox/core/drive.py](toolbox/core/drive.py)** |  |
+| **[toolbox/core/drive.py](toolbox/core/drive.py)** | Google Drive API Wrapper. |
 | |   - `def load_folder_config`: <br>  - `def get_drive_service`: <br>  - `def get_sheets_service`: <br>  - `def get_category_list`: Builds a flat list of categories and sub-categories.<br>  - `def get_category_prompt_str`: <br>  - `def resolve_folder_id`: Resolves a category string to a folder ID.<br>  - `def get_folder_path`: <br>  - `def download_file_content`: Downloads content to memory.<br>  - `def move_file`:  |
 
-| **[toolbox/core/google.py](toolbox/core/google.py)** |  |
+| **[toolbox/core/google.py](toolbox/core/google.py)** | Authentication Handler. |
 | |   - `class GoogleAuth`:  |
 
 | **[plaud/drive_mcp.py](plaud/drive_mcp.py)** | FastMCP Server implementation for Google Drive. |

@@ -1,3 +1,7 @@
+"""
+Test Runner.
+Executes the integration test suite (Mocked Folder Map + Real Drive Environment) to verify sorting logic.
+"""
 import sys
 import os
 import json

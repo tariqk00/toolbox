@@ -1,3 +1,7 @@
+"""
+AI Abstraction Layer.
+Handles interactions with Gemini (1.5 Flash) via `google-genai` SDK, including Prompting, JSON parsing, and Caching.
+"""
 import os
 import json
 import logging

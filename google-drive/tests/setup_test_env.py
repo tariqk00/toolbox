@@ -1,3 +1,7 @@
+"""
+Test Environment Setup.
+Creates the `_TEST_SUITE_ANTIGRAVITY` folder structure and seeds it with sample files for testing.
+"""
 import sys
 import os
 import io

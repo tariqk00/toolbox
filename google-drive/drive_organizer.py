@@ -1,3 +1,7 @@
+"""
+Main entry point for the Drive Organizer service.
+Orchestrates scanning, AI categorization, and file movement based on `folder_config.json`.
+"""
 import os
 import time
 import argparse
