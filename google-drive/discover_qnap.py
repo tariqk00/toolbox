@@ -8,8 +8,9 @@ from googleapiclient.discovery import build
 SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive.metadata.readonly']
 
 def get_drive_service():
-    cred_path = '/home/takhan/github/tariqk00/plaud/token_drive.json'
-    client_secrets = '/home/takhan/github/tariqk00/plaud/credentials.json'
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    cred_path = os.path.join(base_dir, 'token_drive.json')
+    client_secrets = os.path.join(base_dir, 'credentials.json')
     
     creds = None
     if os.path.exists(cred_path):

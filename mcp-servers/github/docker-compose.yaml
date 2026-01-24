@@ -1,0 +1,13 @@
+services:
+  github-mcp:
+    image: node:18-alpine
+    working_dir: /app
+    environment:
+      - GITHUB_PERSONAL_ACCESS_TOKEN
+    volumes:
+      - ./.env:/app/.env
+    command: >
+      sh -c "npm install -g @modelcontextprotocol/server-github && npx @modelcontextprotocol/server-github"
+    restart: unless-stopped
+    stdin_open: true
+    tty: true

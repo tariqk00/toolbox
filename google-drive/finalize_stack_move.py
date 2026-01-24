@@ -3,7 +3,9 @@ import re
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-TOKEN_PATH = '/home/takhan/github/tariqk00/toolbox/google-drive/token_full_drive.json'
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TOKEN_PATH = os.path.join(BASE_DIR, 'token_full_drive.json')
 SCOPES = ['https://www.googleapis.com/auth/drive']
 STACK_ID = '1HERen6HP4uDLMXV8Vj_cLOJ3xpT6QV2dLuBVm6z9i__is2Jmw0px2qPhy-72NrlsOhXyLB-Y'
 

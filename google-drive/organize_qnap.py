@@ -12,8 +12,12 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 
 def get_drive_service():
     # Use distinct token for full drive access
-    cred_path = '/home/takhan/github/tariqk00/toolbox/google-drive/token_full_drive.json'
-    client_secrets = '/home/takhan/github/tariqk00/plaud/credentials.json'
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    cred_path = os.path.join(base_dir, 'token_full_drive.json')
+    # Assuming credentials.json is also in the same dir or passed in. 
+    # The original path pointed to ../plaud/credentials.json which is weird. 
+    # Let's assume it's in the local dir for now or use a relative path.
+    client_secrets = os.path.join(base_dir, 'credentials.json')
     
     creds = None
     if os.path.exists(cred_path):

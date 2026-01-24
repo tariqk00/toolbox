@@ -1,32 +1,22 @@
-from google_auth_oauthlib.flow import InstalledAppFlow
 import os
+import sys
 
-SCOPES = ['https://www.googleapis.com/auth/drive']
-CREDENTIALS_FILE = '/home/takhan/github/tariqk00/toolbox/google-drive/credentials.json'
-TOKEN_FILE = '/home/takhan/github/tariqk00/toolbox/google-drive/token_full_drive.json'
+# Ensure local toolbox package is importable if running script directly
+current_dir = os.path.dirname(os.path.abspath(__file__))
+repo_root = os.path.dirname(os.path.dirname(current_dir))
+if repo_root not in sys.path:
+    sys.path.append(repo_root)
+
+from toolbox.core.google import GoogleAuth
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def authenticate():
-    print("Starting authentication flow...")
-    if not os.path.exists(CREDENTIALS_FILE):
-        print(f"Error: {CREDENTIALS_FILE} not found.")
-        return
-
-    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-    # prompt='consent' forces a refresh token to be returned
-    flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
-    
-    auth_url, _ = flow.authorization_url(prompt='consent')
-    
-    print(f"\nPlease visit this URL to authorize this application:\n{auth_url}\n")
-    
-    code = input("Enter the authorization code: ").strip()
-    
-    flow.fetch_token(code=code)
-    
-    with open(TOKEN_FILE, 'w') as token:
-        token.write(flow.credentials.to_json())
-    
-    print(f"\nAuthentication successful! Token saved to {TOKEN_FILE}")
+    print("Starting authentication flow via Shared Core...")
+    auth = GoogleAuth(base_dir=BASE_DIR)
+    # We pass relative paths assuming base_dir is toolbox/google-drive
+    creds = auth.get_credentials(token_filename='token_full_drive.json', credentials_filename='credentials.json')
+    print(f"Authentication successful! Scopes: {creds.scopes}")
 
 if __name__ == '__main__':
     authenticate()
