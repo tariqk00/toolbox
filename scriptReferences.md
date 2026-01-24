@@ -63,17 +63,17 @@ This file is auto-generated. It provides a high-level overview of the available 
 | **[toolbox/lib/google_api.py](toolbox/lib/google_api.py)** | Authentication Handler. |
 | |   - `class GoogleAuth`:  |
 
-| **[plaud/drive_mcp.py](plaud/drive_mcp.py)** | FastMCP Server implementation for Google Drive. |
-| |   - `def get_drive_service`: <br>  - `def get_or_create_folder`: Get the ID of a folder path (e.g., 'Filing Cabinet/Plaud').<br>  - `def upload_file`: Upload a text file (like Markdown) to a specific Google Drive folder.<br>  - `def upload_binary_file`: Upload a binary file (from base64 string) to a specific Google Drive folder. |
-
-| **[plaud/gmail_mcp.py](plaud/gmail_mcp.py)** | FastMCP Server implementation for Gmail. |
-| |   - `def get_gmail_service`: <br>  - `def search_plaud_emails`: Search for Plaud.ai emails matching the specific criteria.<br>  - `def get_email_content`: Retrieve the full content of an email, including body and attachment metadata.<br>  - `def download_attachment`: Download an attachment by ID and return the base64 encoded content.<br>  - `def archive_email_thread`: Archive a specific email thread by removing the INBOX label. |
-
-| **[plaud/list_files.py](plaud/list_files.py)** | Diagnostic script to list files in the 'Filing Cabinet/Plaud' folder |
+| **[plaud/bin/list_files.py](plaud/bin/list_files.py)** |  |
 | |   - `def list_plaud_files`:  |
 
-| **[plaud/plaud_automation.py](plaud/plaud_automation.py)** | Main automation workflow for Plaud.ai. |
+| **[plaud/bin/refresh_tokens.py](plaud/bin/refresh_tokens.py)** |  |
+| |   - `def refresh_gmail`: <br>  - `def refresh_drive`:  |
+
+| **[plaud/src/automation.py](plaud/src/automation.py)** | Main automation workflow for Plaud.ai. |
 | |   - `def format_date_time`: <br>  - `def main`:  |
 
-| **[plaud/refresh_tokens_console.py](plaud/refresh_tokens_console.py)** | Interactive console tool to manually refresh Google OAuth tokens |
-| |   - `def refresh_gmail`: <br>  - `def refresh_drive`:  |
+| **[plaud/src/mcp_server/drive.py](plaud/src/mcp_server/drive.py)** | FastMCP Server implementation for Google Drive. |
+| |   - `def get_drive_service`: <br>  - `def get_or_create_folder`: Get the ID of a folder path (e.g., 'Filing Cabinet/Plaud').<br>  - `def upload_file`: Upload a text file (like Markdown) to a specific Google Drive folder.<br>  - `def upload_binary_file`: Upload a binary file (from base64 string) to a specific Google Drive folder. |
+
+| **[plaud/src/mcp_server/gmail.py](plaud/src/mcp_server/gmail.py)** | FastMCP Server implementation for Gmail. |
+| |   - `def get_gmail_service`: <br>  - `def search_plaud_emails`: Search for Plaud.ai emails matching the specific criteria.<br>  - `def get_email_content`: Retrieve the full content of an email, including body and attachment metadata.<br>  - `def download_attachment`: Download an attachment by ID and return the base64 encoded content.<br>  - `def archive_email_thread`: Archive a specific email thread by removing the INBOX label. |
