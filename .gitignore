@@ -20,6 +20,7 @@ pip-delete-this-directory.txt
 *.key
 credentials.json
 token.json
+token_full_drive.json
 client_secret*.json
 
 # Configs & Cache
