@@ -21,15 +21,8 @@
     {
       "parameters": {
         "url": "https://readwise.io/api/v3/list/",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "Token PzINe1pv4aecqUlGp9hMU7oUy8xV2n8jDDP86SfhcQkc91Uw7d"
-            }
-          ]
-        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
@@ -49,7 +42,13 @@
       "name": "Fetch Readwise",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [600, 300]
+      "position": [600, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Readwise API"
+        }
+      }
     },
     {
       "parameters": {
