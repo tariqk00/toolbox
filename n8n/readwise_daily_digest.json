@@ -1,0 +1,187 @@
+{
+  "name": "Readwise Reader Daily Unread Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-id",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://readwise.io/api/v3/list/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Token PzINe1pv4aecqUlGp9hMU7oUy8xV2n8jDDP86SfhcQkc91Uw7d"
+            }
+          ]
+        },
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "location",
+                "value": "new"
+              },
+              {
+                "name": "category",
+                "value": "article"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fetch-readwise-id",
+      "name": "Fetch Readwise",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = $input.all()[0].json.results || [];\n\n// Filter truly unread articles (reading_progress = 0)\n// Sort by saved_at descending (newest first)\nconst filtered = results\n  .filter(doc => (doc.reading_progress || 0) === 0)\n  .sort((a, b) => new Date(b.saved_at) - new Date(a.saved_at));\n\n// Limit to top 3\nconst top3 = filtered.slice(0, 3);\n\nif (top3.length === 0) {\n  return [{ json: { stop: true, message: \"No new articles found.\" } }];\n}\n\n// Aggregate into a single string for LLM\nconst articleText = top3.map((doc, i) => {\n  return `Article ${i+1}:\nTitle: ${doc.title}\nAuthor: ${doc.author || 'Unknown'}\nURL: ${doc.url}\nOriginal Summary: ${doc.summary || 'None'}`;\n}).join('\\n\\n---\\n\\n');\n\nreturn [{\n  json: {\n    stop: false,\n    articleCount: top3.length,\n    content: articleText\n  }\n}];"
+      },
+      "id": "filter-and-aggregate-id",
+      "name": "Filter & Aggregate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a helpful reading assistant. Generate a high-quality daily digest for the following articles from Readwise Reader.\n\nArticles:\n{{ $json.content }}\n\nPlease provide a concise 2-sentence summary for each article, highlighting the key takeaway. \n\nFormat the output EXACTLY like this for Google Chat (using markdown):\n📚 **Daily Reading Digest**\n\n---\n\n1. **[Title]** by *[Author]*\n📝 [Your 2-sentence summary]\n🔗 [Read More]([URL])\n\n---\n\n2. **[Title]** ...",
+        "options": {}
+      },
+      "id": "summarize-id",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "spaceId": "spaces/AAQARNsc07M",
+        "text": "={{ $json.output }}"
+      },
+      "id": "post-to-chat-id",
+      "name": "Google Chat",
+      "type": "n8n-nodes-base.googleChat",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.stop }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-if-empty-id",
+      "name": "Check If Empty",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        150
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Readwise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Readwise": {
+      "main": [
+        [
+          {
+            "node": "Filter & Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter & Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Check If Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Empty": {
+      "main": [
+        [],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Google Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
