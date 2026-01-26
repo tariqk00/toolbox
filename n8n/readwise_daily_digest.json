@@ -125,16 +125,17 @@
     },
     {
       "parameters": {
-        "resource": "message",
-        "spaceId": "spaces/AAQARNsc07M",
-        "messageUi": {
-          "text": "={{ $json.output }}"
-        }
+        "method": "POST",
+        "url": "https://chat.googleapis.com/v1/spaces/AAQAwBUX5QU/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=qPz5eaQ-0Rd-5wpo3NU1nSvpnp2yK-dz3R1cgT1rKoo",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.output }) }}",
+        "options": {}
       },
-      "id": "google-chat",
-      "name": "Google Chat",
-      "type": "n8n-nodes-base.googleChat",
-      "typeVersion": 1,
+      "id": "post-to-chat",
+      "name": "Post to Google Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [1400, 400]
     }
   ],
@@ -158,7 +159,7 @@
       "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
     },
     "AI Agent": {
-      "main": [[{ "node": "Google Chat", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Post to Google Chat", "type": "main", "index": 0 }]]
     }
   },
   "settings": {
