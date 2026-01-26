@@ -1,5 +1,5 @@
 {
-  "name": "Readwise Daily Digest v2",
+  "name": "Readwise Daily Digest v3",
   "nodes": [
     {
       "parameters": {
@@ -102,13 +102,26 @@
     },
     {
       "parameters": {
-        "modelName": "models/gemini-2.0-flash"
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gemini-2.0-flash"
+        },
+        "options": {
+          "baseURL": "https://generativelanguage.googleapis.com/v1beta/openai"
+        }
       },
-      "id": "gemini-model",
-      "name": "Gemini Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1,
-      "position": [1200, 600]
+      "id": "openai-gemini-model",
+      "name": "OpenAI Chat Model (Gemini)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [1200, 600],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Gemini via OpenAI API"
+        }
+      }
     },
     {
       "parameters": {
@@ -141,7 +154,7 @@
         [{ "node": "AI Agent", "type": "main", "index": 0 }]
       ]
     },
-    "Gemini Chat Model": {
+    "OpenAI Chat Model (Gemini)": {
       "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
     },
     "AI Agent": {
