@@ -3,7 +3,7 @@
 # Automates the deployment workflow: Commit -> Push -> Pull (NUC) -> Restart Service
 
 NUC_HOST="tariqk@172.30.0.169"
-REMOTE_REPO="/home/tariqk/github/tariqk00"
+REMOTE_REPO="/home/tariqk/github/tariqk00/toolbox"
 SERVICE_NAME="ai-sorter.service"
 
 echo "=== Deployment Start: $(date) ==="
