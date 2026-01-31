@@ -9,9 +9,22 @@ import time
 import re
 
 # Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from toolbox.lib.drive_utils import get_drive_service, FOLDER_MAP
 from toolbox.services.drive_organizer.main import scan_folder
+from unittest.mock import patch
+
+# Mock AI Response
+def mock_analyze(*args, **kwargs):
+    filename = args[2] if len(args) > 2 else kwargs.get('filename', '')
+    if 'work_log_disa' in filename:
+        return {'doc_date': '2024-01-10', 'entity': 'DISA', 'category': 'Work', 'summary': 'Log', 'confidence': 'High'}
+    if 'receipt_home_depot' in filename:
+        return {'doc_date': '2024-01-13', 'entity': 'Home Depot', 'category': 'Personal/Receipts', 'summary': 'Paint', 'confidence': 'High'}
+    if 'Already_Organized' in filename:
+         return {'doc_date': '2024-01-01', 'entity': 'Me', 'category': 'PKM', 'summary': 'Notes', 'confidence': 'High'}
+    return {'doc_date': '0000-00-00', 'entity': 'Unknown', 'category': 'Other', 'summary': 'Unknown', 'confidence': 'Low'}
+
 
 # --- MOCK THE FOLDER MAP FOR TESTING ---
 # We need to inject the TEST IDs into the FOLDER_MAP used by scan_folder
@@ -69,6 +82,8 @@ def main():
     patch_folder_map(config)
     
     # 1. TEST INBOX MODE
+    import toolbox.services.drive_organizer.main as main_module
+    
     print("\n=== STEP 1: Testing INBOX Mode (Auto-Sort) ===")
     # Target: Test Inbox
     # Expectation: 3 files processed. 
@@ -76,7 +91,7 @@ def main():
     #   - receipt -> Moved to Archive (Personal)
     #   - already_organized -> Moved to Archive (PKM) because "Move-Always" logic
     
-    scan_folder(config['inbox_id'], dry_run=False, csv_path='test_run.csv', mode='inbox')
+    scan_folder(config['inbox_id'], dry_run=False, csv_path='test_run.csv', mode='inbox', service=service)
     
     print("\n    ...Verifying Inbox moves...")
     # Inbox should be empty
@@ -99,7 +114,7 @@ def main():
     # For now, we rely on visual log inspection or just that it doesn't crash.
     # But strictly, we want to ensure files do NOT change names or move.
     
-    scan_folder(config['archive_id'], dry_run=True, csv_path='test_maintenance.csv', mode='scan') # Default mode is Maintenance
+    scan_folder(config['archive_id'], dry_run=True, csv_path='test_maintenance.csv', mode='scan', service=service) # Default mode is Maintenance
     
     print("\n    ...Verifying Maintenance Safety...")
     # Verify 'Protected_File' still exists with same name

@@ -13,7 +13,8 @@ import re
 # Import Core Modules
 # Ensure toolbox package is in path
 current_dir = os.path.dirname(os.path.abspath(__file__))
-repo_root = os.path.dirname(os.path.dirname(current_dir))
+# Going up 3 levels: drive_organizer -> services -> toolbox -> tariqk00
+repo_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
 if repo_root not in sys.path:
     sys.path.append(repo_root)
 
@@ -114,8 +115,15 @@ def generate_new_name(analysis, original_name, created_time_str):
     
     return f"{date} - {safe_entity} - {safe_summary}{ext}"
 
-def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan', parent_context="Inbox"):
-    service = get_drive_service()
+def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan', parent_context="Inbox", service=None):
+    if not service:
+        service = get_drive_service()
+    
+    # Init Logger to file
+    if not dry_run:
+        fh = RotatingFileHandler(LOG_FILE, maxBytes=10*1024*1024, backupCount=5)
+        fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(fh)
     
     # Get actual folder name
     folder_context = parent_context
@@ -151,7 +159,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
 
         # Recursion
         if mime == 'application/vnd.google-apps.folder':
-            scan_folder(fid, dry_run, csv_path, limit, mode, parent_context=f"{folder_context}/{name}")
+            scan_folder(fid, dry_run, csv_path, limit, mode, parent_context=f"{folder_context}/{name}", service=service)
             continue
             
         try:
