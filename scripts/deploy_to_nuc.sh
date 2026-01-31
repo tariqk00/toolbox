@@ -25,9 +25,9 @@ fi
 
 # 3. Pull on NUC
 echo "🔄 Updating NUC ($NUC_HOST)..."
-ssh $NUC_HOST "cd $REMOTE_REPO && git pull"
+ssh $NUC_HOST "cd $REMOTE_REPO && git fetch --all && git reset --hard origin/master"
 if [ $? -ne 0 ]; then
-    echo "❌ SSH Git pull failed."
+    echo "❌ SSH Git pull/reset failed."
     exit 1
 fi
 
