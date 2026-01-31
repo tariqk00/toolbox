@@ -44,3 +44,4 @@ thumbs.db
 # Agentic
 .agent/brain/
 .agent/memory/
+google-drive/tests/test_config.json

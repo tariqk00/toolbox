@@ -1,0 +1,7 @@
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+google-genai>=1.0.0
+# google-generativeai  # Deprecated
+PyYAML
+python-dotenv
