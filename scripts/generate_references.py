@@ -63,7 +63,7 @@ def main():
     ]
 
     # Dirs to include
-    include_dirs = ['toolbox/bin', 'toolbox/services', 'toolbox/lib', 'plaud']
+    include_dirs = ['toolbox/bin', 'toolbox/services', 'toolbox/lib', 'plaud', 'toolbox/scripts', 'setup/scripts', 'toolbox/n8n']
     # Files to exclude (common noise)
     exclude_files = ['__init__.py', 'setup.py']
 
