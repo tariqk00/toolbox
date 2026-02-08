@@ -8,7 +8,7 @@ import os
 import json
 
 # Add toolbox to path
-sys.path.insert(0, '/home/takhan/github/tariqk00')
+sys.path.insert(0, '/home/tariqk/repos/personal')
 
 from toolbox.lib.drive_utils import get_drive_service
 
