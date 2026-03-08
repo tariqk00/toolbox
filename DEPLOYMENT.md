@@ -24,5 +24,5 @@
 
 ## Service Names
 
-- **Chromebook**: `drive-sorter.service` (DISABLED)
+- **Chromebook**: `ai-sorter.service` (DISABLED)
 - **NUC**: `ai-sorter.service` (ACTIVE)
