@@ -17,11 +17,6 @@ logger = logging.getLogger("DriveSorter.Drive")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'folder_config.json')
 
-# Constants
-INBOX_ID = '1c-7Wv9J-FPpc3tph7Ax1xx5bMI-5jcaG'
-METADATA_FOLDER_ID = '1kwJ59bxRgYJgtv1c3sO-hhrvfIeD0JW0'
-HISTORY_SHEET_ID = '1N8xlrcCnj97uGPssXnGg_-1t2SvGZlnocc_7BNO28dY'
-
 def load_folder_config():
     try:
         if os.path.exists(CONFIG_PATH):
@@ -33,6 +28,11 @@ def load_folder_config():
 
 FOLDER_CONFIG = load_folder_config()
 FOLDER_MAP = FOLDER_CONFIG.get('mappings', {})
+
+_system = FOLDER_CONFIG.get('system', {})
+INBOX_ID = _system.get('inbox_id', '')
+METADATA_FOLDER_ID = _system.get('metadata_folder_id', '')
+HISTORY_SHEET_ID = _system.get('history_sheet_id', '')
 
 def get_drive_service():
     auth = GoogleAuth(base_dir=BASE_DIR)
@@ -54,7 +54,7 @@ def get_category_list():
         subcats = data.get('subcategories', {})
         for sub in subcats.keys():
             categories.append(f"{parent}/{sub}")
-    return sorted(list(set(categories + ["Other"])))
+    return sorted(list(set(categories + ["Other", "Uncategorized"])))
 
 def get_category_prompt_str():
     return ", ".join(get_category_list())

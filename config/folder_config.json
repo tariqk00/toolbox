@@ -1,39 +1,67 @@
 {
+  "system": {
+    "inbox_id": "1c-7Wv9J-FPpc3tph7Ax1xx5bMI-5jcaG",
+    "metadata_folder_id": "1kwJ59bxRgYJgtv1c3sO-hhrvfIeD0JW0",
+    "history_sheet_id": "1N8xlrcCnj97uGPssXnGg_-1t2SvGZlnocc_7BNO28dY",
+    "reports_folder_id": "1BsNuuDngxR1gdUlb8T0tKmMCz1ZAjJvO"
+  },
   "mappings": {
-    "Finance": {
-      "id": "1tKdysRukqbkzDuI1fomvSrYDhA3cr2mx",
+    "PKM": {
+      "id": "1HNKo72TkLeurAi6g7X0C90OzqF2z3YB7",
       "subcategories": {
-        "Receipts": "13-dNYJ-UaRsrGfB80bip6jOkMg9081PT",
-        "Taxes": "0B5ksOv75_RfJOE1BV2RYOE15anc",
-        "Statements": "15GoIrKjwACd7bQMOSj4iJ1vc6HZfke8f",
-        "Insurance": "1q7T8zFSvt6EZqpKV0VdyO-TB4TsFcHe0",
-        "Invoices": "1TZlGjfSr8dc8thWqM2rxWpUMVgXBxmBA",
-        "Tracking": "1v5WcVF-y3cObTYC1AY8ixANbMHgrYSb_",
-        "Paycheck": "1U03vqs0KEK8PODoQmMXDpZ0ApxRDxRKH"
+        "Gemini": "1UD26uo314ds0BJzmzLuGnrhpLJ0LtxKx",
+        "Plaud": "1lDD6SUh918U6oXjOBB5I9SjFVDAlqjzR",
+        "Work": "1zX-rciEeZnHsRrAwuxM8H8YC9bdnMVCa",
+        "Synthesized": "133w43PP_9nmeMnY7gBdpVnmuTO0D7K7u",
+        "Archive": "1BNwYqECrR9oPDC5os5uZcxKbaL7lRCoe",
+        "Notes": "1747WG140Q8yLb_UKiVs_7iXdpES09jSe"
       }
     },
-    "Health": { "id": "1yruR1fC4TAR4U-Irb48p7tIERCDgg_PI" },
-    "Library": { "id": "1SHzgwpYJ8K1d9wGNHQPGP68zVIz13ymI" },
     "Personal": {
       "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX",
       "subcategories": {
-        "ID": "1yZQudKliU0Yn_28i-MNYKSKr2glXw8HI"
-      } 
+        "ID": "1yZQudKliU0Yn_28i-MNYKSKr2glXw8HI",
+        "Vehicles": "1PghVutZiim9b6rUnWLx_MXFZB0nVgahg",
+        "Personal": "0B5ksOv75_RfJcHd6VGdpdVBrUFE",
+        "House": "1-rF5epobcw3X3tC4GZHyF1BfR5fHnMW-",
+        "Vital Documents": "1Fiin7_cnFINez5fak-AH_W8opHQ9nYpd",
+        "Kids": "0B5ksOv75_RfJbXFRNWo2aFdzWEE"
+      }
     },
-    "House": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
-    "Auto": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
-    "Education": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX" },
-    "PKM": {
-        "id": "1HNKo72TkLeurAi6g7X0C90OzqF2z3YB7",
-        "subcategories": {
-            "Plaud": "1lDD6SUh918U6oXjOBB5I9SjFVDAlqjzR",
-            "Gemini": "1UD26uo314ds0BJzmzLuGnrhpLJ0LtxKx",
-            "Transcripts": "1ZZf0FAoIXR6T_PzlibUEp7fQxiUbrZST"
-        }
+    "Finance": {
+      "id": "1tKdysRukqbkzDuI1fomvSrYDhA3cr2mx",
+      "subcategories": {
+        "Paycheck": "1U03vqs0KEK8PODoQmMXDpZ0ApxRDxRKH",
+        "Tracking": "1v5WcVF-y3cObTYC1AY8ixANbMHgrYSb_",
+        "Invoices": "1TZlGjfSr8dc8thWqM2rxWpUMVgXBxmBA",
+        "Insurance": "1q7T8zFSvt6EZqpKV0VdyO-TB4TsFcHe0",
+        "Financial": "12N3fm0uz5tIngXxkPoStTukgSdS0vgD8",
+        "Receipts": "1Di1tLsyPz0-LkUubFM1O58GDUstS0aD5",
+        "Taxes": "0B5ksOv75_RfJOE1BV2RYOE15anc",
+        "Statements": "15GoIrKjwACd7bQMOSj4iJ1vc6HZfke8f"
+      }
     },
-    "Source_Material": { "id": "1BNwYqECrR9oPDC5os5uZcxKbaL7lRCoe" },
-    "Work": { "id": "1zX-rciEeZnHsRrAwuxM8H8YC9bdnMVCa" },
-    "Other": { "id": "1dGVQsCzMdXDYl0VaEomEOysWcTlNUxmA" },
-    "Staging": { "id": "1sJD2HGHXD7biGsiQg535xxw_luFfsD8J" }
+    "Health": {
+      "id": "1yruR1fC4TAR4U-Irb48p7tIERCDgg_PI"
+    },
+    "Media": {
+      "id": "1xy8eHkjye7Dlv89sPamiUnvkt2_OWVOL"
+    },
+    "Library": {
+      "id": "1SHzgwpYJ8K1d9wGNHQPGP68zVIz13ymI"
+    },
+    "Archive": {
+      "id": "1noldMPM1SfoOvj2qqcUFfjJiB3tI8wso",
+      "subcategories": {
+        "Source_Dumps": "1Go0kzB0hPFdWbn1Z4Vt0D2tY4sIxI92R",
+        "Sandbox": "1V7s_Jfc8G1v4CtvpBZdnHB2SQuu4pcwe"
+      }
+    },
+    "Staging": {
+      "id": "1sJD2HGHXD7biGsiQg535xxw_luFfsD8J"
+    },
+    "Other": {
+      "id": "1dGVQsCzMdXDYl0VaEomEOysWcTlNUxmA"
+    }
   }
 }
