@@ -24,12 +24,20 @@ CACHE_PATH = os.path.join(CONFIG_DIR, 'gemini_cache.json')
 RECOMMENDATIONS_PATH = os.path.join(CONFIG_DIR, 'category_recommendations.json')
 
 def load_api_key():
+    # 1. Try environment variable
+    env_key = os.getenv('GEMINI_API_KEY')
+    if env_key:
+        return env_key
+        
+    # 2. Try file fallback
     try:
-        with open(SECRET_PATH, 'r') as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        logger.error(f"Error: Gemini API Key not found in {SECRET_PATH}")
-        return None
+        if os.path.exists(SECRET_PATH):
+            with open(SECRET_PATH, 'r') as f:
+                return f.read().strip()
+    except Exception as e:
+        logger.error(f"Error reading {SECRET_PATH}: {e}")
+        
+    return None
 
 GEMINI_API_KEY = load_api_key()
 
@@ -74,27 +82,27 @@ def save_recommendation(category_path):
 
 # --- PROMPT ---
 SYSTEM_PROMPT = """
-You are a personal file assistant. Analyze the image or document provided.
+You are a highly capable Personal Document Assistant. Your goal is to analyze the provided content (image or text) and categorize it for a long-term digital archive.
+
 CONTEXT: {context_hint}
 
-Extract the following fields into a pure JSON object (no markdown formatting):
-{{
-  "doc_date": "YYYY-MM-DD",
-  "entity": "Name of Vendor/Person/Organization",
-  "category": "One of {categories}",
-  "summary": "Very short 3-5 word description",
-  "confidence": "High/Medium/Low"
-}}
+EXTRACT the following fields into a pure JSON object:
+- "doc_date": Use YYYY-MM-DD format. Prioritize the actual document date. If not found, use the creation date provided in context or '0000-00-00'.
+- "entity": The primary organization, person, or vendor. 
+    - CRITICAL: For bank statements or transaction lists, the entity MUST be the Institution (e.g., "Chase", "Verizon"). 
+    - CRITICAL: Do NOT pick a merchant from a random row in a spreadsheet as the entity.
+- "category": Choose the MOST SPECIFIC category from this list: {categories}. 
+    - Format: "Parent/Subcategory" or just "Parent".
+- "summary": A concise 3-5 word description (e.g., "Monthly Internet Bill", "Property Tax Assessment").
+- "reasoning": A brief 1-sentence explanation of why you chose this category/entity.
+- "confidence": "High", "Medium", or "Low".
 
-Rules:
-- Be as specific as possible with the category (e.g. use 'Finance/Receipts' instead of just 'Finance' if appropriate).
-- If the file is a bank activity CSV, credit card statement, or multi-transaction spreadsheet, the "entity" MUST be the Bank or Institution name (e.g., "Chase", "Amex", "Capital One"). Do NOT pick a merchant from a random row as the entity.
-- Categorize bank activity/statements as "Finance/Statements".
-- If date is ambiguous, use the creation date or null.
-- "entity" should be clean (e.g. "Home Depot", not "THE HOME DEPOT INC").
-- "summary" should be specific (e.g. "Paint Supplies", not "Shopping").
-- Use category "Source_Material" for raw transcripts or logs.
-- Use category "PKM" for notes, journals, or summaries.
+RULES:
+1. Pure JSON only. No markdown formatting.
+2. If "confidence" is Medium or Low, explain why in "reasoning".
+3. For medical docs, use "Health". 
+4. For ID cards/passports, use "Personal/ID".
+5. For generic transcripts/logs not matching other rules, use "Archive/Source_Dumps".
 """
 
 def get_ai_supported_mime(mime_type, filename=None):
@@ -104,12 +112,16 @@ def get_ai_supported_mime(mime_type, filename=None):
     if 'pdf' in mime_type: return 'application/pdf'
     if 'image' in mime_type: return 'image/jpeg' 
     
-    # 2. Known Text types
+    # 2. Google Apps (exported by drive_utils)
+    if 'vnd.google-apps.document' in mime_type: return 'text/plain'
+    if 'vnd.google-apps.spreadsheet' in mime_type: return 'application/pdf'
+    
+    # 3. Known Text types
     supported_text = ['text/plain', 'text/csv', 'text/markdown', 'text/html', 'application/json']
     if any(st in mime_type for st in supported_text):
         return 'text/plain'
         
-    # 3. Handle octet-stream/unknown via extension
+    # 4. Handle octet-stream/unknown via extension
     if mime_type == 'application/octet-stream' or '/' not in mime_type:
         ext = os.path.splitext(filename or "")[1].lower()
         if ext in ['.txt', '.csv', '.md', '.log']:

@@ -1,0 +1,217 @@
+{
+    "data": {
+        "updatedAt": "2026-03-01T18:00:00.000Z",
+        "createdAt": "2026-02-13T12:01:51.198Z",
+        "id": "DSTR4ekGXW7VhLmz",
+        "name": "Plaud End-to-End (Simple)",
+        "description": "Simplified workflow using Subject",
+        "active": true,
+        "isArchived": false,
+        "nodes": [
+            {
+                "parameters": {
+                    "pollTimes": {
+                        "item": [
+                            {
+                                "mode": "everyMinute"
+                            }
+                        ]
+                    },
+                    "filters": {
+                        "readStatus": "unread",
+                        "sender": "no-reply@plaud.ai"
+                    }
+                },
+                "id": "trigger-gmail",
+                "name": "Gmail Trigger",
+                "type": "n8n-nodes-base.gmailTrigger",
+                "typeVersion": 1,
+                "position": [
+                    272,
+                    304
+                ],
+                "credentials": {
+                    "gmailOAuth2": {
+                        "id": "AVbl1VG4EuUYSNnR",
+                        "name": "Gmail account"
+                    }
+                }
+            },
+            {
+                "parameters": {
+                    "operation": "getAll",
+                    "limit": 10,
+                    "filters": {
+                        "q": "from:no-reply@plaud.ai is:unread label:INBOX"
+                    },
+                    "options": {
+                        "downloadAttachments": true
+                    }
+                },
+                "id": "gmail-fetch",
+                "name": "Gmail Fetch",
+                "type": "n8n-nodes-base.gmail",
+                "typeVersion": 2.1,
+                "position": [
+                    272,
+                    104
+                ],
+                "credentials": {
+                    "gmailOAuth2": {
+                        "id": "AVbl1VG4EuUYSNnR",
+                        "name": "Gmail account"
+                    }
+                }
+            },
+            {
+                "parameters": {
+                    "rule": {
+                        "interval": [
+                            {
+                                "field": "days"
+                            }
+                        ]
+                    }
+                },
+                "id": "schedule-trigger",
+                "name": "Schedule Trigger",
+                "type": "n8n-nodes-base.scheduleTrigger",
+                "typeVersion": 1.2,
+                "position": [
+                    42,
+                    104
+                ]
+            },
+            {
+                "parameters": {
+                    "jsCode": "const results = [];\nconst input = $input.all();\nif (input.length === 0) return [];\n\n// 1. Locate original email data (handles both trigger paths)\nlet gmailNode;\ntry {\n    gmailNode = $('Gmail Fetch');\n    if(!gmailNode.first()) throw new Error();\n} catch(e) {\n    gmailNode = $('Gmail Trigger');\n}\n\nconst gmailData = gmailNode.first().json;\nconst gmailBinary = gmailNode.first().binary || {};\nconst messageId = gmailData.id;\n\n// 2. Parse Subject for Filename\nlet subject = gmailData.subject || 'Untitled Plaud Note';\n// Clean common prefix and illegal filename chars\nsubject = subject.replace(/\\[PLAUD-AutoFlow\\]\\s*/, '').replace(/[/\\\\?%*:|\"<>]/g, '-').trim();\n\nconst currentDate = new Date().toISOString().split('T')[0];\n// e.g. \"2024-03-01 - My Meeting Title\"\nconst baseName = `${currentDate} - ${subject}`;\n\n// 3. Create Email Body Item (Summary)\nconst bodyText = gmailData.textAsHtml || gmailData.text || \"No Content\";\nconst bodyFileName = `${baseName} Summary.html`;\n\nresults.push({\n    json: {\n        targetFolder: \"1lDD6SUh918U6oXjOBB5I9SjFVDAlqjzR\", // Base PKM/Plaud folder\n        finalFileName: bodyFileName,\n        messageId: messageId\n    },\n    binary: {\n        data: await this.helpers.prepareBinaryData(Buffer.from(bodyText), bodyFileName, 'text/html')\n    }\n});\n\n// 4. Create Attachment Items (Audio/Transcripts)\nfor (const key of Object.keys(gmailBinary)) {\n    const bin = gmailBinary[key];\n    const isTranscript = bin.fileName?.toLowerCase().includes('transcript');\n    const typeLabel = isTranscript ? 'Transcript' : 'Recording';\n    \n    // Transcripts go to a specific subfolder, audio goes to base folder\n    const targetFolder = isTranscript ? \"1ZZf0FAoIXR6T_PzlibUEp7fQxiUbrZST\" : \"1lDD6SUh918U6oXjOBB5I9SjFVDAlqjzR\";\n    const finalFileName = `${baseName} ${typeLabel}.${bin.fileExtension}`;\n\n    results.push({\n        json: {\n            targetFolder: targetFolder,\n            finalFileName: finalFileName,\n            messageId: messageId\n        },\n        binary: {\n            data: { ...bin, fileName: finalFileName }\n        }\n    });\n}\n\nreturn results;"
+                },
+                "id": "prepare-routing",
+                "name": "Prepare Routing",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 1,
+                "position": [
+                    512,
+                    304
+                ]
+            },
+            {
+                "parameters": {
+                    "name": "={{ $json.finalFileName }}",
+                    "driveId": {
+                        "__rl": true,
+                        "mode": "list",
+                        "value": "My Drive"
+                    },
+                    "folderId": {
+                        "__rl": true,
+                        "mode": "list",
+                        "value": "root",
+                        "cachedResultName": "/ (Root folder)"
+                    },
+                    "options": {}
+                },
+                "id": "save-to-drive",
+                "name": "Save to Drive",
+                "type": "n8n-nodes-base.googleDrive",
+                "typeVersion": 3,
+                "position": [
+                    752,
+                    304
+                ],
+                "credentials": {
+                    "googleDriveOAuth2Api": {
+                        "id": "G8O3ahUTehXWQ76O",
+                        "name": "Google Drive account"
+                    }
+                }
+            },
+            {
+                "parameters": {
+                    "operation": "removeLabels",
+                    "messageId": "={{ $json.messageId }}",
+                    "labelIds": [
+                        "INBOX"
+                    ]
+                },
+                "id": "archive-email",
+                "name": "Archive Email",
+                "type": "n8n-nodes-base.gmail",
+                "typeVersion": 2,
+                "position": [
+                    992,
+                    304
+                ],
+                "webhookId": "230382b1-5af2-4b45-b128-28ae998d91f3",
+                "credentials": {
+                    "gmailOAuth2": {
+                        "id": "AVbl1VG4EuUYSNnR",
+                        "name": "Gmail account"
+                    }
+                }
+            }
+        ],
+        "connections": {
+            "Gmail Trigger": {
+                "main": [
+                    [
+                        {
+                            "node": "Prepare Routing",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Gmail Fetch": {
+                "main": [
+                    [
+                        {
+                            "node": "Prepare Routing",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Schedule Trigger": {
+                "main": [
+                    [
+                        {
+                            "node": "Gmail Fetch",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Prepare Routing": {
+                "main": [
+                    [
+                        {
+                            "node": "Save to Drive",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Save to Drive": {
+                "main": [
+                    [
+                        {
+                            "node": "Archive Email",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            }
+        },
+        "settings": {
+            "executionOrder": "v1",
+            "callerPolicy": "workflowsFromSameOwner",
+            "availableInMCP": false
+        }
+    }
+}

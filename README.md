@@ -1,6 +1,12 @@
-# Organize Google Drive: Digital Life & PKM Toolbox
+# Organize Google Drive: Digital Life &# Tariq's Toolbox
 
-A comprehensive suite of tools and strategies designed to transform a fragmented digital life into a structured, GenAI-optimized Personal Knowledge Management (PKM) ecosystem.
+This repository houses the application logic, automation scripts, and shared libraries for the ecosystem.
+
+> [!NOTE]
+> **Architecture & Principles**: For the master documentation hub, see [setup/docs/INDEX.md](../setup/docs/INDEX.md).
+> For systemd timer details and server setup, see [setup/docs/ENV_SETUP.md](../setup/docs/ENV_SETUP.md).
+
+---
 
 ## 🚀 Project Overview
 

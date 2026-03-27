@@ -115,7 +115,7 @@ def generate_new_name(analysis, original_name, created_time_str):
     
     return f"{date} - {safe_entity} - {safe_summary}{ext}"
 
-def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan', parent_context="Inbox", service=None):
+def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan', folder_name="Inbox", service=None, recursive=True):
     if not service:
         service = get_drive_service()
     
@@ -125,12 +125,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
         fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(fh)
     
-    # Get actual folder name
-    folder_context = parent_context
-    if folder_id == INBOX_ID:
-        folder_context = "Inbox"
-    
-    print(f"Scanning folder {folder_context} ({folder_id})...")
+    print(f"Scanning folder {folder_name} ({folder_id})...")
     
     results = service.files().list(
         q=f"'{folder_id}' in parents and trashed = false",
@@ -138,107 +133,100 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
     ).execute()
     files = results.get('files', [])
     
-    print(f"Found {len(files)} files in {folder_context}. Processing...")
+    print(f"Found {len(files)} files in {folder_name}. Processing...")
     
-    processed_count = 0
     for f in files:
-        if limit and processed_count >= limit:
+        if limit and stats.processed >= limit:
             break
 
         name = f['name']
         fid = f['id']
         mime = f['mimeType']
         
+        # Recursion
+        if mime == 'application/vnd.google-apps.folder':
+            if recursive:
+                scan_folder(fid, dry_run, csv_path, limit, mode, folder_name=f"{folder_name}/{name}", service=service, recursive=recursive)
+            continue
+            
         # Validation: check if file is already processed
         is_valid_name = re.match(r'^\d{4}-\d{2}-\d{2} - .* - .*\.\w+$', name)
         if is_valid_name and not name.startswith("0000-00-00"):
-            if mode == 'inbox':
-                pass # Proceed to categorize/move
-            else:
+            if mode != 'inbox':
                 continue
-
-        # Recursion
-        if mime == 'application/vnd.google-apps.folder':
-            scan_folder(fid, dry_run, csv_path, limit, mode, parent_context=f"{folder_context}/{name}", service=service)
-            continue
-            
+        
         try:
             content = download_file_content(service, fid, mime)
             if not content: continue
 
-            context_hint = f"File located in folder: {folder_context}."
+            context_hint = f"File located in folder: {folder_name}. Created: {f.get('createdTime')}"
             
-            # --- AI ANALYSIS (Moved to Core) ---
+            # --- AI ANALYSIS ---
             category_str = get_category_prompt_str()
             analysis = analyze_with_gemini(content, mime, name, category_str, context_hint, file_id=fid)
             
             new_name = generate_new_name(analysis, name, f.get('createdTime'))
+            confidence = analysis.get('confidence', 'Low')
+            reasoning = analysis.get('reasoning', 'No reasoning provided.')
+            category = analysis.get('category')
             
-            print(f"  [AI] {name} -> {new_name}")
+            print(f"  [AI] {name} -> {new_name} ({confidence})")
+            logger.info(f"Analysis for {name}: Category={category}, Entity={analysis.get('entity')}, Reasoning={reasoning}")
             
             # --- ACTION LOGIC ---
             if not dry_run:
-                # INBOX MODE
-                if mode == 'inbox':
-                    # Rename
-                    if new_name != name and analysis.get('confidence') == 'High':
-                        service.files().update(fileId=fid, body={'name': new_name}).execute()
-                        stats.renamed += 1
-                        logger.info(f"  [Renamed] {new_name}")
-                        
-                        folder_category = analysis.get('category')
-                        # Log rename
-                        target_dummy = resolve_folder_id(folder_category) or 'Unknown'
-                        target_dummy_name = get_folder_path(service, target_dummy)
-                        log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_dummy, target_dummy_name, 'Auto-Rename')
-
-                    # Move
-                    category = analysis.get('category')
-                    confidence = analysis.get('confidence')
-                    target_id = resolve_folder_id(category)
+                # Rename if High or Medium (Rename-only fallback for Medium)
+                if new_name != name and confidence in ['High', 'Medium']:
+                    service.files().update(fileId=fid, body={'name': new_name}).execute()
+                    stats.renamed += 1
+                    logger.info(f"  [Renamed] {new_name}")
                     
-                    if confidence == 'High' and target_id:
-                        if move_file(service, fid, target_id, new_name):
-                             stats.moved += 1
-                             full_path = get_folder_path(service, target_id)
-                             logger.info(f"  [Moved] -> {full_path}")
-                             # Log move
-                             if name == new_name: # If renamed, we logged above. If same, log move here.
-                                 log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, full_path, 'Auto-Move')
-                    else:
-                        if name != new_name:
-                             logger.warning(f"  [Renamed Only] {new_name} (Low conf/No target)")
+                    # Log rename
+                    target_id = resolve_folder_id(category) or 'Unknown'
+                    target_path = get_folder_path(service, target_id)
+                    log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, target_path, f'Auto-Rename ({confidence})')
+
+                # Move ONLY if High confidence and we have a target
+                target_id = resolve_folder_id(category)
+                if confidence == 'High' and target_id and target_id != folder_id:
+                    if move_file(service, fid, target_id, new_name):
+                         stats.moved += 1
+                         full_path = get_folder_path(service, target_id)
+                         logger.info(f"  [Moved] -> {full_path}")
+                         # Log move (if not already logged via Rename)
+                         if new_name == name:
+                             log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, full_path, 'Auto-Move')
+                elif confidence == 'Medium':
+                    logger.info(f"  [Skip Move] Medium confidence for {name}")
 
             stats.processed += 1
-            processed_count += 1
                 
         except Exception as e:
             logger.error(f"  [Error] {name}: {e}")
             stats.errors += 1
 
-def sync_logs_to_drive():
-    # Simplification: This logic kept from original but could be moved to drive.py if needed.
-    # For now, keeping orchestration specific logic here is fine.
-    pass 
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AI Drive Sorter (Modular v0.5)")
+    parser = argparse.ArgumentParser(description="AI Drive Sorter (Modular v0.6)")
     parser.add_argument('--scan', action='store_true', help="Scan mode")
-    parser.add_argument('--inbox', action='store_true', help="Inbox mode")
+    parser.add_argument('--inbox', action='store_true', help="Inbox mode (Default)")
     parser.add_argument('--execute', action='store_true', help="Execute changes")
     parser.add_argument('--limit', type=int, default=0)
+    parser.add_argument('--folder_id', type=str, help="Specify folder ID to process")
+    parser.add_argument('--folder_name', type=str, help="Friendly name for specified folder")
+    parser.add_argument('--no-recurse', action='store_false', dest='recursive', default=True, help="Disable recursive scanning")
     
     args = parser.parse_args()
     
+    target_id = args.folder_id or INBOX_ID
+    target_name = args.folder_name or ("Inbox" if target_id == INBOX_ID else "Custom Folder")
+    
     try:
-        if args.inbox:
-            logger.info("Mode: Inbox (Auto-Sort)")
-            scan_folder(INBOX_ID, dry_run=not args.execute, limit=args.limit, mode='inbox')
-        elif args.scan:
-            logger.info("Mode: Scan")
-            scan_folder(INBOX_ID, dry_run=True, limit=args.limit)
+        if args.execute:
+            logger.info(f"Mode: Execute (Target: {target_name})")
+            scan_folder(target_id, dry_run=False, limit=args.limit, mode='inbox' if target_id == INBOX_ID else 'scan', folder_name=target_name, recursive=args.recursive)
         else:
-            parser.print_help()
+            logger.info(f"Mode: Dry-Run/Scan (Target: {target_name})")
+            scan_folder(target_id, dry_run=True, limit=args.limit, folder_name=target_name, recursive=args.recursive)
             
     finally:
         logger.info(stats.get_summary())

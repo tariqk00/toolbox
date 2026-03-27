@@ -21,9 +21,15 @@ pip-delete-this-directory.txt
 credentials.json
 token.json
 token_full_drive.json
+token_combined.json
+token_*.json
 client_secret*.json
+secrets.env
+.garminconnect/
 
 # Configs & Cache
+config/gemini_cache.json
+config/token_combined.json
 google-drive/gemini_cache.json
 google-drive/test_config.json
 

@@ -23,6 +23,9 @@ This file is auto-generated. It provides a high-level overview of the available 
 
 | **[toolbox/bin/find_plaud_id.py](toolbox/bin/find_plaud_id.py)** | Locates the 'Plaud' folder within the PKM structure and prints its ID. |
 
+| **[toolbox/bin/generate_combined_token.py](toolbox/bin/generate_combined_token.py)** | Generate a combined token with both Drive and Gmail scopes. |
+| |   - `def main`:  |
+
 | **[toolbox/bin/generate_staging_report.py](toolbox/bin/generate_staging_report.py)** |  |
 
 | **[toolbox/bin/group_plaud_files.py](toolbox/bin/group_plaud_files.py)** | Analyzes files in the Plaud cabinet to identify related groups (e.g., Audio + Transcript). |
@@ -45,6 +48,9 @@ This file is auto-generated. It provides a high-level overview of the available 
 | |   - `def list_deep_contents`:  |
 
 | **[toolbox/bin/plaud_cleanup_dryrun.py](toolbox/bin/plaud_cleanup_dryrun.py)** | Analyzes the state of Plaud files to distinguish between Transcripts (Archive) |
+
+| **[toolbox/bin/setup_gmail_auth.py](toolbox/bin/setup_gmail_auth.py)** |  |
+| |   - `def setup`:  |
 
 | **[toolbox/bin/update_cache.py](toolbox/bin/update_cache.py)** |  |
 | |   - `def load_cache`: <br>  - `def save_cache`:  |
@@ -92,4 +98,4 @@ This file is auto-generated. It provides a high-level overview of the available 
 | |   - `def verify`:  |
 
 | **[setup/scripts/system_check.py](setup/scripts/system_check.py)** |  |
-| |   - `def print_status`: <br>  - `class SystemChecker`:  |
+| |   - `class SystemChecker`:  |

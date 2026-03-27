@@ -1,13 +1,20 @@
 # Workspace Rules: Toolbox (Automation & Logic)
 
+> **Standard Update**: See `docs/ARCHITECTURE.md` for the new modular architecture standards (Fitness Automation Pattern).
+
 ## Context
 This repository houses the application logic: Python scripts, n8n workflows, and AI tool integrations.
+
+### Documentation Entry Point
+Always refer to the master [INDEX.md](file:///home/tariqk/repos/personal/setup/docs/INDEX.md) for global system context.
 
 ## Guidelines
 
 ### 1. Python Environment
-- **Virtual Environment**: All scripts MUST be compatible with and run in `toolbox/google-drive/venv`.
-- **Dependencies**: Manage via `pip install -r requirements.txt`. Do not rely on system packages.
+### 1. Python Environment
+- **Virtual Environment**: Use per-module venvs (e.g., `toolbox/garmin/venv`) as defined in `docs/ARCHITECTURE.md`.
+- **Legacy**: `toolbox/google-drive/venv` is for legacy scripts only.
+- **Dependencies**: Manage via `requirements.txt` in the specific module folder.
 
 ### 2. Script Reuse Policy
 - 🛑 **STOP**: Before creating a NEW script, check `toolbox/scriptReferences.md`.

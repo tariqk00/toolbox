@@ -1,0 +1,299 @@
+{
+    "name": "Plaud Gemini Automation",
+    "nodes": [
+        {
+            "parameters": {
+                "pollTimes": {
+                    "item": [
+                        {
+                            "mode": "everyMinute"
+                        }
+                    ]
+                },
+                "simple": false,
+                "filters": {
+                    "q": "from:PLAUD.AI <no-reply@plaud.ai> subject:[PLAUD-AutoFlow] label:INBOX"
+                },
+                "options": {
+                    "downloadAttachments": true
+                }
+            },
+            "type": "n8n-nodes-base.gmailTrigger",
+            "typeVersion": 1,
+            "position": [
+                0,
+                0
+            ],
+            "id": "gmail-trigger",
+            "name": "Gmail Trigger",
+            "credentials": {
+                "gmailOAuth2": {
+                    "id": "gmail-oauth-cred-id",
+                    "name": "Gmail Account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const email = items[0].json;\nconst subject = email.subject || 'No Subject';\nconst dateStr = email.date;\nlet date = new Date();\nif (dateStr) {\n  date = new Date(dateStr);\n}\n\nconst yyyy = date.getFullYear();\nconst mm = String(date.getMonth() + 1).padStart(2, '0');\nconst dd = String(date.getDate()).padStart(2, '0');\nconst hh = String(date.getHours()).padStart(2, '0');\nconst min = String(date.getMinutes()).padStart(2, '0');\nconst formattedDate = `${yyyy}-${mm}-${dd} ${hh}:${min}`;\nconst baseFilename = `${formattedDate} ${subject}`.replace(/[\\\\\\/\\/:*?\\\"<>|]/g, '');\n\nconst results = [];\nlet transcriptText = '';\n\nfor (const key in items[0].binary) {\n  const file = items[0].binary[key];\n  const isTranscript = file.fileName.toLowerCase() === 'transcript.txt';\n  const targetFolderId = isTranscript\n    ? '1ZZf0FAoIXR6T_PzlibUEp7fQxiUbrZST'\n    : '1lDD6SUh918U6oXjOBB5I9SjFVDAlqjzR';\n\n  results.push({\n    json: {\n      _type: 'attachment',\n      fileName: `${baseFilename} - ${file.fileName}`,\n      folderId: targetFolderId\n    },\n    binary: { data: file }\n  });\n\n  if (isTranscript) {\n    transcriptText = Buffer.from(file.data, 'base64').toString('utf-8');\n  }\n}\n\nresults.push({\n  json: {\n    _type: 'gemini',\n    transcriptText,\n    subject,\n    date: formattedDate,\n    baseFilename\n  }\n});\n\nreturn results;"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                220,
+                0
+            ],
+            "id": "route-attachments",
+            "name": "Route Attachments"
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict"
+                    },
+                    "conditions": [
+                        {
+                            "id": "condition-attachment",
+                            "leftValue": "={{ $json._type }}",
+                            "rightValue": "attachment",
+                            "operator": {
+                                "type": "string",
+                                "operation": "equals"
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                }
+            },
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.2,
+            "position": [
+                440,
+                0
+            ],
+            "id": "split-route",
+            "name": "Split Route"
+        },
+        {
+            "parameters": {
+                "operation": "upload",
+                "folderId": {
+                    "__rl": true,
+                    "value": "={{ $json.folderId }}",
+                    "mode": "id"
+                },
+                "name": "={{ $json.fileName }}",
+                "inputDataFieldName": "data",
+                "options": {}
+            },
+            "type": "n8n-nodes-base.googleDrive",
+            "typeVersion": 3,
+            "position": [
+                660,
+                -100
+            ],
+            "id": "upload-original-files",
+            "name": "Upload Original Files",
+            "credentials": {
+                "googleDriveOAuth2": {
+                    "id": "google-drive-cred-id",
+                    "name": "Google Drive Account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "promptType": "define",
+                "text": "Analyze the following transcript/notes. Improve formatting, correct typos, and provide a short summary at the beginning.\n\nTranscript:\n{{ $json.transcriptText }}"
+            },
+            "type": "@n8n/n8n-nodes-langchain.chainLlm",
+            "typeVersion": 1.4,
+            "position": [
+                660,
+                100
+            ],
+            "id": "gemini-chain",
+            "name": "Gemini Processing"
+        },
+        {
+            "parameters": {
+                "model": "models/gemini-2.0-flash",
+                "options": {}
+            },
+            "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+            "typeVersion": 1.2,
+            "position": [
+                660,
+                320
+            ],
+            "id": "openai-gemini-model",
+            "name": "OpenAI Chat Model",
+            "credentials": {
+                "openAiApi": {
+                    "id": "gemini-openai-cred-id",
+                    "name": "Google Gemini Account (OpenAI)"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const text = items[0].json.text;\nconst subject = $('Route Attachments').first().json.subject || $json.subject || 'No Subject';\nconst date = $('Route Attachments').first().json.date || 'Unknown';\nconst baseFilename = $('Route Attachments').first().json.baseFilename || 'Summary';\n\nconst content = `# ${subject}\\n**Date:** ${date}\\n**From:** PLAUD.AI\\n\\n---\\n\\n${text}`;\nconst binaryData = Buffer.from(content).toString('base64');\n\nreturn [\n  {\n    json: {\n       fileName: `${baseFilename} - AI Summary.md`\n    },\n    binary: {\n      data: {\n        data: binaryData,\n        mimeType: 'text/markdown',\n        fileName: 'report.md'\n      }\n    }\n  }\n];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                880,
+                100
+            ],
+            "id": "create-summary-file",
+            "name": "Create Summary File"
+        },
+        {
+            "parameters": {
+                "operation": "upload",
+                "folderId": {
+                    "__rl": true,
+                    "value": "1ZZf0FAoIXR6T_PzlibUEp7fQxiUbrZST",
+                    "mode": "id"
+                },
+                "name": "={{ $json.fileName }}",
+                "inputDataFieldName": "data",
+                "options": {}
+            },
+            "type": "n8n-nodes-base.googleDrive",
+            "typeVersion": 3,
+            "position": [
+                1100,
+                100
+            ],
+            "id": "upload-summary",
+            "name": "Upload Summary",
+            "credentials": {
+                "googleDriveOAuth2": {
+                    "id": "google-drive-cred-id",
+                    "name": "Google Drive Account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "operation": "delete",
+                "messageId": "={{ $('Gmail Trigger').item.json.id }}"
+            },
+            "type": "n8n-nodes-base.gmail",
+            "typeVersion": 2.1,
+            "position": [
+                1320,
+                0
+            ],
+            "id": "archive-email",
+            "name": "Archive Email",
+            "credentials": {
+                "gmailOAuth2": {
+                    "id": "gmail-oauth-cred-id",
+                    "name": "Gmail Account"
+                }
+            }
+        }
+    ],
+    "connections": {
+        "Gmail Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Route Attachments",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Route Attachments": {
+            "main": [
+                [
+                    {
+                        "node": "Split Route",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split Route": {
+            "main": [
+                [
+                    {
+                        "node": "Upload Original Files",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Gemini Processing",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "OpenAI Chat Model": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "Gemini Processing",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Gemini Processing": {
+            "main": [
+                [
+                    {
+                        "node": "Create Summary File",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Create Summary File": {
+            "main": [
+                [
+                    {
+                        "node": "Upload Summary",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Upload Summary": {
+            "main": [
+                [
+                    {
+                        "node": "Archive Email",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Upload Original Files": {
+            "main": [
+                [
+                    {
+                        "node": "Archive Email",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}
