@@ -1,56 +1,58 @@
-# Organize Google Drive: Digital Life &# Tariq's Toolbox
+# Tariq's Toolbox
 
-This repository houses the application logic, automation scripts, and shared libraries for the ecosystem.
+Automation scripts and shared libraries for managing a personal data ecosystem — Google Drive organisation, fitness data sync, and AI-powered file processing.
 
 > [!NOTE]
-> **Architecture & Principles**: For the master documentation hub, see [setup/docs/INDEX.md](../setup/docs/INDEX.md).
-> For systemd timer details and server setup, see [setup/docs/ENV_SETUP.md](../setup/docs/ENV_SETUP.md).
+> **Architecture & Principles**: See [setup/docs/INDEX.md](../setup/docs/INDEX.md) for the master documentation hub.
+> For systemd timer and deployment details, see [setup/docs/ENV_SETUP.md](../setup/docs/ENV_SETUP.md).
 
----
+## Active Modules
 
-## 🚀 Project Overview
+### `services/drive_organizer/`
+AI-powered Google Drive file sorter. Scans the Drive inbox, uses Gemini to categorise and rename files (`YYYY-MM-DD - Entity - Summary.ext`), and moves them to the correct folder. Runs daily via `ai-sorter.timer` on the NUC.
+- `main.py` — scan, analyse, rename, move
+- `monthly_review.py` — generates a health report uploaded to Drive
 
-> [!IMPORTANT]
-> **Setup & Installation**: For instructions on rebuilding the Dev (Chromebook) or Prod (NUC) environments, please refer to **[docs/ENV_SETUP.md](https://github.com/tariqk00/setup/blob/master/docs/ENV_SETUP.md)** in the `tariqk00/setup` repository.
+### `garmin/`
+Daily sync of Garmin Connect activity data to `Health/Fitness/Garmin` in Google Drive. Runs via `garmin-sync.timer`.
 
-The mission is to move beyond simple storage and create a "Machine-Readable, Human-Sortable" master environment for all personal and professional data. The effort is broken down into four distinct pillars:
+### `trainheroic/`
+Extracts workout data from TrainHeroic app screenshots using Gemini Vision. Runs via `trainheroic-extract.timer`.
 
-### 1. QNAP Photo Archive Organization [COMPLETE]
+### `mcp-servers/gdrive/`
+Google Drive MCP server for Claude/Antigravity — exposes Drive search and file access as tools.
 
-The foundational pilot project that cleaned up years of raw photo dumps.
+## Shared Libraries (`lib/`)
 
-- **Goal**: Reorganize thousands of scattered images into a consistent `YYYY/MM - Event Name` hierarchy.
-- **Impact**: 1,200+ items organized; established long-term archival patterns.
+| Module | Purpose |
+|---|---|
+| `google_api.py` | OAuth 2.0 authentication (headless-safe, retry with backoff) |
+| `drive_utils.py` | Drive API wrapper — folder resolution, file download/move |
+| `ai_engine.py` | Gemini 2.0 Flash integration — file categorisation with caching |
+| `log_manager.py` | Structured JSONL logging, thread-safe, with rotation |
 
-### 2. Google Drive Root Restructure & Cabinet Migration [COMPLETE]
+## Configuration
 
-Establishing the "Master Map" for the entire Drive.
+- `config/folder_config.json` — Drive folder ID mappings (categories + system IDs)
+- `config/secrets.env` — API keys and credentials (gitignored; see `secrets.env.template`)
+- `config/credentials.json` — Google OAuth client secrets (gitignored)
 
-- **Goal**: Implement a numbered 00-07 root system (Inbox, Second Brain, Finance, etc.) to optimize for GenAI discovery and human speed.
-- **Impact**: Collapsed the messy "Filing Cabinet" and root folders into a unified, predictable structure.
+## Utility Scripts (`bin/`)
 
-### 3. Inbox Processing & Content Audit [COMPLETE]
+| Script | Purpose |
+|---|---|
+| `setup_gmail_auth.py` | One-time Gmail OAuth setup |
+| `generate_combined_token.py` | Generate a combined Drive + Gmail token |
+| `update_cache.py` | Manually override AI categorisation cache |
+| `plaud_cleanup_dryrun.py` | Analyse Plaud files before a cleanup operation |
+| `list_direct_children.py` | Diagnostic: list files in a Drive folder |
 
-Clearing the "digital debt" sitting in the Stack/Inbox folders.
+One-off folder-creation scripts are archived in `bin/archive/`.
 
-- **Goal**: 100% clearance of the inbox via automated pattern matching and AI-powered visual audits (reading document text).
-- **Impact**: Standardized all filenames to `YYYY-MM-DD - [Category] - [Description]` and cleared the backlog.
+## Legacy
 
-### 4. Deep Folder Processing & PKM Integration [IN PROGRESS]
+`google-drive/` contains historical scripts from the initial Drive organisation phases (QNAP archive, inbox clearance). These are complete and not part of active automation.
 
-Moving from macro-organization to micro-organization.
+## Repository Structure Reference
 
-- **Upcoming Tasks**:
-  - **Sub-Organization**: Auditing and deep-cleaning individual buckets (e.g., Finance, Health).
-  - **Second Brain Flow**: Integrating Plaud transcripts and Gemini chats into a synthesized "Logseq-ready" format.
-  - **Automation**: Implementing a permanent "Auto-Sorter" daemon to keep the library clean.
-
-## 📁 Repository Structure
-
-- `google-drive/`: Python tools for organization, metadata extraction, and AI audits.
-- `docs/`: Master task lists, walkthroughs, and architecture guides.
-- `archive/`: Long-term records of previous organization states.
-
----
-
-_Transforming data into capital through structure._
+`scriptReferences.md` is auto-generated by `scripts/generate_references.py` and provides a full index of all scripts in the repo.
