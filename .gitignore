@@ -31,10 +31,13 @@ secrets.env
 config/gemini_cache.json
 config/token_combined.json
 config/drive_tree.json
+config/gemini_secret
+config/gmail_ingest_state.json
 google-drive/gemini_cache.json
 google-drive/test_config.json
 
 # Logs & Reports
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
