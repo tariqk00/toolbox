@@ -1,6 +1,8 @@
-# Google Drive AI Sorter
+# Google Drive AI Sorter (Legacy)
 
-This directory contains the Python scripts and configuration for the AI-powered Google Drive organizer.
+> **This directory is archived.** The active Drive sorter has moved to `toolbox/services/drive_organizer/` with a modular structure (`main.py`, `lib/ai_engine.py`, `lib/drive_utils.py`). The scripts here completed their one-time use and are no longer part of active automation.
+
+This directory contains the original Python scripts and configuration for the AI-powered Google Drive organizer.
 
 ## Components
 

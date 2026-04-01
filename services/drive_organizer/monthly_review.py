@@ -13,13 +13,11 @@ if repo_root not in sys.path:
 
 from toolbox.lib.drive_utils import (
     get_drive_service, get_sheets_service,
-    FOLDER_CONFIG, HISTORY_SHEET_ID
+    FOLDER_CONFIG, DRIVE_TREE, HISTORY_SHEET_ID
 )
 
 # --- CONFIG ---
-_toolbox_root = os.path.join(repo_root, 'toolbox')
 REPORT_DIR_ID = FOLDER_CONFIG.get('system', {}).get('reports_folder_id', '')
-RECOMMENDATIONS_PATH = os.path.join(_toolbox_root, 'config', 'category_recommendations.json')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("MonthlyReview")
@@ -45,41 +43,24 @@ def get_recent_activity():
         return []
 
 def get_folder_stats(service):
-    """Counts files in mapped folders."""
+    """Counts files in each folder from the drive tree."""
     stats = {}
-    mappings = FOLDER_CONFIG.get('mappings', {})
-    
-    for category, data in mappings.items():
-        fid = data.get('id')
-        if not fid: continue
-        
-        results = service.files().list(
-            q=f"'{fid}' in parents and trashed = false",
-            fields="files(id)"
-        ).execute()
-        stats[category] = len(results.get('files', []))
-        
-        subcats = data.get('subcategories', {})
-        for sub, sub_id in subcats.items():
-            res = service.files().list(
-                q=f"'{sub_id}' in parents and trashed = false",
+    path_to_id = DRIVE_TREE.get('path_to_id', {})
+    for path, fid in path_to_id.items():
+        try:
+            results = service.files().list(
+                q=f"'{fid}' in parents and trashed = false",
                 fields="files(id)"
             ).execute()
-            stats[f"{category}/{sub}"] = len(res.get('files', []))
-            
+            stats[path] = len(results.get('files', []))
+        except Exception as e:
+            logger.warning(f"Could not count files in '{path}': {e}")
     return stats
-
-def get_recommendations():
-    if os.path.exists(RECOMMENDATIONS_PATH):
-        with open(RECOMMENDATIONS_PATH, 'r') as f:
-            return json.load(f)
-    return {}
 
 def generate_report():
     service = get_drive_service()
     activity = get_recent_activity()
     stats = get_folder_stats(service)
-    recs = get_recommendations()
     
     report_date = datetime.now().strftime("%Y-%m")
     report_name = f"Monthly AI Sorter Review - {report_date}"
@@ -104,14 +85,6 @@ def generate_report():
     for cat, count in sorted_stats[:10]: # Top 10
         md_content += f"| {cat} | {count} |\n"
     md_content += "\n"
-    
-    # 3. Recommendations
-    if recs:
-        md_content += "## AI Recommendations (Sub-folder suggestions)\n"
-        md_content += "| Proposed Category | Request Count |\n| :--- | :--- |\n"
-        for cat, count in sorted(recs.items(), key=lambda x: x[1], reverse=True):
-            md_content += f"| {cat} | {count} |\n"
-        md_content += "\n"
     
     # Upload to Drive
     file_metadata = {

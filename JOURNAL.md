@@ -1,5 +1,11 @@
 # Project Journal
 
+- 2026-03-31: feat: replaced abstract category taxonomy with live Drive folder tree routing (Option B) — `bin/refresh_drive_tree.py` crawls Drive from root IDs in `folder_config.json`, writes `config/drive_tree.json`; `drive_utils.py` resolves folder_path → ID via direct dict lookup; AI prompt now receives real folder paths instead of hand-maintained labels
+- 2026-03-31: feat: added `drive-tree-refresh.timer` (weekly) to keep `drive_tree.json` in sync with Drive structure; exclusion rules in refresh script remove Media, Archive, Soccer attachment folders, and Taxes year subfolders — tree trimmed from 283 to 49 actionable destinations
+- 2026-03-31: chore: updated Gemini model to `gemini-flash-latest` via `GEMINI_MODEL` constant (env var override); removed stale `save_recommendation()` dead code from `ai_engine.py`; fixed `monthly_review.py` to use `DRIVE_TREE` instead of removed `mappings` block
+- 2026-03-31: fix: rule-based shortcuts (Plaud exports, Gemini journals, MM-DD pattern) now return real `folder_path` strings; cleared 348-entry Gemini cache to force re-analysis under new prompt
+- 2026-03-31: fix: corrected stale docs — AUTOMATIONS.md schedule (daily→hourly), script paths (google-drive/→services/drive_organizer/), SYSTEM_PROMPT.md timer schedule; marked google-drive/README.md as legacy
+
 - 2026-03-27: refactor: centralized hardcoded Drive/Sheets folder IDs into `config/folder_config.json` under a `system` key — removed constants from `lib/drive_utils.py` and `services/drive_organizer/monthly_review.py`
 - 2026-03-27: fix: corrected `RECOMMENDATIONS_PATH` in `monthly_review.py` — was pointing to `google-drive/` (wrong), now uses `config/` (consistent with `ai_engine.py`)
 - 2026-03-27: chore: created `bin/__init__.py` with `setup_path()` helper per ARCHITECTURE.md (marks bin/ as a proper package)

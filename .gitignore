@@ -30,6 +30,7 @@ secrets.env
 # Configs & Cache
 config/gemini_cache.json
 config/token_combined.json
+config/drive_tree.json
 google-drive/gemini_cache.json
 google-drive/test_config.json
 

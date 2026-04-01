@@ -1,6 +1,6 @@
 """
 AI Abstraction Layer.
-Handles interactions with Gemini (1.5 Flash) via `google-genai` SDK, including Prompting, JSON parsing, and Caching.
+Handles interactions with Gemini via `google-genai` SDK, including Prompting, JSON parsing, and Caching.
 """
 import os
 import json
@@ -14,14 +14,16 @@ from google.genai import types
 logger = logging.getLogger("DriveSorter.AI")
 
 # --- CONFIG ---
-# --- CONFIG ---
-# This file is in toolbox/core/ai.py
-# Root is toolbox/ 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
-CONFIG_DIR = os.path.join(BASE_DIR, 'config') 
+# This file is in toolbox/lib/ai_engine.py
+# Root is toolbox/
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_DIR = os.path.join(BASE_DIR, 'config')
 SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_secret')
 CACHE_PATH = os.path.join(CONFIG_DIR, 'gemini_cache.json')
-RECOMMENDATIONS_PATH = os.path.join(CONFIG_DIR, 'category_recommendations.json')
+
+# Default model — use gemini-flash-latest to always track the current Flash release.
+# Override via GEMINI_MODEL env var if needed.
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-flash-latest')
 
 def load_api_key():
     # 1. Try environment variable
@@ -65,20 +67,6 @@ def save_cache():
 # Load cache on module import
 load_cache()
 
-def save_recommendation(category_path):
-    """Logs a recommended category path that doesn't have a specific folder yet."""
-    try:
-        recommendations = {}
-        if os.path.exists(RECOMMENDATIONS_PATH):
-            with open(RECOMMENDATIONS_PATH, 'r') as f:
-                recommendations = json.load(f)
-        
-        recommendations[category_path] = recommendations.get(category_path, 0) + 1
-        
-        with open(RECOMMENDATIONS_PATH, 'w') as f:
-            json.dump(recommendations, f, indent=2)
-    except Exception as e:
-        logger.error(f"Error saving recommendation: {e}")
 
 # --- PROMPT ---
 SYSTEM_PROMPT = """
@@ -88,21 +76,22 @@ CONTEXT: {context_hint}
 
 EXTRACT the following fields into a pure JSON object:
 - "doc_date": Use YYYY-MM-DD format. Prioritize the actual document date. If not found, use the creation date provided in context or '0000-00-00'.
-- "entity": The primary organization, person, or vendor. 
-    - CRITICAL: For bank statements or transaction lists, the entity MUST be the Institution (e.g., "Chase", "Verizon"). 
+- "entity": The primary organization, person, or vendor.
+    - CRITICAL: For bank statements or transaction lists, the entity MUST be the Institution (e.g., "Chase", "Verizon").
     - CRITICAL: Do NOT pick a merchant from a random row in a spreadsheet as the entity.
-- "category": Choose the MOST SPECIFIC category from this list: {categories}. 
-    - Format: "Parent/Subcategory" or just "Parent".
+- "folder_path": Choose the most appropriate destination from this folder list:
+{folder_paths}
+Return the exact path string. Use the most specific subfolder that fits.
 - "summary": A concise 3-5 word description (e.g., "Monthly Internet Bill", "Property Tax Assessment").
-- "reasoning": A brief 1-sentence explanation of why you chose this category/entity.
+- "reasoning": A brief 1-sentence explanation of why you chose this folder/entity.
 - "confidence": "High", "Medium", or "Low".
 
 RULES:
 1. Pure JSON only. No markdown formatting.
 2. If "confidence" is Medium or Low, explain why in "reasoning".
-3. For medical docs, use "Health". 
-4. For ID cards/passports, use "Personal/ID".
-5. For generic transcripts/logs not matching other rules, use "Archive/Source_Dumps".
+3. For medical docs, choose the Health folder.
+4. For ID cards/passports, choose the Personal ID folder.
+5. For generic transcripts/logs not matching other rules, choose the Archive Source_Dumps folder.
 """
 
 def get_ai_supported_mime(mime_type, filename=None):
@@ -129,9 +118,9 @@ def get_ai_supported_mime(mime_type, filename=None):
             
     return None
 
-def analyze_with_gemini(content_bytes, mime_type, filename, category_list_str, context_hint="", file_id=None):
+def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, context_hint="", file_id=None):
     """
-    Sends content to Gemini-1.5-Flash for analysis using the new google.genai SDK.
+    Sends content to Gemini for analysis using the google.genai SDK.
     """
     if not GEMINI_API_KEY:
         raise ValueError("Gemini API Key missing")
@@ -139,14 +128,12 @@ def analyze_with_gemini(content_bytes, mime_type, filename, category_list_str, c
     # --- GENERIC PLAUD EXPORTS ---
     if filename.lower().endswith('summary.txt') or filename.lower().endswith('transcript.txt'):
         logger.info(f"  [Rule] Detected Generic Plaud Export: {filename}")
-        target_category = "PKM/Plaud"
-        if filename.lower().endswith('transcript.txt'):
-            target_category = "PKM/Plaud/Transcripts"
         base_name = os.path.splitext(filename)[0]
+        folder = "01 - Second Brain/Plaud/Transcripts" if filename.lower().endswith('transcript.txt') else "01 - Second Brain/Plaud"
         return {
-            "doc_date": "2026-01-01", 
+            "doc_date": "2026-01-01",
             "entity": "Plaud_Export",
-            "category": target_category, 
+            "folder_path": folder,
             "summary": base_name,
             "confidence": "High"
         }
@@ -156,16 +143,16 @@ def analyze_with_gemini(content_bytes, mime_type, filename, category_list_str, c
         logger.info(f"  [Rule] Detected Gemini Journal: {filename}")
         parts = filename.split(" - ")
         if len(parts) >= 3:
-             doc_date = parts[0]
-             summary = os.path.splitext(parts[2])[0]
+            doc_date = parts[0]
+            summary = os.path.splitext(parts[2])[0]
         else:
-             doc_date = "0000-00-00"
-             summary = filename
+            doc_date = "0000-00-00"
+            summary = filename
 
         return {
             "doc_date": doc_date,
             "entity": "Journal",
-            "category": "PKM/Gemini",
+            "folder_path": "01 - Second Brain/Gemini",
             "summary": summary,
             "confidence": "High"
         }
@@ -175,14 +162,14 @@ def analyze_with_gemini(content_bytes, mime_type, filename, category_list_str, c
         cache_key = file_id
         if cache_key in GEMINI_CACHE:
             return GEMINI_CACHE[cache_key]
-            
+
     # --- PLAUD / MM-DD HEURISTIC ---
     if re.match(r'^\d{2}-\d{2}\s', filename):
         logger.info(f"  [Rule] Detected Plaud/Journal pattern: {filename}")
         return {
-            "doc_date": "2026-" + filename[:5], 
+            "doc_date": "2026-" + filename[:5],
             "entity": "Plaud_Note",
-            "category": "PKM/Plaud",
+            "folder_path": "01 - Second Brain/Plaud",
             "summary": filename,
             "confidence": "High"
         }
@@ -193,8 +180,8 @@ def analyze_with_gemini(content_bytes, mime_type, filename, category_list_str, c
         logger.warning(f"  [Skip] Unsupported file type for AI: {filename} ({mime_type})")
         return {
             "doc_date": "0000-00-00",
-            "entity": "Unknown", 
-            "category": "Other", 
+            "entity": "Unknown",
+            "folder_path": None,
             "summary": "Unsupported_Format",
             "confidence": "Low"
         }
@@ -211,12 +198,12 @@ def analyze_with_gemini(content_bytes, mime_type, filename, category_list_str, c
     # Inject context
     prompt_with_context = SYSTEM_PROMPT.format(
         context_hint=context_hint,
-        categories=category_list_str
+        folder_paths=folder_paths_str
     )
     
     try:
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model=GEMINI_MODEL,
             contents=[
                 prompt_with_context,
                 types.Part.from_bytes(data=content_bytes, mime_type=ai_mime)
@@ -276,8 +263,8 @@ def analyze_with_gemini(content_bytes, mime_type, filename, category_list_str, c
         logger.error(f"Gemini Error during analysis: {e}", exc_info=True)
         return {
             "doc_date": "0000-00-00",
-            "entity": "Unknown", 
-            "category": "Uncategorized", 
+            "entity": "Unknown",
+            "folder_path": None,
             "summary": "AI_Error",
             "confidence": "Low"
         }

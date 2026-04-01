@@ -20,11 +20,10 @@ if repo_root not in sys.path:
 
 from toolbox.lib.ai_engine import analyze_with_gemini
 from toolbox.lib.drive_utils import (
-    get_drive_service, get_sheets_service, 
-    download_file_content, move_file, 
+    get_drive_service, get_sheets_service,
+    download_file_content, move_file,
     get_folder_path, resolve_folder_id,
-    get_category_prompt_str, FOLDER_CONFIG,
-    load_folder_config,
+    get_category_prompt_str,
     INBOX_ID, METADATA_FOLDER_ID, HISTORY_SHEET_ID
 )
 
@@ -162,17 +161,17 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             context_hint = f"File located in folder: {folder_name}. Created: {f.get('createdTime')}"
             
             # --- AI ANALYSIS ---
-            category_str = get_category_prompt_str()
-            analysis = analyze_with_gemini(content, mime, name, category_str, context_hint, file_id=fid)
-            
+            folder_paths_str = get_category_prompt_str()
+            analysis = analyze_with_gemini(content, mime, name, folder_paths_str, context_hint, file_id=fid)
+
             new_name = generate_new_name(analysis, name, f.get('createdTime'))
             confidence = analysis.get('confidence', 'Low')
             reasoning = analysis.get('reasoning', 'No reasoning provided.')
-            category = analysis.get('category')
-            
+            folder_path = analysis.get('folder_path')
+
             print(f"  [AI] {name} -> {new_name} ({confidence})")
-            logger.info(f"Analysis for {name}: Category={category}, Entity={analysis.get('entity')}, Reasoning={reasoning}")
-            
+            logger.info(f"Analysis for {name}: FolderPath={folder_path}, Entity={analysis.get('entity')}, Reasoning={reasoning}")
+
             # --- ACTION LOGIC ---
             if not dry_run:
                 # Rename if High or Medium (Rename-only fallback for Medium)
@@ -180,22 +179,22 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                     service.files().update(fileId=fid, body={'name': new_name}).execute()
                     stats.renamed += 1
                     logger.info(f"  [Renamed] {new_name}")
-                    
+
                     # Log rename
-                    target_id = resolve_folder_id(category) or 'Unknown'
+                    target_id = resolve_folder_id(folder_path) or 'Unknown'
                     target_path = get_folder_path(service, target_id)
                     log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, target_path, f'Auto-Rename ({confidence})')
 
                 # Move ONLY if High confidence and we have a target
-                target_id = resolve_folder_id(category)
+                target_id = resolve_folder_id(folder_path)
                 if confidence == 'High' and target_id and target_id != folder_id:
                     if move_file(service, fid, target_id, new_name):
-                         stats.moved += 1
-                         full_path = get_folder_path(service, target_id)
-                         logger.info(f"  [Moved] -> {full_path}")
-                         # Log move (if not already logged via Rename)
-                         if new_name == name:
-                             log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, full_path, 'Auto-Move')
+                        stats.moved += 1
+                        full_path = get_folder_path(service, target_id)
+                        logger.info(f"  [Moved] -> {full_path}")
+                        # Log move (if not already logged via Rename)
+                        if new_name == name:
+                            log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, full_path, 'Auto-Move')
                 elif confidence == 'Medium':
                     logger.info(f"  [Skip Move] Medium confidence for {name}")
 

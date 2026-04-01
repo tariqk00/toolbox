@@ -16,6 +16,7 @@ logger = logging.getLogger("DriveSorter.Drive")
 # Root is toolbox/
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'folder_config.json')
+TREE_PATH = os.path.join(BASE_DIR, 'config', 'drive_tree.json')
 
 def load_folder_config():
     try:
@@ -24,10 +25,21 @@ def load_folder_config():
                 return json.load(f)
     except Exception as e:
         logger.error(f"Error loading folder_config.json: {e}")
-    return {"mappings": {}}
+    return {"system": {}}
+
+def load_drive_tree():
+    try:
+        if os.path.exists(TREE_PATH):
+            with open(TREE_PATH, 'r') as f:
+                return json.load(f)
+        else:
+            logger.warning("drive_tree.json not found. Run bin/refresh_drive_tree.py to generate it.")
+    except Exception as e:
+        logger.error(f"Error loading drive_tree.json: {e}")
+    return {}
 
 FOLDER_CONFIG = load_folder_config()
-FOLDER_MAP = FOLDER_CONFIG.get('mappings', {})
+DRIVE_TREE = load_drive_tree()
 
 _system = FOLDER_CONFIG.get('system', {})
 INBOX_ID = _system.get('inbox_id', '')
@@ -45,48 +57,29 @@ def get_sheets_service():
     creds = auth.get_credentials(token_filename='token_full_drive.json', credentials_filename='config/credentials.json')
     return auth.get_service('sheets', 'v4', creds)
 
-def get_category_list():
-    """Builds a flat list of categories and sub-categories."""
-    categories = []
-    mappings = FOLDER_CONFIG.get('mappings', {})
-    for parent, data in mappings.items():
-        categories.append(parent)
-        subcats = data.get('subcategories', {})
-        for sub in subcats.keys():
-            categories.append(f"{parent}/{sub}")
-    return sorted(list(set(categories + ["Other", "Uncategorized"])))
-
 def get_category_prompt_str():
-    return ", ".join(get_category_list())
+    """Returns a sorted newline-separated list of all folder paths from drive_tree.json."""
+    path_to_id = DRIVE_TREE.get('path_to_id', {})
+    if not path_to_id:
+        logger.warning("drive_tree.json is empty or missing. Folder list will be empty.")
+        return ""
+    return "\n".join(sorted(path_to_id.keys()))
 
-def resolve_folder_id(category_str, save_recommendation_callback=None):
-    """Resolves a category string to a folder ID."""
-    if not category_str or category_str == 'Other' or category_str == 'Uncategorized':
+def resolve_folder_id(path_str, save_recommendation_callback=None):
+    """Resolves a folder path string to a Drive folder ID via direct lookup in drive_tree.json."""
+    if not path_str:
         return None
-        
-    mappings = FOLDER_CONFIG.get('mappings', {})
-    parts = [p.strip() for p in category_str.split('/')]
-    parent_name = parts[0]
-    sub_name = parts[1] if len(parts) > 1 else None
-    
-    parent_data = mappings.get(parent_name)
-    if not parent_data:
+
+    path_to_id = DRIVE_TREE.get('path_to_id', {})
+    folder_id = path_to_id.get(path_str)
+
+    if not folder_id:
+        logger.warning(f"  [Resolve] Path not found in drive tree: '{path_str}'")
         if save_recommendation_callback:
-            save_recommendation_callback(category_str)
+            save_recommendation_callback(path_str)
         return None
-    
-    parent_id = parent_data.get('id')
-    
-    if sub_name:
-        sub_id = parent_data.get('subcategories', {}).get(sub_name)
-        if sub_id:
-            return sub_id
-        else:
-            if save_recommendation_callback:
-                save_recommendation_callback(f"{parent_name}/{sub_name}")
-            return parent_id
-            
-    return parent_id
+
+    return folder_id
 
 def get_folder_path(service, folder_id):
     if not folder_id or folder_id in ["None", "Unknown", "Inbox/Unknown"]:
