@@ -135,6 +135,9 @@ def build_queue(service) -> list:
             logger.error(f"Error listing {folder_path}: {e}")
             continue
 
+        # Oldest files first within each folder
+        files.sort(key=lambda f: f.get('createdTime', ''))
+
         for f in files:
             fid  = f['id']
             name = f['name']
