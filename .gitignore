@@ -30,6 +30,8 @@ secrets.env
 # Configs & Cache
 config/gemini_cache.json
 config/telegram_config.json
+config/quota_state.json
+config/backfill_state.json
 config/token_combined.json
 config/drive_tree.json
 config/gemini_secret
