@@ -25,7 +25,7 @@ repo_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
 if repo_root not in sys.path:
     sys.path.append(repo_root)
 
-from toolbox.lib.ai_engine import analyze_with_gemini
+from toolbox.lib.ai_engine import analyze_with_gemini, get_ai_supported_mime
 from toolbox.lib import quota_manager
 from toolbox.lib.telegram import send_message
 from toolbox.lib.drive_utils import (
@@ -136,12 +136,26 @@ def build_queue(service) -> list:
             continue
 
         for f in files:
-            fid = f['id']
+            fid  = f['id']
             name = f['name']
+            mime = f['mimeType']
+
             if fid in cache:
                 continue
             if VALID_NAME_RE.match(name) and not name.startswith('0000'):
                 continue
+
+            # Skip if unsupported mime AND no rule-based shortcut would apply
+            is_rule_based = (
+                name.lower().endswith('summary.txt') or
+                name.lower().endswith('transcript.txt') or
+                ' - Journal - ' in name or
+                bool(re.match(r'^\d{2}-\d{2}\s', name))
+            )
+            if not is_rule_based and get_ai_supported_mime(mime, name) is None:
+                logger.debug(f"  [Skip] Unsupported mime at queue time: {name} ({mime})")
+                continue
+
             pending.append({
                 "id": fid,
                 "name": name,
