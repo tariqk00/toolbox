@@ -19,6 +19,7 @@ if repo_root not in sys.path:
     sys.path.append(repo_root)
 
 from toolbox.lib.ai_engine import analyze_with_gemini
+from toolbox.lib.telegram import send_message
 from toolbox.lib.drive_utils import (
     get_drive_service, get_sheets_service,
     download_file_content, move_file,
@@ -235,4 +236,7 @@ if __name__ == "__main__":
             scan_folder(target_id, dry_run=True, limit=args.limit, folder_name=target_name, recursive=args.recursive)
             
     finally:
-        logger.info(stats.get_summary())
+        summary = stats.get_summary()
+        logger.info(summary)
+        if stats.moved > 0 or stats.renamed > 0 or stats.errors > 0:
+            send_message(summary, service="ai-sorter")

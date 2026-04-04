@@ -29,6 +29,7 @@ for p in [str(TOOLBOX_ROOT), str(PARENT_DIR), str(SERVICE_DIR)]:
         sys.path.insert(0, p)
 
 from lib.google_api import GoogleAuth
+from lib.telegram import send_message
 import gym_extract
 import garmin_provider
 import merger
@@ -88,6 +89,7 @@ def run(args):
         garmin_client = garmin_provider.authenticate()
         if not garmin_client:
             logger.warning("Garmin auth failed — workout records will have no biometric data")
+            send_message("Garmin auth failed — workout records will have no biometric data", service="workout-extract")
 
     # --- Gym screenshot extraction ---
     sessions = []
@@ -124,6 +126,8 @@ def run(args):
     elapsed = int(time.time() - start)
     logger.info("=== Done in %ds. Sessions extracted: %d, Records saved: %d ===",
                 elapsed, len(sessions), saved)
+    if not dry_run:
+        send_message(f"Done in {elapsed}s. Sessions extracted: {len(sessions)}, Records saved: {saved}", service="workout-extract")
 
 
 def parse_args():
