@@ -104,6 +104,7 @@ def run(args):
 
     # --- Merge and save unified records ---
     saved = 0
+    saved_details = []
     for session in sessions:
         date = session.get("date_completed") or ""
         gym_duration = None
@@ -122,12 +123,21 @@ def run(args):
         file_id = merger.save_unified_record(drive_service, record, dry_run=dry_run)
         if file_id:
             saved += 1
+            label = session.get("workout_label") or "Workout"
+            app = session.get("source_app") or ""
+            dur = f"{int(gym_duration)} min" if gym_duration else ""
+            meta = ", ".join(filter(None, [app, dur]))
+            saved_details.append(f"  {date[:10]} — {label}" + (f" ({meta})" if meta else ""))
 
     elapsed = int(time.time() - start)
     logger.info("=== Done in %ds. Sessions extracted: %d, Records saved: %d ===",
                 elapsed, len(sessions), saved)
     if not dry_run:
-        send_message(f"Done in {elapsed}s. Sessions extracted: {len(sessions)}, Records saved: {saved}", service="workout-extract")
+        if saved:
+            lines = [f"{saved} session{'s' if saved > 1 else ''} saved ({elapsed}s)"] + saved_details
+        else:
+            lines = [f"Done in {elapsed}s — no new sessions found"]
+        send_message("\n".join(lines), service="workout-extract")
 
 
 def parse_args():
