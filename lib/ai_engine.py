@@ -75,7 +75,7 @@ You are a highly capable Personal Document Assistant. Your goal is to analyze th
 CONTEXT: {context_hint}
 
 EXTRACT the following fields into a pure JSON object:
-- "doc_date": Use YYYY-MM-DD format. Prioritize the actual document date. If not found, use the creation date provided in context or '0000-00-00'.
+- "doc_date": Use YYYY-MM-DD format. For travel documents (flights, hotels, car rentals, reservations), use the trip/travel/check-in date, NOT the booking or email date. For all other documents, use the actual document date. If not found, use the creation date provided in context or '0000-00-00'.
 - "entity": The primary organization, person, or vendor.
     - CRITICAL: For bank statements or transaction lists, the entity MUST be the Institution (e.g., "Chase", "Verizon").
     - CRITICAL: Do NOT pick a merchant from a random row in a spreadsheet as the entity.
@@ -85,6 +85,8 @@ Return the exact path string. Use the most specific subfolder that fits.
 - "summary": A concise 3-5 word description (e.g., "Monthly Internet Bill", "Property Tax Assessment").
 - "reasoning": A brief 1-sentence explanation of why you chose this folder/entity.
 - "confidence": "High", "Medium", or "Low".
+
+- "person": If this document is specifically for Dawn, Thomas, or Sofia, return their first name. Otherwise return null.
 
 RULES:
 1. Pure JSON only. No markdown formatting.

@@ -111,7 +111,13 @@ def generate_new_name(analysis, original_name, created_time_str):
     
     if date == "0000-00-00" or not date:
          safe_summary = f"{safe_summary}_(NoDate)"
-    
+
+    person = analysis.get('person')
+    known_persons = {'Dawn', 'Thomas', 'Sofia'}
+    if person and str(person).strip().capitalize() in known_persons:
+        safe_person = str(person).strip().capitalize()
+        return f"{date} - {safe_entity} - {safe_person} - {safe_summary}{ext}"
+
     return f"{date} - {safe_entity} - {safe_summary}{ext}"
 
 def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan', folder_name="Inbox", service=None, recursive=True):
