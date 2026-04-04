@@ -45,10 +45,42 @@ class RunStats:
         self.renamed = 0
         self.errors = 0
         self.start_time = time.time()
+        self.move_details = []    # (original_name, new_name, folder_path)
+        self.rename_details = []  # (original_name, new_name) — rename-only, no move
+        self.error_details = []   # (name, error_str)
+        self._moved_fids = set()  # track which files were moved (to avoid duplicate rename lines)
 
     def get_summary(self):
         duration = int(time.time() - self.start_time)
         return f"Run completed in {duration}s. Processed: {self.processed}, Moved: {self.moved}, Renamed: {self.renamed}, Errors: {self.errors}."
+
+    def get_notification(self):
+        duration = int(time.time() - self.start_time)
+        parts = []
+        summary_parts = []
+        if self.moved:
+            summary_parts.append(f"{self.moved} moved")
+        if self.renamed:
+            summary_parts.append(f"{self.renamed} renamed")
+        if self.errors:
+            summary_parts.append(f"{self.errors} error{'s' if self.errors > 1 else ''}")
+        header = ", ".join(summary_parts) + f" ({duration}s)"
+        parts.append(header)
+
+        MAX = 10
+        all_lines = []
+        for orig, new, folder in self.move_details:
+            all_lines.append(f"  Moved: {orig}\n    → {folder}/{new}")
+        for orig, new in self.rename_details:
+            all_lines.append(f"  Renamed: {orig}\n    → {new}")
+        for name, err in self.error_details:
+            all_lines.append(f"  Error: {name}\n    {err}")
+
+        parts.extend(all_lines[:MAX])
+        if len(all_lines) > MAX:
+            parts.append(f"  ... and {len(all_lines) - MAX} more")
+
+        return "\n".join(parts)
 
 stats = RunStats()
 logger = logging.getLogger("DriveSorter")
@@ -198,7 +230,9 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                 if confidence == 'High' and target_id and target_id != folder_id:
                     if move_file(service, fid, target_id, new_name):
                         stats.moved += 1
+                        stats._moved_fids.add(fid)
                         full_path = get_folder_path(service, target_id)
+                        stats.move_details.append((name, new_name, folder_path or full_path))
                         logger.info(f"  [Moved] -> {full_path}")
                         # Log move (if not already logged via Rename)
                         if new_name == name:
@@ -206,11 +240,16 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                 elif confidence == 'Medium':
                     logger.info(f"  [Skip Move] Medium confidence for {name}")
 
+                # Record rename-only (not moved)
+                if new_name != name and confidence == 'Medium' and fid not in stats._moved_fids:
+                    stats.rename_details.append((name, new_name))
+
             stats.processed += 1
                 
         except Exception as e:
             logger.error(f"  [Error] {name}: {e}")
             stats.errors += 1
+            stats.error_details.append((name, str(e)))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AI Drive Sorter (Modular v0.6)")
@@ -236,7 +275,6 @@ if __name__ == "__main__":
             scan_folder(target_id, dry_run=True, limit=args.limit, folder_name=target_name, recursive=args.recursive)
             
     finally:
-        summary = stats.get_summary()
-        logger.info(summary)
+        logger.info(stats.get_summary())
         if stats.moved > 0 or stats.renamed > 0 or stats.errors > 0:
-            send_message(summary, service="ai-sorter")
+            send_message(stats.get_notification(), service="ai-sorter")
