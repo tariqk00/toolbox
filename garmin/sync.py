@@ -15,9 +15,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from garminconnect import Garmin, GarminConnectAuthenticationError
+from lib.telegram import send_message
 
 # Resolve paths relative to toolbox root
 TOOLBOX_ROOT = Path(__file__).resolve().parent.parent
+if str(TOOLBOX_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLBOX_ROOT))
 CONFIG_DIR = TOOLBOX_ROOT / "config"
 GARMIN_TOKEN_DIR = CONFIG_DIR / ".garminconnect"
 SECRETS_ENV_PATH = CONFIG_DIR / "secrets.env"
@@ -661,6 +664,9 @@ def main():
         total_synced += synced
 
     logger.info("=== Sync complete: %d activities processed ===", total_synced)
+    if not args.dry_run:
+        date_str = target_date.strftime("%Y-%m-%d")
+        send_message(f"Sync complete: {total_synced} activit{'y' if total_synced == 1 else 'ies'} for {date_str}", service="garmin-sync")
 
     # Auto-generate summary for the month of the target date
     generate_monthly_summary(

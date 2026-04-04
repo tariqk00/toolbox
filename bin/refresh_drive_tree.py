@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timezone
 
 from toolbox.lib.drive_utils import get_drive_service, BASE_DIR, CONFIG_PATH
+from toolbox.lib.telegram import send_message
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger("DriveTreeRefresh")
@@ -146,6 +147,7 @@ def main():
 
     logger.info(f"\nDone. Found {len(path_to_id)} folders across {len(roots)} roots.")
     logger.info(f"Written to: {TREE_PATH}")
+    send_message(f"Drive tree refreshed: {len(path_to_id)} folders across {len(roots)} roots", service="drive-tree-refresh")
 
     # Print top-level summary
     top_level = sorted(k for k in path_to_id if '/' not in k)

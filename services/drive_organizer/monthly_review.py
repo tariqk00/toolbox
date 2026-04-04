@@ -15,6 +15,7 @@ from toolbox.lib.drive_utils import (
     get_drive_service, get_sheets_service,
     FOLDER_CONFIG, DRIVE_TREE, HISTORY_SHEET_ID
 )
+from toolbox.lib.telegram import send_message
 
 # --- CONFIG ---
 REPORT_DIR_ID = FOLDER_CONFIG.get('system', {}).get('reports_folder_id', '')
@@ -103,6 +104,10 @@ def generate_report():
     try:
         service.files().create(body=file_metadata, media_body=media, fields='id').execute()
         logger.info(f"Report uploaded successfully: {report_name}")
+        send_message(
+            f"Monthly report generated: {total_actions} actions ({moves} moves, {renames} renames)",
+            service="ai-sorter-review"
+        )
     except Exception as e:
         logger.error(f"Error uploading report: {e}")
 
