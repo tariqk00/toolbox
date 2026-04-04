@@ -32,9 +32,10 @@ def _load_config():
         return None
 
 
-def send_message(text: str, parse_mode: str = None) -> bool:
+def send_message(text: str, service: str = None, parse_mode: str = None) -> bool:
     """
     Send a message to the configured ops channel.
+    If service is provided, prepends "[service] " to the message.
     Returns True on success, False on failure (never raises).
     """
     config = _load_config()
@@ -46,6 +47,9 @@ def send_message(text: str, parse_mode: str = None) -> bool:
     if not bot_token or not chat_id:
         logger.error("Telegram config missing bot_token or chat_id.")
         return False
+
+    if service:
+        text = f"[{service}] {text}"
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {"chat_id": chat_id, "text": text}
