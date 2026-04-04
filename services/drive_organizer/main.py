@@ -20,6 +20,7 @@ if repo_root not in sys.path:
 
 from toolbox.lib.ai_engine import analyze_with_gemini
 from toolbox.lib.telegram import send_message
+from toolbox.lib import quota_manager
 from toolbox.lib.drive_utils import (
     get_drive_service, get_sheets_service,
     download_file_content, move_file,
@@ -202,7 +203,9 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             context_hint = f"File located in folder: {folder_name}. Created: {f.get('createdTime')}"
 
             # --- AI ANALYSIS ---
-            analysis = analyze_with_gemini(content, mime, name, folder_paths_str, context_hint, file_id=fid)
+            analysis, tokens = analyze_with_gemini(content, mime, name, folder_paths_str, context_hint, file_id=fid)
+            if tokens:
+                quota_manager.record_tokens(tokens)
 
             new_name = generate_new_name(analysis, name, f.get('createdTime'))
             confidence = analysis.get('confidence', 'Low')

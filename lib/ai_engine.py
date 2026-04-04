@@ -138,7 +138,7 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             "folder_path": folder,
             "summary": base_name,
             "confidence": "High"
-        }
+        }, 0
 
     # --- GEMINI JOURNAL RULE ---
     if " - Journal - " in filename:
@@ -157,13 +157,13 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             "folder_path": "01 - Second Brain/Gemini",
             "summary": summary,
             "confidence": "High"
-        }
+        }, 0
 
     # --- CACHE CHECK ---
     if file_id:
         cache_key = file_id
         if cache_key in GEMINI_CACHE:
-            return GEMINI_CACHE[cache_key]
+            return GEMINI_CACHE[cache_key], 0
 
     # --- PLAUD / MM-DD HEURISTIC ---
     if re.match(r'^\d{2}-\d{2}\s', filename):
@@ -186,7 +186,7 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             "folder_path": None,
             "summary": "Unsupported_Format",
             "confidence": "Low"
-        }
+        }, 0
 
     client = genai.Client(api_key=GEMINI_API_KEY)
     
@@ -213,11 +213,13 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
         )
 
         usage = response.usage_metadata
+        token_count = 0
         if usage:
+            token_count = usage.total_token_count or 0
             logger.info(
                 f"  [Tokens] in={usage.prompt_token_count} "
                 f"out={usage.candidates_token_count} "
-                f"total={usage.total_token_count}"
+                f"total={token_count}"
             )
 
         text = response.text.strip()
@@ -246,14 +248,14 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             if file_id:
                 GEMINI_CACHE[file_id] = data
                 save_cache()
-                
-            return data
+
+            return data, token_count
 
         except json.JSONDecodeError:
              # Fallback: legacy regex extraction
              start_idx = text.find('{')
              end_idx = text.rfind('}')
-             
+
              if start_idx != -1 and end_idx != -1:
                 json_text = text[start_idx:end_idx+1]
                 try:
@@ -261,7 +263,7 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
                     if file_id:
                          GEMINI_CACHE[file_id] = data
                          save_cache()
-                    return data
+                    return data, token_count
                 except json.JSONDecodeError as je:
                      logger.error(f"    [JSON Error] Raw text: {text}")
                      raise je
@@ -277,4 +279,4 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             "folder_path": None,
             "summary": "AI_Error",
             "confidence": "Low"
-        }
+        }, 0

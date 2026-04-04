@@ -1,0 +1,75 @@
+"""
+Shared daily Gemini token quota tracker.
+Both main.py (hourly sorter) and backfill.py write here after each Gemini call.
+Uses write-to-temp-then-rename for atomic updates (safe if both run concurrently).
+Config: config/quota_state.json (auto-created on first use)
+"""
+import json
+import logging
+import os
+import tempfile
+from datetime import date
+
+logger = logging.getLogger("DriveSorter.Quota")
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+QUOTA_PATH = os.path.join(BASE_DIR, 'config', 'quota_state.json')
+
+DAILY_BUDGET = 500_000
+FILES_PER_RUN = 50
+
+
+def _today() -> str:
+    return date.today().isoformat()
+
+
+def load() -> dict:
+    """Load quota state, resetting daily counters if date has changed."""
+    today = _today()
+    if os.path.exists(QUOTA_PATH):
+        try:
+            with open(QUOTA_PATH) as f:
+                state = json.load(f)
+            if state.get("date") == today:
+                return state
+        except Exception as e:
+            logger.warning(f"Could not read quota_state.json: {e}")
+
+    # First use today — reset daily counters, preserve config fields
+    return {
+        "date": today,
+        "total_tokens_used": 0,
+        "daily_budget": DAILY_BUDGET,
+        "files_per_run": FILES_PER_RUN,
+    }
+
+
+def save(state: dict) -> None:
+    """Atomically write quota state."""
+    os.makedirs(os.path.dirname(QUOTA_PATH), exist_ok=True)
+    dir_ = os.path.dirname(QUOTA_PATH)
+    try:
+        with tempfile.NamedTemporaryFile('w', dir=dir_, delete=False, suffix='.tmp') as f:
+            json.dump(state, f, indent=2)
+            tmp_path = f.name
+        os.replace(tmp_path, QUOTA_PATH)
+    except Exception as e:
+        logger.error(f"Failed to save quota_state.json: {e}")
+
+
+def record_tokens(tokens: int) -> dict:
+    """Add tokens to today's total and persist. Returns updated state."""
+    state = load()
+    state["total_tokens_used"] = state.get("total_tokens_used", 0) + tokens
+    save(state)
+    return state
+
+
+def remaining() -> int:
+    """How many tokens are left in today's budget."""
+    state = load()
+    return max(0, state.get("daily_budget", DAILY_BUDGET) - state.get("total_tokens_used", 0))
+
+
+def is_budget_exhausted() -> bool:
+    return remaining() <= 0
