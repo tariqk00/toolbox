@@ -209,7 +209,15 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
                 types.Part.from_bytes(data=content_bytes, mime_type=ai_mime)
             ]
         )
-        
+
+        usage = response.usage_metadata
+        if usage:
+            logger.info(
+                f"  [Tokens] in={usage.prompt_token_count} "
+                f"out={usage.candidates_token_count} "
+                f"total={usage.total_token_count}"
+            )
+
         text = response.text.strip()
         
         # Robust JSON extraction

@@ -133,7 +133,9 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
     files = results.get('files', [])
     
     print(f"Found {len(files)} files in {folder_name}. Processing...")
-    
+
+    folder_paths_str = get_category_prompt_str()
+
     for f in files:
         if limit and stats.processed >= limit:
             break
@@ -141,27 +143,26 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
         name = f['name']
         fid = f['id']
         mime = f['mimeType']
-        
+
         # Recursion
         if mime == 'application/vnd.google-apps.folder':
             if recursive:
                 scan_folder(fid, dry_run, csv_path, limit, mode, folder_name=f"{folder_name}/{name}", service=service, recursive=recursive)
             continue
-            
+
         # Validation: check if file is already processed
         is_valid_name = re.match(r'^\d{4}-\d{2}-\d{2} - .* - .*\.\w+$', name)
         if is_valid_name and not name.startswith("0000-00-00"):
             if mode != 'inbox':
                 continue
-        
+
         try:
             content = download_file_content(service, fid, mime)
             if not content: continue
 
             context_hint = f"File located in folder: {folder_name}. Created: {f.get('createdTime')}"
-            
+
             # --- AI ANALYSIS ---
-            folder_paths_str = get_category_prompt_str()
             analysis = analyze_with_gemini(content, mime, name, folder_paths_str, context_hint, file_id=fid)
 
             new_name = generate_new_name(analysis, name, f.get('createdTime'))
