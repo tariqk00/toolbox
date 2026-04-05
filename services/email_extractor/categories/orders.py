@@ -1,17 +1,33 @@
 """
 Orders category processor.
-First email for an order: full entry (product, price, status).
-Subsequent emails: compact status-only update.
-State tracks seen order numbers to detect duplicates.
+Regex handles order number + status (structural, reliable).
+Gemini handles item extraction (name, qty, price, total, tracking)
+so no per-vendor parsing code is needed.
 
-Costco: multi-item support — extracts all line items from HTML body,
-tracks per-item status since items may ship in separate shipments.
+First email for an order: full entry with all items.
+Subsequent emails: compact status-only update in-place per item.
 """
-import re
+import json
 import logging
+import os
+import re
+import sys
+
+BASE_DIR = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+if os.path.dirname(BASE_DIR) not in sys.path:
+    sys.path.insert(0, os.path.dirname(BASE_DIR))
+
 from ..writers import append_to_memory, update_in_memory
+from ..scanner import html_to_text
 
 logger = logging.getLogger('EmailExtractor.Orders')
+
+GEMINI_FREE_SECRET = os.path.join(BASE_DIR, 'config', 'gemini_ai_studio_secret')
+GEMINI_FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite')
 
 ORDER_KEYWORDS = (
     'order', 'shipped', 'delivered', 'delivery', 'in transit', 'dispatched',
@@ -19,6 +35,32 @@ ORDER_KEYWORDS = (
     'pillpack', 'shipment',
 )
 
+EXTRACT_PROMPT = """\
+Extract order details from this {vendor} email.
+
+Return ONLY valid JSON in this exact format:
+{{
+  "items": [{{"name": "...", "qty": "1", "price": "$X.XX"}}],
+  "total": "$X.XX",
+  "tracking": ""
+}}
+
+Rules:
+- items: list every individual product or line item. Include memberships and subscriptions.
+- qty: quantity as a string, default "1"
+- price: per-item price with $ sign, or "" if not shown
+- total: the amount actually charged (after tax/shipping), with $ sign, or "" if not found
+- tracking: UPS/FedEx/USPS tracking number if present, or ""
+- Use "" for missing fields, not null
+- Return only JSON, no explanation
+
+Subject: {subject}
+
+Email:
+{body}"""
+
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
 
 def _is_order_email(subject: str, plain: str) -> bool:
     combined = (subject + ' ' + plain[:500]).lower()
@@ -26,13 +68,11 @@ def _is_order_email(subject: str, plain: str) -> bool:
 
 
 def _get_body(email: dict) -> str:
-    """Return best available plain text: plain first, HTML-converted fallback."""
     plain = email.get('plain') or ''
     if plain:
         return plain
     html = email.get('html') or ''
     if html:
-        from ..scanner import html_to_text
         text, _ = html_to_text(html)
         return text
     return ''
@@ -42,9 +82,9 @@ def _extract_order_number(vendor: str, subject: str, body: str) -> str:
     patterns = [
         r'[Oo]rder\s*[#Nn]o?\.?\s*([A-Z0-9\-]{6,})',
         r'[Oo]rder\s+[Nn]umber\s+(\d{8,})',
-        r'[Oo]rder\s+number\s+is\s+([A-Z][A-Z0-9]{4,})',  # WHOOP plain text
-        r'order=([A-Z][A-Z0-9]{4,})',                       # WHOOP URL param
-        r'\[([a-z][0-9]{15,})\]',                           # lululemon
+        r'[Oo]rder\s+[Nn]umber\s+is\s+([A-Z][A-Z0-9]{4,})',
+        r'order=([A-Z][A-Z0-9]{4,})',
+        r'\[([a-z][0-9]{15,})\]',
         r'#(\d{8,})',
     ]
     for text in (subject, body[:3000]):
@@ -56,10 +96,6 @@ def _extract_order_number(vendor: str, subject: str, body: str) -> str:
 
 
 def _extract_pillpack_shipment_key(body: str, email_date: str) -> str:
-    """
-    Derive a stable dedup key for a PillPack shipment.
-    Tries to extract the estimated arrival date; falls back to email year-month.
-    """
     m = re.search(
         r'(?:arrive by|arriving by|arrives by|scheduled for|arrival by)'
         r'\s+(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?'
@@ -69,177 +105,16 @@ def _extract_pillpack_shipment_key(body: str, email_date: str) -> str:
     )
     if m:
         raw = m.group(1).strip().rstrip('.')
-        # Normalise "Mar 29" → "2026-03" (year from email_date)
         year = email_date[:4]
-        months = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05','jun':'06',
-                  'jul':'07','aug':'08','sep':'09','oct':'10','nov':'11','dec':'12'}
+        months = {
+            'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04',
+            'may': '05', 'jun': '06', 'jul': '07', 'aug': '08',
+            'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12',
+        }
         abbr = raw[:3].lower()
         if abbr in months:
             return f'{year}-{months[abbr]}'
-    # Fallback: year-month of the email itself
     return email_date[:7]
-
-
-def _extract_items_amazon(body: str) -> list[dict]:
-    """
-    Extract all line items from an Amazon shipped email (plain text).
-    Format:
-        * Product Name
-          Quantity: N
-          PRICE USD
-    Returns list of {name, qty, price}.
-    """
-    items = []
-    pattern = re.compile(
-        r'^\*\s+(.+?)\n'
-        r'(?:\s+Quantity:\s*(\d+)\n)?'
-        r'\s+([\d,]+\.\d{2})\s+USD',
-        re.MULTILINE,
-    )
-    for m in pattern.finditer(body[:5000]):
-        name = m.group(1).strip()[:100]
-        qty = m.group(2) or '1'
-        price = f'${m.group(3)}'
-        items.append({'name': name, 'qty': qty, 'price': price})
-    return items
-
-
-def _item_key(name: str) -> str:
-    """Stable dict key from item name (no item numbers on Amazon)."""
-    return re.sub(r'\s+', '_', name[:30].lower().strip())
-
-
-def _extract_items_costco(html: str) -> list[dict]:
-    """
-    Extract all line items from a Costco HTML email.
-    Product name, Item #, and price are in separate <td> cells — search
-    the tag-stripped, whitespace-normalised text for sequential patterns.
-    Returns list of {name, item_num, price}.
-    """
-    import html as html_mod
-    # Strip tags, decode entities, collapse whitespace to single spaces
-    flat = re.sub(r'<[^>]+>', ' ', html)
-    flat = html_mod.unescape(flat)
-    flat = re.sub(r'[\u200b\u200c]', '', flat)   # remove zero-width chars
-    flat = re.sub(r'\s+', ' ', flat)
-
-    def _clean_name(raw: str) -> str:
-        # Strip leading conditional-comment junk ending in "Standard --> "
-        raw = re.sub(r'^.*?Standard\s*-->\s*', '', raw, flags=re.IGNORECASE)
-        return raw.strip()[:100]
-
-    found = {}
-    # Confirmation: {name} Item # {num} ${price} Quantity
-    for m in re.finditer(
-        r'([A-Z][A-Za-z0-9][^\$]{5,100}?)\s+Item\s+#\s*(\d{5,})'
-        r'[^$]{0,60}\$([\d,]+\.\d{2})\s+Quantity',
-        flat[:30000],
-    ):
-        item_num = m.group(2)
-        if item_num not in found:
-            name = _clean_name(m.group(1))
-            if name and re.search(r'[a-z]', name):
-                found[item_num] = {'name': name, 'item_num': item_num,
-                                   'price': f'${m.group(3)}'}
-
-    # Shipped: {name} Item # {num} Quantity N Subtotal ${price}
-    for m in re.finditer(
-        r'([A-Z][A-Za-z0-9][^\$]{5,100}?)\s+Item\s+#\s*(\d{5,})'
-        r'\s+Quantity\s+\d+[^$]{0,60}Subtotal\s+\$([\d,]+\.\d{2})',
-        flat[:30000],
-    ):
-        item_num = m.group(2)
-        if item_num not in found:
-            name = _clean_name(m.group(1))
-            if name and re.search(r'[a-z]', name):
-                found[item_num] = {'name': name, 'item_num': item_num,
-                                   'price': f'${m.group(3)}'}
-
-    return list(found.values())
-
-
-def _extract_product(vendor: str, subject: str, body: str) -> str:
-    if vendor == 'Amazon Pharmacy':
-        m = re.search(r'containing\s+(\d+\s+of\s+\d+\s+medication)', body[:500])
-        return m.group(1) if m else 'PillPack medications'
-
-    if vendor == 'lululemon':
-        # html_to_text layout: NAME\n<whitespace>\nN x\n<whitespace>\nCOLOR / Size N
-        m = re.search(
-            r'([A-Z][A-Za-z0-9][A-Za-z0-9 \-\*\+\.]{4,79})\n'
-            r'(?:[ \t\n\r]+)(\d+)\s*x\s*\n'
-            r'(?:[ \t]+)([^\n\d][^\n]{2,39})',
-            body[:5000],
-        )
-        if m:
-            name = m.group(1).strip()[:80]
-            qty = m.group(2)
-            color_size = m.group(3).strip()
-            suffix = f' \u00d7{qty}' if qty != '1' else ''
-            return f'{name} ({color_size}){suffix}'
-        # Fallback: keyword-based match (allows hyphens/digits)
-        m = re.search(
-            r'([A-Z][A-Za-z0-9 \-\*\+\.]{5,80}'
-            r'(?:Short|Pant|Top|Jacket|Vest|Hoodie|Shirt|Tee|Bra|Legging|Tight|Shorts)'
-            r'[A-Za-z0-9\s\-\*]*)',
-            body[:3000],
-        )
-        if m:
-            return m.group(0).strip()[:80]
-
-    if vendor == 'WHOOP':
-        # Extract items+prices from ORDER SUMMARY, pick paid items first
-        m = re.search(r'ORDER SUMMARY\s*(.*?)\s*(?:Subtotal|Total Due)', body, re.DOTALL | re.IGNORECASE)
-        if m:
-            section = m.group(1).replace('\r', '')  # normalise CRLF
-            item_names = re.findall(r'^([A-Z][A-Za-z0-9][A-Za-z0-9 \+]{3,50})$', section, re.MULTILINE)
-            prices = re.findall(r'\$(\d+\.\d{2})', section)
-            item_names = [i.strip() for i in item_names if i.strip()]
-            # Pair items with prices; prefer items with non-zero price
-            paired = list(zip(item_names, prices)) if prices else [(n, '0.00') for n in item_names]
-            paid = [name for name, price in paired if price != '0.00']
-            items = paid if paid else item_names
-            if items:
-                return ', '.join(items[:3])
-        # Fallback
-        m = re.search(r'(WHOOP\s+(?:MG|4\.0|5\.0)[^\n]{0,30})', body[:2000])
-        if m:
-            return m.group(1).strip()[:60]
-
-    return ''
-
-
-def _extract_total(body: str) -> str:
-    """Find the order total (not per-item price)."""
-    patterns = [
-        r'[Oo]rder\s+[Tt]otal[:\s]+\$\s*([\d,]+\.\d{1,2})',
-        r'[Tt]otal\s+[Dd]ue[:\s]+\$\s*([\d,]+\.\d{1,2})',  # WHOOP: "Total Due"
-        r'[Tt]otal[:\s]+\$\s*([\d,]+\.\d{1,2})',
-        r'[Aa]mount[:\s]+\$\s*([\d,]+\.\d{1,2})',
-        r'[Ss]ubtotal[:\s]+\$\s*([\d,]+\.\d{1,2})',
-        # Amazon plain text: "Total\n50.9 USD"
-        r'[Tt]otal\s*\n\s*([\d,]+\.\d{1,2})\s+USD',
-    ]
-    for pattern in patterns:
-        m = re.search(pattern, body[:4000])
-        if m:
-            raw = m.group(1)
-            # Normalise to 2 decimal places
-            return f'${float(raw.replace(",", "")):.2f}'
-    m = re.search(r'\$\s*([\d,]+\.\d{1,2})', body[:2000])
-    return f'${m.group(1)}' if m else ''
-
-
-def _extract_tracking(body: str) -> str:
-    for pattern in [
-        r'[Tt]racking\s*[Nn]umber[:\s]+([A-Z0-9]{10,})',
-        r'\b(1Z[A-Z0-9]{16})\b',
-        r'\b(\d{20,22})\b',
-    ]:
-        m = re.search(pattern, body[:3000])
-        if m:
-            return m.group(1)
-    return ''
 
 
 def _extract_status(subject: str) -> str:
@@ -263,6 +138,52 @@ def _extract_status(subject: str) -> str:
     return 'Update'
 
 
+def _item_key(name: str) -> str:
+    return re.sub(r'\s+', '_', name[:30].lower().strip())
+
+
+# ── Gemini extraction ────────────────────────────────────────────────────────
+
+def _get_gemini_client():
+    try:
+        from google import genai
+        key = open(GEMINI_FREE_SECRET).read().strip()
+        return genai.Client(api_key=key)
+    except Exception as e:
+        logger.error(f'Gemini client init failed: {e}')
+        return None
+
+
+def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
+    """
+    Ask Gemini to extract items, total, and tracking from an order email.
+    Returns {items: [{name, qty, price}], total, tracking}.
+    Falls back to empty dict on failure.
+    """
+    client = _get_gemini_client()
+    if not client:
+        return {}
+    try:
+        prompt = EXTRACT_PROMPT.format(
+            vendor=vendor,
+            subject=subject,
+            body=body[:4000],
+        )
+        response = client.models.generate_content(
+            model=GEMINI_FREE_MODEL,
+            contents=prompt,
+        )
+        raw = response.text.strip()
+        raw = re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
+        return json.loads(raw)
+    except Exception as e:
+        logger.error(f'Gemini order extraction failed ({vendor}): {e}')
+        return {}
+
+
+# ── Main processor ───────────────────────────────────────────────────────────
+
 def process(email: dict, state: dict) -> str | None:
     vendor = email['vendor']
     subject = email['subject']
@@ -273,109 +194,38 @@ def process(email: dict, state: dict) -> str | None:
         return None
 
     status = _extract_status(subject)
-    order_num = _extract_order_number(vendor, subject, body)
-    tracking = _extract_tracking(body)
-
-    known_orders = state.setdefault('order_numbers', {})
     filename = f'{vendor}.md'
+    known_orders = state.setdefault('order_numbers', {})
 
-    # ── Costco: multi-item path ─────────────────────────────────────────────
-    if vendor == 'Costco':
-        items = _extract_items_costco(email.get('html') or '')
-
-        if order_num and order_num in known_orders:
-            # Update [Status] in-place on each affected item line
-            prev_items = known_orders[order_num].get('items', {})
-            updated = []
-            for item in items:
-                num = item['item_num']
-                if num not in prev_items:
-                    continue
-                prev_status = prev_items[num].get('status', '')
-                if status == prev_status:
-                    continue
-                name = prev_items[num]['name']
-                price = prev_items[num]['price']
-                prev_date = prev_items[num].get('date', '')
-                old_line = f'- {name} — {price} [{prev_status}] {prev_date}'.rstrip()
-                new_line = f'- {name} — {price} [{status}] {date}'
-                update_in_memory('Orders', filename, old_line, new_line)
-                prev_items[num]['status'] = status
-                prev_items[num]['date'] = date
-                updated.append({'name': name, 'price': price})
-
-            if not updated:
-                return None
-
-            item_lines = '; '.join(f'{i["name"][:40]} — {i["price"]}' for i in updated)
-            summary = f'Costco #{order_num} → {status}: {item_lines}'
-            if tracking:
-                summary += f' | Tracking: {tracking}'
-            logger.info(f'Orders/{filename}: status update {summary}')
-            return summary
-
-        # First time — full entry with all items
-        total = _extract_total(body)
-        lines = [f'## {date} — Order #{order_num or "N/A"} [{status}]']
-        lines.append(f'**Vendor:** {vendor}')
-        if total:
-            lines.append(f'**Total:** {total}')
-        lines.append('')
-        for item in items:
-            lines.append(f'- {item["name"]} — {item["price"]} [{status}] {date}')
-        if not items:
-            lines.append('*(items not extracted)*')
-        lines.append('---')
-
-        append_to_memory('Orders', filename, '\n'.join(lines))
-
-        if order_num:
-            item_dict = {
-                i['item_num']: {'name': i['name'], 'price': i['price'], 'status': status, 'date': date}
-                for i in items
-            }
-            known_orders[order_num] = {'vendor': vendor, 'date': date, 'items': item_dict}
-
-        n = len(items)
-        summary = f'Costco #{order_num}: {n} item{"s" if n != 1 else ""}'
-        if total:
-            summary += f' — {total}'
-        summary += f' [{status}]'
-        logger.info(f'Orders/{filename}: new order — {summary}')
-        return summary
-
-    # ── Amazon Pharmacy: month-based dedup (no order number) ───────────────
+    # ── Amazon Pharmacy: month-based dedup key ──────────────────────────────
     if vendor == 'Amazon Pharmacy':
         if status == 'Update':
-            return None  # skip generic/recall notices for the order log
-        shipment_key = _extract_pillpack_shipment_key(body, date)
-        state_key = f'pillpack:{shipment_key}'
+            return None
+        order_key = f'pillpack:{_extract_pillpack_shipment_key(body, date)}'
 
-        product = _extract_product(vendor, subject, body)
-        total = _extract_total(body)
-
-        if state_key in known_orders:
-            prev_status = known_orders[state_key].get('status', '')
+        if order_key in known_orders:
+            prev = known_orders[order_key]
+            prev_status = prev.get('status', '')
             if status == prev_status:
                 return None
-            # Update status line in-place
-            prev_product = known_orders[state_key].get('product', product)
             old_line = f'**Status:** [{prev_status}]'
             new_line = f'**Status:** [{status}] {date}'
             if not update_in_memory('Orders', filename, old_line, new_line):
-                # fallback: old entries may not have date on first write
                 update_in_memory('Orders', filename,
                                  f'**Status:** {prev_status}', new_line)
-            known_orders[state_key]['status'] = status
-            summary = f'Amazon Pharmacy: {prev_product} → {status}'
+            prev['status'] = status
+            summary = f'Amazon Pharmacy → {status}'
             logger.info(f'Orders/{filename}: status update {summary}')
             return summary
 
-        # First entry for this shipment
-        status_line = f'**Status:** [{status}] {date}'
-        lines = [f'## {date} — PillPack {shipment_key} [{status}]']
+        extracted = _extract_items_llm(vendor, subject, body)
+        items = extracted.get('items', [])
+        total = extracted.get('total', '')
+        product = items[0]['name'] if items else 'PillPack medications'
+
+        lines = [f'## {date} — PillPack {order_key.split(":", 1)[1]} [{status}]']
         lines.append(f'**Vendor:** Amazon Pharmacy')
-        lines.append(status_line)
+        lines.append(f'**Status:** [{status}] {date}')
         if product:
             lines.append(f'**Medications:** {product}')
         if total:
@@ -383,132 +233,92 @@ def process(email: dict, state: dict) -> str | None:
         lines.append('---')
 
         append_to_memory('Orders', filename, '\n'.join(lines))
-        known_orders[state_key] = {
+        known_orders[order_key] = {
             'vendor': vendor, 'status': status, 'date': date, 'product': product,
         }
-        summary = f'Amazon Pharmacy: {product or "PillPack"} [{status}]'
+        summary = f'Amazon Pharmacy: {product} [{status}]'
         if total:
             summary += f' — {total}'
         logger.info(f'Orders/{filename}: new shipment — {summary}')
         return summary
 
-    # ── Amazon: multi-item path ─────────────────────────────────────────────
-    if vendor == 'Amazon':
-        items = _extract_items_amazon(body)
+    # ── All other vendors: order-number dedup ───────────────────────────────
+    order_num = _extract_order_number(vendor, subject, body)
 
-        if order_num and order_num in known_orders:
-            prev_items = known_orders[order_num].get('items', {})
-            updated = []
-            for item in items:
-                key = _item_key(item['name'])
-                if key not in prev_items:
-                    continue
-                prev_status = prev_items[key].get('status', '')
-                if status == prev_status:
-                    continue
-                name = prev_items[key]['name']
-                price = prev_items[key]['price']
-                prev_date = prev_items[key].get('date', '')
-                old_line = f'- {name} — {price} [{prev_status}] {prev_date}'.rstrip()
-                new_line = f'- {name} — {price} [{status}] {date}'
-                update_in_memory('Orders', filename, old_line, new_line)
-                prev_items[key]['status'] = status
-                prev_items[key]['date'] = date
-                updated.append({'name': name, 'price': price})
-
-            if not updated:
-                return None
-
-            item_lines = '; '.join(f'{i["name"][:40]} — {i["price"]}' for i in updated)
-            summary = f'Amazon #{order_num} → {status}: {item_lines}'
-            if tracking:
-                summary += f' | Tracking: {tracking[:20]}'
-            logger.info(f'Orders/{filename}: status update {summary}')
-            return summary
-
-        # First time — full entry with all items
-        total = _extract_total(body)
-        lines = [f'## {date} — Order #{order_num or "N/A"} [{status}]']
-        lines.append(f'**Vendor:** {vendor}')
-        if total:
-            lines.append(f'**Total:** {total}')
-        if tracking:
-            lines.append(f'**Tracking:** {tracking}')
-        lines.append('')
-        for item in items:
-            qty_suffix = f' ×{item["qty"]}' if item['qty'] != '1' else ''
-            lines.append(f'- {item["name"]}{qty_suffix} — {item["price"]} [{status}] {date}')
-        if not items:
-            lines.append('*(items not extracted)*')
-        lines.append('---')
-
-        append_to_memory('Orders', filename, '\n'.join(lines))
-
-        if order_num:
-            item_dict = {
-                _item_key(i['name']): {
-                    'name': i['name'], 'price': i['price'],
-                    'status': status, 'date': date,
-                }
-                for i in items
-            }
-            known_orders[order_num] = {'vendor': vendor, 'date': date, 'items': item_dict}
-
-        n = len(items)
-        summary = f'Amazon #{order_num}: {n} item{"s" if n != 1 else ""}'
-        if total:
-            summary += f' — {total}'
-        summary += f' [{status}]'
-        logger.info(f'Orders/{filename}: new order — {summary}')
-        return summary
-
-    # ── Single-item path (all other vendors) ───────────────────────────────
     if order_num and order_num in known_orders:
-        prev_status = known_orders[order_num].get('status', '')
+        prev = known_orders[order_num]
+        prev_status = prev.get('status', '')
         if status == prev_status:
             return None
 
-        lines = [f'↳ {date}: **{status}**']
-        if tracking:
-            lines.append(f'  Tracking: {tracking}')
+        items = prev.get('items', {})
+        updated = []
+        for item in items.values():
+            item_status = item.get('status', '')
+            if status == item_status:
+                continue
+            old_line = f'- {item["name"]} — {item["price"]} [{item_status}] {item.get("date", "")}'.rstrip()
+            new_line = f'- {item["name"]} — {item["price"]} [{status}] {date}'
+            update_in_memory('Orders', filename, old_line, new_line)
+            item['status'] = status
+            item['date'] = date
+            updated.append(item)
 
-        append_to_memory('Orders', filename, '\n'.join(lines))
-        known_orders[order_num]['status'] = status
+        if not updated and not items:
+            # Old-format state entry with no items dict — fall back to append
+            append_to_memory('Orders', filename, f'↳ {date}: **{status}**')
 
+        prev['status'] = status
         summary = f'{vendor} #{order_num} → {status}'
-        if tracking:
-            summary += f' ({tracking[:20]})'
-        logger.info(f'Orders/{filename}: status update {summary}')
+        logger.info(f'Orders/{filename}: status update — {summary}')
         return summary
 
-    # First time — full entry
-    product = _extract_product(vendor, subject, body)
-    total = _extract_total(body)
+    # New order — call LLM for item extraction
+    extracted = _extract_items_llm(vendor, subject, body)
+    items = extracted.get('items', [])
+    total = extracted.get('total', '')
+    tracking = extracted.get('tracking', '')
 
     lines = [f'## {date} — Order #{order_num or "N/A"} [{status}]']
     lines.append(f'**Vendor:** {vendor}')
-    if product:
-        lines.append(f'**Product:** {product}')
     if total:
-        lines.append(f'**Amount:** {total}')
+        lines.append(f'**Total:** {total}')
     if tracking:
         lines.append(f'**Tracking:** {tracking}')
+    lines.append('')
+    for item in items:
+        name = item.get('name', '').strip()
+        price = item.get('price', '').strip()
+        qty = item.get('qty', '1').strip()
+        qty_suffix = f' \u00d7{qty}' if qty and qty != '1' else ''
+        price_part = f' — {price}' if price else ''
+        lines.append(f'- {name}{qty_suffix}{price_part} [{status}] {date}')
+    if not items:
+        lines.append('*(items not extracted)*')
     lines.append('---')
 
     append_to_memory('Orders', filename, '\n'.join(lines))
 
     if order_num:
-        known_orders[order_num] = {'vendor': vendor, 'status': status, 'date': date}
+        item_dict = {
+            _item_key(i.get('name', '')): {
+                'name': i.get('name', ''),
+                'price': i.get('price', ''),
+                'status': status,
+                'date': date,
+            }
+            for i in items
+            if i.get('name')
+        }
+        known_orders[order_num] = {
+            'vendor': vendor, 'date': date, 'status': status, 'items': item_dict,
+        }
 
+    n = len(items)
     label = f'{vendor} #{order_num}' if order_num else vendor
-    details = []
-    if product:
-        details.append(product[:40])
+    summary = f'{label}: {n} item{"s" if n != 1 else ""}'
     if total:
-        details.append(total)
-    summary = label
-    if details:
-        summary += ': ' + ' — '.join(details)
+        summary += f' — {total}'
     summary += f' [{status}]'
     logger.info(f'Orders/{filename}: new order — {summary}')
     return summary
