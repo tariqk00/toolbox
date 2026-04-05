@@ -33,7 +33,7 @@ from toolbox.lib.drive_utils import (
     download_file_content, move_file,
     get_folder_path, resolve_folder_id,
     get_category_prompt_str,
-    INBOX_ID, HISTORY_SHEET_ID,
+    INBOX_ID, HISTORY_SHEET_ID, CONFIG_PATH,
 )
 
 # --- CONFIG ---
@@ -134,6 +134,50 @@ def generate_new_name(analysis: dict, original_name: str, created_time_str: str)
 # Queue building
 # ---------------------------------------------------------------------------
 
+# Subtrees within backfill_extra_roots that should not be processed.
+# These are raw data dumps (exports, sensor data, asset archives) with no
+# document-like content worth renaming.
+BACKFILL_EXCLUDE_PREFIXES = [
+    '09 - Archive/Source_Dumps',   # Garmin takeouts, Health Sync CSVs, Readwise/Logseq exports
+    '05 - Media/Google Photos',    # ~14K year-sorted photos (1988–2019); not document-like
+    '05 - Media/QNAP831X',         # NAS backup mirror; raw files, not for renaming
+]
+
+
+def build_extra_folder_map(service) -> dict:
+    """Crawl backfill_extra_roots (Media, Archive) and return a path→id map."""
+    with open(CONFIG_PATH) as f:
+        config = json.load(f)
+    extra_roots = config.get('backfill_extra_roots', [])
+    top_level = config.get('top_level_folders', {})
+
+    # Build reverse map: id → name
+    id_to_name = {v['id']: k for k, v in top_level.items()}
+
+    path_to_id = {}
+    for root_id in extra_roots:
+        root_name = id_to_name.get(root_id, root_id)
+        _crawl_for_backfill(service, root_id, root_name, path_to_id)
+    return path_to_id
+
+
+def _crawl_for_backfill(service, folder_id, path, path_to_id):
+    if any(path.startswith(p) for p in BACKFILL_EXCLUDE_PREFIXES):
+        logger.debug(f"  [Skip] Excluded subtree: {path}")
+        return
+    path_to_id[path] = folder_id
+    try:
+        results = service.files().list(
+            q=f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+            fields="files(id, name)",
+            pageSize=200
+        ).execute()
+        for child in results.get('files', []):
+            _crawl_for_backfill(service, child['id'], f"{path}/{child['name']}", path_to_id)
+    except Exception as e:
+        logger.error(f"Error crawling {path}: {e}")
+
+
 def build_queue(service) -> list:
     """Crawl all Drive folders and return list of unprocessed file dicts."""
     with open(TREE_PATH) as f:
@@ -141,7 +185,13 @@ def build_queue(service) -> list:
     with open(CACHE_PATH) as f:
         cache = json.load(f)
 
-    path_to_id = tree_data['path_to_id']
+    path_to_id = dict(tree_data['path_to_id'])
+
+    # Also include Media and Archive (excluded from tree/routing but backfill should cover them)
+    extra = build_extra_folder_map(service)
+    path_to_id.update(extra)
+    logger.info(f"Tree folders: {len(tree_data['path_to_id'])}, extra (Media/Archive): {len(extra)}")
+
     pending = []
 
     for folder_path in sorted(path_to_id.keys()):
@@ -207,7 +257,9 @@ def count_only(service) -> None:
     with open(CACHE_PATH) as f:
         cache = json.load(f)
 
-    path_to_id = tree_data['path_to_id']
+    path_to_id = dict(tree_data['path_to_id'])
+    extra = build_extra_folder_map(service)
+    path_to_id.update(extra)
     print(f"\n{'Folder':<55} {'Total':>6} {'Cached':>7} {'Named':>6} {'Todo':>6}")
     print("-" * 85)
 

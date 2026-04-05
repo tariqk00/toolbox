@@ -8,6 +8,19 @@
     "history_sheet_id": "1N8xlrcCnj97uGPssXnGg_-1t2SvGZlnocc_7BNO28dY",
     "reports_folder_id": "1BsNuuDngxR1gdUlb8T0tKmMCz1ZAjJvO"
   },
+  "top_level_folders": {
+    "00 - Staging":       { "id": "1sJD2HGHXD7biGsiQg535xxw_luFfsD8J", "sorter": false,  "backfill": false, "note": "inbox area" },
+    "01 - Second Brain":  { "id": "1HNKo72TkLeurAi6g7X0C90OzqF2z3YB7", "sorter": true,   "backfill": true  },
+    "02 - Home & Family": { "id": "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX", "sorter": true,   "backfill": true  },
+    "03 - Finance":       { "id": "1tKdysRukqbkzDuI1fomvSrYDhA3cr2mx", "sorter": true,   "backfill": true  },
+    "04 - Health":        { "id": "1yruR1fC4TAR4U-Irb48p7tIERCDgg_PI", "sorter": true,   "backfill": true  },
+    "05 - Media":         { "id": "1xy8eHkjye7Dlv89sPamiUnvkt2_OWVOL", "sorter": false,  "backfill": true,  "note": "excluded from tree/routing; backfill only" },
+    "06 - Library":       { "id": "1SHzgwpYJ8K1d9wGNHQPGP68zVIz13ymI", "sorter": true,   "backfill": true  },
+    "07 - Work":          { "id": "1eYrwTBBAmuCFvEIBg2-G9kdzqPOEPOsc", "sorter": true,   "backfill": true  },
+    "08 - Travel":        { "id": "1BlqB3XkKpGPMfnlQ4b3FeQQA7C0kXE-u", "sorter": true,   "backfill": true  },
+    "09 - Archive":       { "id": "1noldMPM1SfoOvj2qqcUFfjJiB3tI8wso", "sorter": false,  "backfill": true,  "note": "excluded from tree/routing; backfill only" },
+    "99 - Other":         { "id": "1dGVQsCzMdXDYl0VaEomEOysWcTlNUxmA", "sorter": true,   "backfill": true  }
+  },
   "roots": [
     "1HNKo72TkLeurAi6g7X0C90OzqF2z3YB7",
     "1Ob6M7x7-D1jmTNAVu0zd7fE3h5dgFsBX",
@@ -15,8 +28,14 @@
     "1yruR1fC4TAR4U-Irb48p7tIERCDgg_PI",
     "1xy8eHkjye7Dlv89sPamiUnvkt2_OWVOL",
     "1SHzgwpYJ8K1d9wGNHQPGP68zVIz13ymI",
+    "1eYrwTBBAmuCFvEIBg2-G9kdzqPOEPOsc",
+    "1BlqB3XkKpGPMfnlQ4b3FeQQA7C0kXE-u",
     "1noldMPM1SfoOvj2qqcUFfjJiB3tI8wso",
     "1sJD2HGHXD7biGsiQg535xxw_luFfsD8J",
     "1dGVQsCzMdXDYl0VaEomEOysWcTlNUxmA"
+  ],
+  "backfill_extra_roots": [
+    "1xy8eHkjye7Dlv89sPamiUnvkt2_OWVOL",
+    "1noldMPM1SfoOvj2qqcUFfjJiB3tI8wso"
   ]
 }

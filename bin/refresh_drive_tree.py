@@ -37,10 +37,13 @@ def load_roots():
 
 
 # Paths to exclude entirely (no crawl, not included in tree)
+# These folders are excluded from the hourly sorter's routing targets.
+# backfill_extra_roots in folder_config.json handles them separately for backfill.
 EXCLUDE_PREFIXES = [
     '05 - Media',
-    '07 - Archive',
-    '02 - Personal & ID/Kids/Soccer/Lindy',  # old Classic Sites attachment folders
+    '09 - Archive',
+    '00 - Staging',
+    '02 - Home & Family/Kids/Soccer/Lindy',  # old Classic Sites attachment folders
     '03 - Finance/Taxes/2',                  # year subfolders (2003–2025)
 ]
 
