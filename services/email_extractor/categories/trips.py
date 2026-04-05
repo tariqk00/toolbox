@@ -102,7 +102,7 @@ def _extract_status(subject: str) -> str:
     return 'Update'
 
 
-def process(email: dict) -> bool:
+def process(email: dict, state: dict) -> str | None:
     vendor = email['vendor']
     subject = email['subject']
     plain = email['plain'] or ''
@@ -114,6 +114,25 @@ def process(email: dict) -> bool:
     dates = _extract_dates(plain)
     destination = _extract_destination(vendor, subject, plain)
 
+    state_key = confirmation or f'{vendor}:{date}'
+    known_trips = state.setdefault('trip_confirmations', {})
+
+    if confirmation and confirmation in known_trips:
+        prev_status = known_trips[confirmation].get('status', '')
+        if status == prev_status:
+            return None
+
+        lines = [f'↳ {date}: **{status}**']
+        append_to_memory(None, 'Travel.md', '\n'.join(lines))
+        known_trips[confirmation]['status'] = status
+
+        dest = known_trips[confirmation].get('destination', '')
+        summary = f'{trip_type}: {dest} ({vendor})' if dest else f'{trip_type}: {vendor}'
+        summary += f' → {status}'
+        logger.info(f'Travel.md: status update {summary}')
+        return summary
+
+    # First time seeing this trip — full entry
     header = f'{trip_type} — {destination}' if destination else trip_type
     lines = [f'## {date} — {header}']
     lines.append(f'**Vendor:** {vendor}')
@@ -125,10 +144,17 @@ def process(email: dict) -> bool:
     lines.append(f'**Subject:** {subject}')
     lines.append('---')
 
-    content = '\n'.join(lines)
-    append_to_memory(None, 'Travel.md', content)
+    append_to_memory(None, 'Travel.md', '\n'.join(lines))
+
+    if confirmation:
+        known_trips[confirmation] = {
+            'vendor': vendor, 'status': status, 'date': date, 'destination': destination,
+        }
+
     summary = f'{trip_type}: {destination} ({vendor})' if destination else f'{trip_type}: {vendor}'
     if status not in ('Confirmed', 'Update'):
         summary += f' [{status}]'
+    if dates:
+        summary += f' — {dates[:40]}'
     logger.info(f'Travel.md: {summary}')
     return summary

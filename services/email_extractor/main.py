@@ -51,7 +51,7 @@ def run():
                                           after_date=after_date, first_run=first_run)
     for email in order_emails:
         try:
-            result = orders.process(email)
+            result = orders.process(email, state)
             if result:
                 summaries['orders'].append(result)
         except Exception as e:
@@ -77,7 +77,7 @@ def run():
                                          after_date=after_date, first_run=first_run)
     for email in trip_emails:
         try:
-            result = trips.process(email)
+            result = trips.process(email, state)
             if result:
                 summaries['trips'].append(result)
         except Exception as e:
