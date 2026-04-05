@@ -37,6 +37,7 @@ config/drive_tree.json
 config/gemini_secret
 config/gemini_ai_studio_secret
 config/gmail_ingest_state.json
+config/email_extractor_state.json
 google-drive/gemini_cache.json
 google-drive/test_config.json
 

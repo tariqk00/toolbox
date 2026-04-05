@@ -1,0 +1,47 @@
+{
+  "digests": {
+    "known_senders": {
+      "admin@the-syllabus.com": "The Syllabus",
+      "sentinelteam@substack.com": "Sentinel Global Risks Watch"
+    }
+  },
+  "orders": {
+    "senders": {
+      "shipment-tracking@amazon.com": "Amazon",
+      "no-reply@pharmacy.amazon.com": "Amazon Pharmacy",
+      "orderstatus@costco.com": "Costco",
+      "noreply@e.lululemon.com": "lululemon",
+      "no-reply@notifications.whoop.com": "WHOOP"
+    }
+  },
+  "receipts": {
+    "senders": {
+      "noreply@patient-message.com": "Allied Physicians Group",
+      "no-reply@phreesia-mail.com": "Allied Physicians Group",
+      "noreply@alerts.psegliny.com": "PSEG Long Island",
+      "customerservice@e-zpassny.com": "E-ZPass NY",
+      "donotreply@notifications.t-mobile.com": "T-Mobile",
+      "do.not.reply@hmebillpay.com": "Hampton Homecare",
+      "no.reply.alerts@chase.com": "Chase",
+      "citicards@info6.citi.com": "Citi / Costco Visa",
+      "capitalone@notification.capitalone.com": "Capital One",
+      "invoice+statements@mail.anthropic.com": "Anthropic",
+      "payments-noreply@google.com": "Google Cloud",
+      "no_reply@email.apple.com": "Apple",
+      "servicing@emails.toyotafinancial.com": "Toyota Financial",
+      "volvocarfinancialservices@vcfs-email.com": "Volvo Financial",
+      "noreply@uber.com": "Uber"
+    }
+  },
+  "trips": {
+    "senders": {
+      "DeltaAirLines@t.delta.com": "Delta",
+      "reservations@nationalcar.com": "National Car Rental",
+      "noreply@resy.com": "Resy",
+      "noreply@fulfillment.amexgbt.com": "AmEx Global Business Travel"
+    },
+    "sender_domains": {
+      "vacationclub.com": "Marriott Vacation Club"
+    }
+  }
+}
