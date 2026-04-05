@@ -210,10 +210,12 @@ def process(email: dict, state: dict) -> str | None:
                     continue
                 name = prev_items[num]['name']
                 price = prev_items[num]['price']
-                old_line = f'- {name} — {price} [{prev_status}]'
-                new_line = f'- {name} — {price} [{status}]'
+                prev_date = prev_items[num].get('date', '')
+                old_line = f'- {name} — {price} [{prev_status}] {prev_date}'.rstrip()
+                new_line = f'- {name} — {price} [{status}] {date}'
                 update_in_memory('Orders', filename, old_line, new_line)
                 prev_items[num]['status'] = status
+                prev_items[num]['date'] = date
                 updated.append({'name': name, 'price': price})
 
             if not updated:
@@ -234,7 +236,7 @@ def process(email: dict, state: dict) -> str | None:
             lines.append(f'**Total:** {total}')
         lines.append('')
         for item in items:
-            lines.append(f'- {item["name"]} — {item["price"]} [{status}]')
+            lines.append(f'- {item["name"]} — {item["price"]} [{status}] {date}')
         if not items:
             lines.append('*(items not extracted)*')
         lines.append('---')
@@ -243,7 +245,7 @@ def process(email: dict, state: dict) -> str | None:
 
         if order_num:
             item_dict = {
-                i['item_num']: {'name': i['name'], 'price': i['price'], 'status': status}
+                i['item_num']: {'name': i['name'], 'price': i['price'], 'status': status, 'date': date}
                 for i in items
             }
             known_orders[order_num] = {'vendor': vendor, 'date': date, 'items': item_dict}
