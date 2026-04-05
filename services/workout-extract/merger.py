@@ -46,15 +46,13 @@ def get_or_create_folder(service, path, parent_id):
     return parent_id
 
 
-def create_unified_record(gym_session, garmin=None, whoop=None, oura=None):
+def create_unified_record(gym_session, health_connect=None):
     """
-    Merge gym session data with provider metrics into a unified workout record.
+    Merge gym session data with biometric data into a unified workout record.
 
     Args:
         gym_session: Dict from gym_extract (contains blocks, exercises, metadata)
-        garmin: Dict from garmin_provider.get_activity_for_date() or None
-        whoop: Reserved for future Whoop integration
-        oura: Reserved for future Oura integration
+        health_connect: Dict from Health Connect export or None
 
     Returns:
         Unified workout dict
@@ -82,13 +80,10 @@ def create_unified_record(gym_session, garmin=None, whoop=None, oura=None):
         "blocks": gym_session.get("blocks", []),
         "coach_notes": gym_session.get("coach_notes"),
         "session_comment": gym_session.get("session_comment"),
-        "garmin": garmin,
-        "whoop": whoop,
-        "oura": oura,
+        "health_connect": health_connect,
         "_sources": {
             "screenshot": gym_session.get("_source", {}).get("screenshot"),
             "screenshot_drive_id": gym_session.get("_source", {}).get("screenshot_drive_id"),
-            "garmin_activity_id": garmin.get("activity_id") if garmin else None,
         },
         "_merged_at": datetime.now().isoformat(),
     }

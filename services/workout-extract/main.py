@@ -1,14 +1,12 @@
 """
 Workout Extract Service — Entry Point.
-Orchestrates gym screenshot extraction + Garmin enrichment into unified workout records.
+Orchestrates gym screenshot extraction into unified workout records.
 Runs daily via systemd timer.
 
 Usage:
   python main.py                  # dry-run (default)
   python main.py --execute        # extract + save
   python main.py --execute --force  # reprocess already-extracted screenshots
-  python main.py --gym-only       # skip Garmin
-  python main.py --garmin-only    # only sync Garmin .fit files (no screenshot extraction)
 """
 import argparse
 import logging
@@ -31,7 +29,6 @@ for p in [str(TOOLBOX_ROOT), str(PARENT_DIR), str(SERVICE_DIR)]:
 from lib.google_api import GoogleAuth
 from lib.telegram import send_message
 import gym_extract
-import garmin_provider
 import merger
 
 CONFIG_DIR = TOOLBOX_ROOT / "config"
@@ -83,26 +80,14 @@ def run(args):
 
     drive_service = get_drive_service()
 
-    # --- Garmin sync (.fit files) ---
-    garmin_client = None
-    if not args.gym_only:
-        garmin_client = garmin_provider.authenticate()
-        if not garmin_client:
-            logger.warning("Garmin auth failed — workout records will have no biometric data")
-            send_message("Garmin auth failed — workout records will have no biometric data", service="workout-extract")
+    api_key = load_gemini_key()
+    sessions = gym_extract.extract_all(
+        drive_service, api_key,
+        dry_run=dry_run,
+        force=args.force,
+    )
+    logger.info("Extracted %d gym sessions", len(sessions))
 
-    # --- Gym screenshot extraction ---
-    sessions = []
-    if not args.garmin_only:
-        api_key = load_gemini_key()
-        sessions = gym_extract.extract_all(
-            drive_service, api_key,
-            dry_run=dry_run,
-            force=args.force,
-        )
-        logger.info("Extracted %d gym sessions", len(sessions))
-
-    # --- Merge and save unified records ---
     saved = 0
     saved_details = []
     for session in sessions:
@@ -112,13 +97,7 @@ def run(args):
         if metrics.get("duration_minutes"):
             gym_duration = metrics["duration_minutes"]
 
-        garmin_data = None
-        if garmin_client and date:
-            garmin_data = garmin_provider.get_activity_for_date(
-                garmin_client, date[:10], gym_duration_minutes=gym_duration
-            )
-
-        record = merger.create_unified_record(session, garmin=garmin_data)
+        record = merger.create_unified_record(session)
 
         file_id = merger.save_unified_record(drive_service, record, dry_run=dry_run)
         if file_id:
@@ -146,10 +125,6 @@ def parse_args():
                         help="Execute extraction and save (default is dry-run)")
     parser.add_argument("--force", action="store_true",
                         help="Reprocess already-extracted screenshots")
-    parser.add_argument("--gym-only", action="store_true",
-                        help="Skip Garmin enrichment")
-    parser.add_argument("--garmin-only", action="store_true",
-                        help="Skip gym screenshot extraction")
     parser.add_argument("--verbose", action="store_true",
                         help="Enable debug logging")
     return parser.parse_args()

@@ -189,6 +189,11 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                 scan_folder(fid, dry_run, csv_path, limit, mode, folder_name=f"{folder_name}/{name}", service=service, recursive=recursive)
             continue
 
+        # Skip reserved files handled by other pipelines
+        if name == 'Health Connect.zip':
+            logger.info(f"Skipping {name} (reserved for health pipeline)")
+            continue
+
         # Validation: check if file is already processed
         is_valid_name = re.match(r'^\d{4}-\d{2}-\d{2} - .* - .*\.\w+$', name)
         if is_valid_name and not name.startswith("0000-00-00"):
