@@ -174,14 +174,15 @@ def process(email: dict, state: dict) -> str | None:
     if order_num:
         known_orders[order_num] = {'vendor': vendor, 'status': status, 'date': date}
 
-    parts = [f'{vendor}']
-    if order_num:
-        parts[0] += f' #{order_num}'
+    label = f'{vendor} #{order_num}' if order_num else vendor
+    details = []
     if product:
-        parts.append(product[:40])
+        details.append(product[:40])
     if total:
-        parts.append(total)
-    parts.append(f'[{status}]')
-    summary = ': '.join(parts[:2]) + (f' — {parts[2]}' if len(parts) > 2 else '') + f' {parts[-1]}'
+        details.append(total)
+    summary = label
+    if details:
+        summary += ': ' + ' — '.join(details)
+    summary += f' [{status}]'
     logger.info(f'Orders/{filename}: new order — {summary}')
     return summary
