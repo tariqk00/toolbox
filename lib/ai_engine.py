@@ -31,7 +31,7 @@ CACHE_PATH = os.path.join(CONFIG_DIR, 'gemini_cache.json')
 # Paid model — gemini-flash-latest (used by backfill and fallback)
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-flash-latest')
 # Free tier model — AI Studio project, 15 RPM / 1,000 RPD
-GEMINI_FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite-preview-06-17')
+GEMINI_FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite')
 
 FREE_SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_ai_studio_secret')
 # Min seconds between free-tier calls: 15 RPM = 1 per 4s
