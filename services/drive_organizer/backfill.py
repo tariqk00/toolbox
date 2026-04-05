@@ -64,7 +64,8 @@ def load_state() -> dict:
                 return json.load(f)
         except Exception as e:
             logger.warning(f"Could not read backfill_state.json: {e}")
-    return {"pending": [], "completed_ids": [], "last_run": None, "total_processed": 0}
+    return {"pending": [], "last_run": None, "total_processed": 0,
+            "changes_page_token": None, "extra_folder_map": {}, "extra_map_built_at": None}
 
 
 def save_state(state: dict) -> None:
@@ -192,6 +193,90 @@ def _get_extra_folder_map(service, state: dict) -> dict:
     state['extra_map_built_at'] = datetime.now(timezone.utc).isoformat()
     save_state(state)
     return extra
+
+
+def _all_tracked_ids(state: dict) -> set:
+    """All folder IDs we care about: sorter tree + extra roots, minus inbox."""
+    tree_ids = set(ID_TO_PATH.keys())
+    extra_ids = set(state.get('extra_folder_map', {}).values())
+    return (tree_ids | extra_ids) - {INBOX_ID}
+
+
+def _combined_id_to_path(state: dict) -> dict:
+    extra = {v: k for k, v in state.get('extra_folder_map', {}).items()}
+    return {**ID_TO_PATH, **extra}
+
+
+def build_delta_queue(service, state: dict) -> list | None:
+    """
+    Use Drive Changes API to find only files added/modified since last queue build.
+    Returns None on first call (no token yet) — caller should fall back to full crawl.
+    Stores updated changes_page_token in state (caller must save_state).
+    """
+    token = state.get('changes_page_token')
+    if not token:
+        # Record where we are now; next empty-queue event will be delta-only
+        result = service.changes().getStartPageToken().execute()
+        state['changes_page_token'] = result['startPageToken']
+        logger.info("  [Changes] Initialised page token — next rebuild will be delta-only")
+        return None  # Signal: do a full crawl this time
+
+    with open(CACHE_PATH) as f:
+        cache = json.load(f)
+
+    tracked_ids = _all_tracked_ids(state)
+    id_to_path  = _combined_id_to_path(state)
+    pending = []
+
+    logger.info("  [Changes] Fetching Drive changes since last queue build...")
+    while token:
+        result = service.changes().list(
+            pageToken=token,
+            fields="nextPageToken,newStartPageToken,changes(removed,file(id,name,mimeType,createdTime,parents))",
+            spaces='drive',
+            pageSize=1000,
+        ).execute()
+
+        for change in result.get('changes', []):
+            if change.get('removed'):
+                continue
+            f = change.get('file', {})
+            fid  = f.get('id', '')
+            name = f.get('name', '')
+            mime = f.get('mimeType', '')
+            parents = f.get('parents', [])
+
+            folder_id = next((p for p in parents if p in tracked_ids), None)
+            if not folder_id:
+                continue
+            if fid in cache:
+                continue
+            if VALID_NAME_RE.match(name) and not name.startswith('0000'):
+                continue
+            is_rule_based = (
+                name.lower().endswith('summary.txt') or
+                name.lower().endswith('transcript.txt') or
+                ' - Journal - ' in name or
+                bool(re.match(r'^\d{2}-\d{2}\s', name))
+            )
+            if not is_rule_based and get_ai_supported_mime(mime, name) is None:
+                continue
+
+            pending.append({
+                "id": fid,
+                "name": name,
+                "mimeType": mime,
+                "createdTime": f.get('createdTime', ''),
+                "folder_id": folder_id,
+                "folder_path": id_to_path.get(folder_id, folder_id),
+            })
+
+        token = result.get('nextPageToken')
+        if result.get('newStartPageToken'):
+            state['changes_page_token'] = result['newStartPageToken']
+
+    logger.info(f"  [Changes] Delta: {len(pending)} new files found")
+    return pending
 
 
 def build_queue(service, state: dict) -> list:
@@ -336,6 +421,15 @@ def near_midnight() -> bool:
 def run(args):
     start = time.time()
     dry_run = args.dry_run
+
+    # Exits that don't need a Drive connection
+    if args.count_cached:
+        state = load_state()
+        pending = len(state.get('pending', []))
+        total   = state.get('total_processed', 0)
+        print(f"Queue (from state): {pending} files pending, {total} processed so far")
+        return
+
     service = get_drive_service()
 
     if args.count_only:
@@ -351,10 +445,15 @@ def run(args):
         send_message(msg, service="ai-sorter-backfill")
         return
 
-    # Build queue if empty
+    # Build queue if empty — try delta first, fall back to full crawl
     if not state['pending']:
-        logger.info("Pending queue empty — crawling Drive to build queue...")
-        state['pending'] = build_queue(service, state)
+        logger.info("Pending queue empty — checking for new files...")
+        delta = build_delta_queue(service, state)
+        if delta is not None:
+            state['pending'] = delta
+        else:
+            logger.info("  Falling back to full Drive crawl...")
+            state['pending'] = build_queue(service, state)
         save_state(state)
         if not state['pending']:
             msg = "Backfill complete — no files left to process."
@@ -391,7 +490,6 @@ def run(args):
         try:
             content = download_file_content(service, fid, mime)
             if not content:
-                state['completed_ids'].append(fid)
                 save_state(state)
                 continue
 
@@ -432,7 +530,6 @@ def run(args):
                     rename_details.append((name, new_name))
 
             processed += 1
-            state['completed_ids'].append(fid)
             state['total_processed'] = state.get('total_processed', 0) + 1
             save_state(state)
 
@@ -440,7 +537,6 @@ def run(args):
             logger.error(f"  [Error] {name}: {e}")
             errors += 1
             error_details.append((name, str(e)))
-            state['completed_ids'].append(fid)
             save_state(state)
 
     elapsed = int(time.time() - start)
@@ -481,9 +577,10 @@ def run(args):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="AI Drive Sorter — Backfill Job")
-    parser.add_argument('--count-only', action='store_true', help="Survey folders and print scope; no Gemini calls")
-    parser.add_argument('--dry-run',    action='store_true', help="Analyze files but don't rename or move")
-    parser.add_argument('--limit',      type=int, default=0, help="Max files to process this run (default: from quota_state)")
+    parser.add_argument('--count-only',   action='store_true', help="Survey folders and print scope; no Gemini calls (hits Drive API)")
+    parser.add_argument('--count-cached', action='store_true', help="Print queue size from local state; no Drive API calls")
+    parser.add_argument('--dry-run',      action='store_true', help="Analyze files but don't rename or move")
+    parser.add_argument('--limit',        type=int, default=0, help="Max files to process this run (default: from quota_state)")
     return parser.parse_args()
 
 

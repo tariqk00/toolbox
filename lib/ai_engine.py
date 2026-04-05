@@ -10,6 +10,12 @@ import re
 from google import genai
 from google.genai import types
 
+try:
+    from PIL import Image as _PILImage
+    _PILLOW_AVAILABLE = True
+except ImportError:
+    _PILLOW_AVAILABLE = False
+
 # --- LOGGING SETUP ---
 logger = logging.getLogger("DriveSorter.AI")
 
@@ -42,6 +48,15 @@ def load_api_key():
     return None
 
 GEMINI_API_KEY = load_api_key()
+
+# Lazy singleton — avoids recreating the HTTP client on every file call
+_client = None
+
+def _get_client():
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=GEMINI_API_KEY)
+    return _client
 
 # --- CACHE LOGIC ---
 GEMINI_CACHE = {}
@@ -188,7 +203,7 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             "confidence": "Low"
         }, 0
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    client = _get_client()
     
     # Size limits before sending
     if ai_mime == 'text/plain' and len(content_bytes) > 1024 * 10:
@@ -197,6 +212,20 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
     if ai_mime == 'application/pdf' and len(content_bytes) > 200 * 1024:
         logger.info(f"  [Info] Truncating PDF ({len(content_bytes):,} bytes) to 200KB.")
         content_bytes = content_bytes[:200 * 1024]
+    if ai_mime == 'image/jpeg':
+        if _PILLOW_AVAILABLE:
+            try:
+                orig_size = len(content_bytes)
+                img = _PILImage.open(io.BytesIO(content_bytes))
+                img.thumbnail((1024, 1024))
+                buf = io.BytesIO()
+                img.save(buf, format='JPEG', quality=75)
+                content_bytes = buf.getvalue()
+                logger.info(f"  [Resize] Image {orig_size:,} → {len(content_bytes):,} bytes")
+            except Exception as e:
+                logger.warning(f"  [Resize] Failed ({e}); sending original")
+        else:
+            logger.debug("  [Resize] Pillow not available; sending image at original size")
 
     logger.info(f"  Sending to Gemini as {ai_mime} ({len(content_bytes):,} bytes)...")
     

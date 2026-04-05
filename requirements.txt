@@ -3,5 +3,6 @@ google-auth-httplib2
 google-auth-oauthlib
 google-genai>=1.0.0
 # google-generativeai  # Deprecated
+Pillow
 PyYAML
 python-dotenv

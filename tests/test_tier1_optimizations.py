@@ -142,7 +142,6 @@ class TestAiEngineFileSizeLimits(unittest.TestCase):
         captured = {}
 
         def fake_generate_content(model, contents, config=None):
-            # Capture the actual bytes sent (second element of contents)
             captured['content_part'] = contents[1]
             captured['config'] = config
             return self._make_fake_response()
@@ -150,8 +149,10 @@ class TestAiEngineFileSizeLimits(unittest.TestCase):
         fake_client = MagicMock()
         fake_client.models.generate_content.side_effect = fake_generate_content
 
+        # Reset singleton so the mock is picked up cleanly
         with patch.object(ai_engine, 'GEMINI_API_KEY', 'fake-key'), \
              patch.object(ai_engine, 'GEMINI_CACHE', {}), \
+             patch.object(ai_engine, '_client', None), \
              patch('google.genai.Client', return_value=fake_client):
             result, tokens = ai_engine.analyze_with_gemini(
                 content_bytes, mime_type, filename, folder_paths_str
