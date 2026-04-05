@@ -1,12 +1,12 @@
 """
 Trips category processor.
 Extracts: type, destination, dates, confirmation number.
-Rule-based with LLM fallback for unstructured emails.
-Appends to Travel.md.
+First email: full entry with [Status] date on the status line.
+Subsequent emails: update status+date in-place via update_in_memory.
 """
 import re
 import logging
-from ..writers import append_to_memory
+from ..writers import append_to_memory, update_in_memory
 
 logger = logging.getLogger('EmailExtractor.Trips')
 
@@ -87,19 +87,19 @@ def _extract_destination(vendor: str, subject: str, plain: str) -> str:
     return ''
 
 
-def _extract_status(subject: str) -> str:
+def _extract_status(subject: str) -> str | None:
     lower = subject.lower()
     if 'cancel' in lower:
         return 'Cancelled'
     if any(w in lower for w in ('confirmed', 'confirmation', 'booked', 'reservation')):
         return 'Confirmed'
-    if 'check in' in lower or 'check-in' in lower:
+    if 'check in' in lower or 'check-in' in lower or 'time to check in' in lower:
         return 'Check-in'
-    if 'time to check in' in lower:
-        return 'Check-in Available'
+    if any(w in lower for w in ('days until', 'upcoming arrival', 'arrival reminder')):
+        return 'Reminder'
     if any(w in lower for w in ('change', 'update', 'modified')):
         return 'Changed'
-    return 'Update'
+    return None  # unknown/generic — skip
 
 
 def process(email: dict, state: dict) -> str | None:
@@ -108,52 +108,58 @@ def process(email: dict, state: dict) -> str | None:
     plain = email['plain'] or ''
     date = email['date']
 
-    trip_type = _extract_trip_type(vendor, subject)
     status = _extract_status(subject)
+    if not status:
+        return None
+
+    trip_type = _extract_trip_type(vendor, subject)
     confirmation = _extract_confirmation(subject, plain)
     dates = _extract_dates(plain)
     destination = _extract_destination(vendor, subject, plain)
 
-    state_key = confirmation or f'{vendor}:{date}'
     known_trips = state.setdefault('trip_confirmations', {})
 
     if confirmation and confirmation in known_trips:
-        prev_status = known_trips[confirmation].get('status', '')
-        if status == prev_status:
+        prev = known_trips[confirmation]
+        if status == prev.get('status'):
             return None
 
-        lines = [f'↳ {date}: **{status}**']
-        append_to_memory(None, 'Travel.md', '\n'.join(lines))
-        known_trips[confirmation]['status'] = status
+        # Update [Status] date in-place on the status line
+        old_line = prev.get('status_line', f'**Status:** [{prev["status"]}] {prev["date"]}')
+        new_line = f'**Status:** [{status}] {date}'
+        update_in_memory(None, 'Travel.md', old_line, new_line)
+        prev['status'] = status
+        prev['status_line'] = new_line
+        prev['date'] = date
 
-        dest = known_trips[confirmation].get('destination', '')
+        dest = prev.get('destination', '')
         summary = f'{trip_type}: {dest} ({vendor})' if dest else f'{trip_type}: {vendor}'
-        summary += f' → {status}'
+        summary += f' → {status} [{date}]'
         logger.info(f'Travel.md: status update {summary}')
         return summary
 
-    # First time seeing this trip — full entry
+    # First time — full entry
+    status_line = f'**Status:** [{status}] {date}'
     header = f'{trip_type} — {destination}' if destination else trip_type
     lines = [f'## {date} — {header}']
     lines.append(f'**Vendor:** {vendor}')
-    lines.append(f'**Status:** {status}')
+    lines.append(status_line)
     if dates:
         lines.append(f'**Dates:** {dates}')
     if confirmation:
         lines.append(f'**Confirmation:** {confirmation}')
-    lines.append(f'**Subject:** {subject}')
     lines.append('---')
 
     append_to_memory(None, 'Travel.md', '\n'.join(lines))
 
     if confirmation:
         known_trips[confirmation] = {
-            'vendor': vendor, 'status': status, 'date': date, 'destination': destination,
+            'vendor': vendor, 'status': status, 'status_line': status_line,
+            'date': date, 'destination': destination,
         }
 
     summary = f'{trip_type}: {destination} ({vendor})' if destination else f'{trip_type}: {vendor}'
-    if status not in ('Confirmed', 'Update'):
-        summary += f' [{status}]'
+    summary += f' [{status}]'
     if dates:
         summary += f' — {dates[:40]}'
     logger.info(f'Travel.md: {summary}')

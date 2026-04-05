@@ -64,7 +64,7 @@ def run():
                                             after_date=after_date, first_run=first_run)
     for email in receipt_emails:
         try:
-            result = receipts.process(email)
+            result = receipts.process(email, state)
             if result:
                 summaries['receipts'].append(result)
         except Exception as e:
