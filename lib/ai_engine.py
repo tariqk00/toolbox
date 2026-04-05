@@ -174,7 +174,7 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             "folder_path": "01 - Second Brain/Plaud",
             "summary": filename,
             "confidence": "High"
-        }
+        }, 0
 
     ai_mime = get_ai_supported_mime(mime_type, filename)
     
