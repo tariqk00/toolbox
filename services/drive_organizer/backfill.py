@@ -31,9 +31,8 @@ from toolbox.lib.telegram import send_message
 from toolbox.lib.drive_utils import (
     get_drive_service, get_sheets_service,
     download_file_content, move_file,
-    get_folder_path, resolve_folder_id,
-    get_category_prompt_str,
-    INBOX_ID, HISTORY_SHEET_ID, CONFIG_PATH,
+    resolve_folder_id, get_category_prompt_str,
+    INBOX_ID, HISTORY_SHEET_ID, CONFIG_PATH, ID_TO_PATH,
 )
 
 # --- CONFIG ---
@@ -178,7 +177,24 @@ def _crawl_for_backfill(service, folder_id, path, path_to_id):
         logger.error(f"Error crawling {path}: {e}")
 
 
-def build_queue(service) -> list:
+def _get_extra_folder_map(service, state: dict) -> dict:
+    """Return cached Media/Archive folder map, rebuilding only if >24h old."""
+    built_at = state.get('extra_map_built_at')
+    cached   = state.get('extra_folder_map', {})
+    if cached and built_at:
+        age_h = (datetime.now(timezone.utc) - datetime.fromisoformat(built_at)).total_seconds() / 3600
+        if age_h < 24:
+            logger.info(f"  [Cache] Extra folder map: {len(cached)} entries ({age_h:.1f}h old)")
+            return cached
+    logger.info("Building extra folder map (Media/Archive)...")
+    extra = build_extra_folder_map(service)
+    state['extra_folder_map'] = extra
+    state['extra_map_built_at'] = datetime.now(timezone.utc).isoformat()
+    save_state(state)
+    return extra
+
+
+def build_queue(service, state: dict) -> list:
     """Crawl all Drive folders and return list of unprocessed file dicts."""
     with open(TREE_PATH) as f:
         tree_data = json.load(f)
@@ -188,7 +204,7 @@ def build_queue(service) -> list:
     path_to_id = dict(tree_data['path_to_id'])
 
     # Also include Media and Archive (excluded from tree/routing but backfill should cover them)
-    extra = build_extra_folder_map(service)
+    extra = _get_extra_folder_map(service, state)
     path_to_id.update(extra)
     logger.info(f"Tree folders: {len(tree_data['path_to_id'])}, extra (Media/Archive): {len(extra)}")
 
@@ -257,8 +273,9 @@ def count_only(service) -> None:
     with open(CACHE_PATH) as f:
         cache = json.load(f)
 
+    state = load_state()
     path_to_id = dict(tree_data['path_to_id'])
-    extra = build_extra_folder_map(service)
+    extra = _get_extra_folder_map(service, state)
     path_to_id.update(extra)
     print(f"\n{'Folder':<55} {'Total':>6} {'Cached':>7} {'Named':>6} {'Todo':>6}")
     print("-" * 85)
@@ -327,8 +344,8 @@ def run(args):
 
     state = load_state()
 
-    # Check quota
-    if quota_manager.is_budget_exhausted():
+    # Check quota (backfill respects sorter's reserved slice)
+    if quota_manager.is_backfill_budget_exhausted():
         msg = f"Daily quota exhausted ({quota_manager.load()['total_tokens_used']:,} tokens used). Skipping run."
         logger.info(msg)
         send_message(msg, service="ai-sorter-backfill")
@@ -337,7 +354,7 @@ def run(args):
     # Build queue if empty
     if not state['pending']:
         logger.info("Pending queue empty — crawling Drive to build queue...")
-        state['pending'] = build_queue(service)
+        state['pending'] = build_queue(service, state)
         save_state(state)
         if not state['pending']:
             msg = "Backfill complete — no files left to process."
@@ -357,8 +374,8 @@ def run(args):
     logger.info(f"Starting backfill run: {len(state['pending'])} queued, limit={limit}, dry_run={dry_run}")
 
     while state['pending'] and processed < limit:
-        if quota_manager.is_budget_exhausted():
-            logger.info("Quota exhausted mid-run, stopping.")
+        if quota_manager.is_backfill_budget_exhausted():
+            logger.info("Quota exhausted mid-run (sorter reserve reached), stopping.")
             break
         if near_midnight():
             logger.info("Approaching midnight, stopping to preserve quota boundary.")
@@ -397,7 +414,7 @@ def run(args):
                     renamed += 1
                     logger.info(f"  [Renamed] {new_name}")
                     target_id_for_log = resolve_folder_id(folder_target) or 'Unknown'
-                    target_path_for_log = get_folder_path(service, target_id_for_log) if target_id_for_log != 'Unknown' else folder_path
+                    target_path_for_log = ID_TO_PATH.get(target_id_for_log, folder_path)
                     log_to_sheet(ts, fid, name, new_name, target_id_for_log, target_path_for_log, f'Backfill-Rename ({confidence})')
 
                 target_id = resolve_folder_id(folder_target)
@@ -405,8 +422,8 @@ def run(args):
                     if move_file(service, fid, target_id, new_name):
                         moved += 1
                         moved_fids.add(fid)
-                        full_path = get_folder_path(service, target_id)
-                        move_details.append((name, new_name, folder_target or folder_path))
+                        full_path = ID_TO_PATH.get(target_id, folder_target or folder_path)
+                        move_details.append((name, new_name, folder_target or full_path))
                         logger.info(f"  [Moved] -> {folder_target}")
                         if new_name == name:
                             log_to_sheet(ts, fid, name, new_name, target_id, full_path, 'Backfill-Move')
@@ -433,6 +450,7 @@ def run(args):
     state['last_run'] = datetime.now(timezone.utc).isoformat()
     save_state(state)
 
+    quota_manager.log_cost('backfill', processed, tokens_used)
     logger.info(f"Run complete: {processed} processed, {moved} moved, {renamed} renamed, {errors} errors — {remaining_queue} remaining in queue")
 
     # Build Telegram summary

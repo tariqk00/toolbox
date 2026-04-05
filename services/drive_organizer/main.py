@@ -24,9 +24,8 @@ from toolbox.lib import quota_manager
 from toolbox.lib.drive_utils import (
     get_drive_service, get_sheets_service,
     download_file_content, move_file,
-    get_folder_path, resolve_folder_id,
-    get_category_prompt_str,
-    INBOX_ID, METADATA_FOLDER_ID, HISTORY_SHEET_ID
+    resolve_folder_id, get_category_prompt_str,
+    INBOX_ID, METADATA_FOLDER_ID, HISTORY_SHEET_ID, ID_TO_PATH
 )
 
 # --- CONFIG ---
@@ -225,7 +224,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
 
                     # Log rename
                     target_id = resolve_folder_id(folder_path) or 'Unknown'
-                    target_path = get_folder_path(service, target_id)
+                    target_path = ID_TO_PATH.get(target_id, folder_path)
                     log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, target_path, f'Auto-Rename ({confidence})')
 
                 # Move ONLY if High confidence and we have a target
@@ -234,7 +233,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                     if move_file(service, fid, target_id, new_name):
                         stats.moved += 1
                         stats._moved_fids.add(fid)
-                        full_path = get_folder_path(service, target_id)
+                        full_path = ID_TO_PATH.get(target_id, folder_path or 'Unknown')
                         stats.move_details.append((name, new_name, folder_path or full_path))
                         logger.info(f"  [Moved] -> {full_path}")
                         # Log move (if not already logged via Rename)
@@ -265,10 +264,16 @@ if __name__ == "__main__":
     parser.add_argument('--no-recurse', action='store_false', dest='recursive', default=True, help="Disable recursive scanning")
     
     args = parser.parse_args()
-    
+
+    if quota_manager.is_budget_exhausted():
+        logger.info(f"Daily quota exhausted ({quota_manager.load()['total_tokens_used']:,} tokens). Skipping run.")
+        sys.exit(0)
+
     target_id = args.folder_id or INBOX_ID
     target_name = args.folder_name or ("Inbox" if target_id == INBOX_ID else "Custom Folder")
-    
+
+    tokens_before = quota_manager.load().get('total_tokens_used', 0)
+
     try:
         if args.execute:
             logger.info(f"Mode: Execute (Target: {target_name})")
@@ -279,5 +284,7 @@ if __name__ == "__main__":
             
     finally:
         logger.info(stats.get_summary())
+        tokens_this_run = quota_manager.load().get('total_tokens_used', 0) - tokens_before
+        quota_manager.log_cost('sorter', stats.processed, tokens_this_run)
         if stats.moved > 0 or stats.renamed > 0 or stats.errors > 0:
             send_message(stats.get_notification(), service="ai-sorter")

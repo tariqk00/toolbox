@@ -105,7 +105,7 @@ def get_ai_supported_mime(mime_type, filename=None):
     
     # 2. Google Apps (exported by drive_utils)
     if 'vnd.google-apps.document' in mime_type: return 'text/plain'
-    if 'vnd.google-apps.spreadsheet' in mime_type: return 'application/pdf'
+    if 'vnd.google-apps.spreadsheet' in mime_type: return 'text/plain'
     
     # 3. Known Text types
     supported_text = ['text/plain', 'text/csv', 'text/markdown', 'text/html', 'application/json']
@@ -190,12 +190,15 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
 
     client = genai.Client(api_key=GEMINI_API_KEY)
     
-    logger.info(f"  Sending to Gemini as {ai_mime} (Original: {mime_type})...")
-    
-    # Size limit for text content
-    if ai_mime == 'text/plain' and len(content_bytes) > 1024 * 100:
-        logger.info(f"  [Info] Truncating large text file ({len(content_bytes)} bytes) to 100KB.")
-        content_bytes = content_bytes[:1024 * 100]
+    # Size limits before sending
+    if ai_mime == 'text/plain' and len(content_bytes) > 1024 * 10:
+        logger.info(f"  [Info] Truncating text ({len(content_bytes):,} bytes) to 10KB.")
+        content_bytes = content_bytes[:1024 * 10]
+    if ai_mime == 'application/pdf' and len(content_bytes) > 200 * 1024:
+        logger.info(f"  [Info] Truncating PDF ({len(content_bytes):,} bytes) to 200KB.")
+        content_bytes = content_bytes[:200 * 1024]
+
+    logger.info(f"  Sending to Gemini as {ai_mime} ({len(content_bytes):,} bytes)...")
     
     # Inject context
     prompt_with_context = SYSTEM_PROMPT.format(
@@ -209,7 +212,8 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             contents=[
                 prompt_with_context,
                 types.Part.from_bytes(data=content_bytes, mime_type=ai_mime)
-            ]
+            ],
+            config=types.GenerateContentConfig(max_output_tokens=512)
         )
 
         usage = response.usage_metadata
@@ -219,7 +223,8 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             logger.info(
                 f"  [Tokens] in={usage.prompt_token_count} "
                 f"out={usage.candidates_token_count} "
-                f"total={token_count}"
+                f"total={token_count} "
+                f"bytes_sent={len(content_bytes):,}"
             )
 
         text = response.text.strip()

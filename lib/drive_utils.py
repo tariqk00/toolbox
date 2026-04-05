@@ -40,6 +40,7 @@ def load_drive_tree():
 
 FOLDER_CONFIG = load_folder_config()
 DRIVE_TREE = load_drive_tree()
+ID_TO_PATH = {v: k for k, v in DRIVE_TREE.get('path_to_id', {}).items()}
 
 _system = FOLDER_CONFIG.get('system', {})
 INBOX_ID = _system.get('inbox_id', '')
@@ -112,7 +113,7 @@ def download_file_content(service, file_id, mime_type):
         if 'document' in mime_type:
             request = service.files().export_media(fileId=file_id, mimeType='text/plain')
         elif 'spreadsheet' in mime_type:
-            request = service.files().export_media(fileId=file_id, mimeType='application/pdf')
+            request = service.files().export_media(fileId=file_id, mimeType='text/csv')
         else:
             request = service.files().export_media(fileId=file_id, mimeType='application/pdf')
     elif mime_type in ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:

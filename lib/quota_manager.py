@@ -16,7 +16,13 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 QUOTA_PATH = os.path.join(BASE_DIR, 'config', 'quota_state.json')
 
 DAILY_BUDGET = 500_000
+SORTER_RESERVED = 50_000   # tokens kept back for the hourly sorter; backfill stops before this
 FILES_PER_RUN = 50
+
+# Cost log
+COST_LOG_PATH = os.path.join(BASE_DIR, 'logs', 'cost_log.jsonl')
+# Gemini Flash blended rate (approximate; input ~$0.075/1M, output ~$0.30/1M)
+COST_PER_M_TOKENS = 0.10
 
 
 def _today() -> str:
@@ -73,3 +79,30 @@ def remaining() -> int:
 
 def is_budget_exhausted() -> bool:
     return remaining() <= 0
+
+
+def backfill_remaining() -> int:
+    """Tokens available to backfill — excludes the sorter's reserved slice."""
+    return max(0, remaining() - SORTER_RESERVED)
+
+
+def is_backfill_budget_exhausted() -> bool:
+    return backfill_remaining() <= 0
+
+
+def log_cost(run_type: str, files_processed: int, tokens_used: int) -> None:
+    """Append a cost record to logs/cost_log.jsonl."""
+    cost = (tokens_used * COST_PER_M_TOKENS) / 1_000_000
+    record = {
+        "date": _today(),
+        "run_type": run_type,
+        "files_processed": files_processed,
+        "tokens_used": tokens_used,
+        "cost_usd_est": round(cost, 6),
+    }
+    os.makedirs(os.path.dirname(COST_LOG_PATH), exist_ok=True)
+    try:
+        with open(COST_LOG_PATH, 'a') as f:
+            f.write(json.dumps(record) + '\n')
+    except Exception as e:
+        logger.error(f"Failed to write cost_log.jsonl: {e}")
