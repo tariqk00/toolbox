@@ -9,7 +9,7 @@ tracks per-item status since items may ship in separate shipments.
 """
 import re
 import logging
-from ..writers import append_to_memory
+from ..writers import append_to_memory, update_in_memory
 
 logger = logging.getLogger('EmailExtractor.Orders')
 
@@ -198,34 +198,31 @@ def process(email: dict, state: dict) -> str | None:
         items = _extract_items_costco(email.get('html') or '')
 
         if order_num and order_num in known_orders:
-            # Update status for items in this shipment only
+            # Update [Status] in-place on each affected item line
             prev_items = known_orders[order_num].get('items', {})
             updated = []
             for item in items:
                 num = item['item_num']
-                prev_status = prev_items.get(num, {}).get('status', '')
-                if status != prev_status:
-                    updated.append(item)
-                    if num in prev_items:
-                        prev_items[num]['status'] = status
+                if num not in prev_items:
+                    continue
+                prev_status = prev_items[num].get('status', '')
+                if status == prev_status:
+                    continue
+                name = prev_items[num]['name']
+                price = prev_items[num]['price']
+                old_line = f'- {name} — {price} [{prev_status}]'
+                new_line = f'- {name} — {price} [{status}]'
+                update_in_memory('Orders', filename, old_line, new_line)
+                prev_items[num]['status'] = status
+                updated.append({'name': name, 'price': price})
 
             if not updated:
                 return None
 
-            lines = [f'↳ {date}: **{status}**']
-            for item in updated:
-                lines.append(f'  - {item["name"]}')
+            item_lines = '; '.join(f'{i["name"][:40]} — {i["price"]}' for i in updated)
+            summary = f'Costco #{order_num} → {status}: {item_lines}'
             if tracking:
-                lines.append(f'  Tracking: {tracking}')
-
-            append_to_memory('Orders', filename, '\n'.join(lines))
-
-            names = '; '.join(i['name'][:35] for i in updated[:2])
-            if len(updated) > 2:
-                names += f' (+{len(updated) - 2} more)'
-            summary = f'Costco #{order_num} → {status}: {names}'
-            if tracking:
-                summary += f' ({tracking[:20]})'
+                summary += f' | Tracking: {tracking}'
             logger.info(f'Orders/{filename}: status update {summary}')
             return summary
 

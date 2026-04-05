@@ -67,6 +67,28 @@ def _get_file_in_folder(service, folder_id: str, filename: str) -> str | None:
     return files[0]['id'] if files else None
 
 
+def update_in_memory(category: str, filename: str, old_text: str, new_text: str) -> bool:
+    """
+    Replace old_text with new_text in an existing memory file.
+    Returns True if the text was found and replaced, False if not found.
+    """
+    service = get_drive_service()
+    folder_path = f'{MEMORY_ROOT}/{category}' if category else MEMORY_ROOT
+    folder_id = _resolve_path(service, folder_path)
+    file_id = _get_file_in_folder(service, folder_id, filename)
+    if not file_id:
+        return False
+    existing_bytes = service.files().get_media(fileId=file_id).execute()
+    existing = existing_bytes.decode('utf-8') if isinstance(existing_bytes, bytes) else existing_bytes
+    if old_text not in existing:
+        return False
+    updated = existing.replace(old_text, new_text, 1)
+    media = MediaIoBaseUpload(io.BytesIO(updated.encode()), mimetype='text/markdown')
+    service.files().update(fileId=file_id, media_body=media).execute()
+    logger.info(f'Updated {category or "Memory"}/{filename}')
+    return True
+
+
 def append_to_memory(category: str, filename: str, new_content: str) -> None:
     """
     Append new_content to Memory/{category}/{filename}.
