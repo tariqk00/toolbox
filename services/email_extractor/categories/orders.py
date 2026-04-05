@@ -42,15 +42,42 @@ def _extract_order_number(vendor: str, subject: str, body: str) -> str:
     patterns = [
         r'[Oo]rder\s*[#Nn]o?\.?\s*([A-Z0-9\-]{6,})',
         r'[Oo]rder\s+[Nn]umber\s+(\d{8,})',
-        r'\[([a-z][0-9]{15,})\]',           # lululemon [c177512979471524]
+        r'[Oo]rder\s+number\s+is\s+([A-Z][A-Z0-9]{4,})',  # WHOOP plain text
+        r'order=([A-Z][A-Z0-9]{4,})',                       # WHOOP URL param
+        r'\[([a-z][0-9]{15,})\]',                           # lululemon
         r'#(\d{8,})',
     ]
-    for text in (subject, body[:2000]):
+    for text in (subject, body[:3000]):
         for pattern in patterns:
             m = re.search(pattern, text)
             if m:
                 return m.group(1)
     return ''
+
+
+def _extract_pillpack_shipment_key(body: str, email_date: str) -> str:
+    """
+    Derive a stable dedup key for a PillPack shipment.
+    Tries to extract the estimated arrival date; falls back to email year-month.
+    """
+    m = re.search(
+        r'(?:arrive by|arriving by|arrives by|scheduled for|arrival by)'
+        r'\s+(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?'
+        r'([A-Z][a-z]+\.?\s+\d{1,2})',
+        body[:1000],
+        re.IGNORECASE,
+    )
+    if m:
+        raw = m.group(1).strip().rstrip('.')
+        # Normalise "Mar 29" → "2026-03" (year from email_date)
+        year = email_date[:4]
+        months = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05','jun':'06',
+                  'jul':'07','aug':'08','sep':'09','oct':'10','nov':'11','dec':'12'}
+        abbr = raw[:3].lower()
+        if abbr in months:
+            return f'{year}-{months[abbr]}'
+    # Fallback: year-month of the email itself
+    return email_date[:7]
 
 
 def _extract_items_costco(html: str) -> list[dict]:
@@ -123,7 +150,21 @@ def _extract_product(vendor: str, subject: str, body: str) -> str:
             return m.group(0).strip()[:80]
 
     if vendor == 'WHOOP':
-        m = re.search(r'(WHOOP\s+[\d\.]+[^\n]{0,30}|WHOOP\s+[A-Za-z]+[^\n]{0,30})', body[:2000])
+        # Extract items+prices from ORDER SUMMARY, pick paid items first
+        m = re.search(r'ORDER SUMMARY\s*(.*?)\s*(?:Subtotal|Total Due)', body, re.DOTALL | re.IGNORECASE)
+        if m:
+            section = m.group(1).replace('\r', '')  # normalise CRLF
+            item_names = re.findall(r'^([A-Z][A-Za-z0-9][A-Za-z0-9 \+]{3,50})$', section, re.MULTILINE)
+            prices = re.findall(r'\$(\d+\.\d{2})', section)
+            item_names = [i.strip() for i in item_names if i.strip()]
+            # Pair items with prices; prefer items with non-zero price
+            paired = list(zip(item_names, prices)) if prices else [(n, '0.00') for n in item_names]
+            paid = [name for name, price in paired if price != '0.00']
+            items = paid if paid else item_names
+            if items:
+                return ', '.join(items[:3])
+        # Fallback
+        m = re.search(r'(WHOOP\s+(?:MG|4\.0|5\.0)[^\n]{0,30})', body[:2000])
         if m:
             return m.group(1).strip()[:60]
 
@@ -162,17 +203,19 @@ def _extract_status(subject: str) -> str:
     lower = subject.lower()
     if any(w in lower for w in ('shipped', 'on its way', 'in transit', 'dispatched', 'has shipped')):
         return 'Shipped'
-    if any(w in lower for w in ('delivered', 'arrived', 'installed', 'has been installed',
-                                 'has been delivered')):
+    if any(w in lower for w in ('delivered', 'arrived', 'has been delivered',
+                                 'installed', 'has been installed')):
         return 'Delivered'
+    if any(w in lower for w in ('out for delivery', 'get ready for your', 'landing on your')):
+        return 'Out for Delivery'
     if any(w in lower for w in ('confirmed', 'received your order', 'we got your order',
-                                 'is confirmed', 'order confirmed')):
+                                 'is confirmed', 'order confirmed', 'thank you for your order')):
         return 'Confirmed'
     if 'cancel' in lower:
         return 'Cancelled'
     if 'placed' in lower or 'successfully placed' in lower:
         return 'Placed'
-    if 'preparing' in lower or 'processing' in lower:
+    if 'preparing' in lower or 'processing' in lower or 'pricing is now available' in lower:
         return 'Processing'
     return 'Update'
 
@@ -256,6 +299,54 @@ def process(email: dict, state: dict) -> str | None:
             summary += f' — {total}'
         summary += f' [{status}]'
         logger.info(f'Orders/{filename}: new order — {summary}')
+        return summary
+
+    # ── Amazon Pharmacy: month-based dedup (no order number) ───────────────
+    if vendor == 'Amazon Pharmacy':
+        if status == 'Update':
+            return None  # skip generic/recall notices for the order log
+        shipment_key = _extract_pillpack_shipment_key(body, date)
+        state_key = f'pillpack:{shipment_key}'
+
+        product = _extract_product(vendor, subject, body)
+        total = _extract_total(body)
+
+        if state_key in known_orders:
+            prev_status = known_orders[state_key].get('status', '')
+            if status == prev_status:
+                return None
+            # Update status line in-place
+            prev_product = known_orders[state_key].get('product', product)
+            old_line = f'**Status:** [{prev_status}]'
+            new_line = f'**Status:** [{status}] {date}'
+            if not update_in_memory('Orders', filename, old_line, new_line):
+                # fallback: old entries may not have date on first write
+                update_in_memory('Orders', filename,
+                                 f'**Status:** {prev_status}', new_line)
+            known_orders[state_key]['status'] = status
+            summary = f'Amazon Pharmacy: {prev_product} → {status}'
+            logger.info(f'Orders/{filename}: status update {summary}')
+            return summary
+
+        # First entry for this shipment
+        status_line = f'**Status:** [{status}] {date}'
+        lines = [f'## {date} — PillPack {shipment_key} [{status}]']
+        lines.append(f'**Vendor:** Amazon Pharmacy')
+        lines.append(status_line)
+        if product:
+            lines.append(f'**Medications:** {product}')
+        if total:
+            lines.append(f'**Amount:** {total}')
+        lines.append('---')
+
+        append_to_memory('Orders', filename, '\n'.join(lines))
+        known_orders[state_key] = {
+            'vendor': vendor, 'status': status, 'date': date, 'product': product,
+        }
+        summary = f'Amazon Pharmacy: {product or "PillPack"} [{status}]'
+        if total:
+            summary += f' — {total}'
+        logger.info(f'Orders/{filename}: new shipment — {summary}')
         return summary
 
     # ── Single-item path (all other vendors) ───────────────────────────────
