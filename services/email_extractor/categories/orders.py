@@ -69,13 +69,29 @@ def _is_order_email(subject: str, plain: str) -> bool:
 
 def _get_body(email: dict) -> str:
     plain = email.get('plain') or ''
-    if plain:
+    html_raw = email.get('html') or ''
+    # If plain contains HTML tags it's not true plain text — use html_to_text instead
+    if plain and not re.search(r'<[a-zA-Z]+[\s>]', plain[:500]):
         return plain
-    html = email.get('html') or ''
-    if html:
-        text, _ = html_to_text(html)
+    if html_raw:
+        text, _ = html_to_text(html_raw)
         return text
-    return ''
+    return plain
+
+
+def _prep_for_llm(body: str) -> str:
+    """Strip noise before sending to LLM: HTML entities, invisible chars, URLs, whitespace."""
+    import html as html_mod
+    body = html_mod.unescape(body)
+    # Remove invisible/zero-width Unicode used in email templates
+    body = re.sub(r'[\u034f\u00ad\u200b-\u200f\u2028\u2029\ufeff]', '', body)
+    # Remove URLs — they're tracking links, not useful for extraction
+    body = re.sub(r'https?://\S+', '', body)
+    # Collapse tabs and spaces
+    body = re.sub(r'[ \t]+', ' ', body)
+    # Drop whitespace-only lines, collapse 3+ blank lines to 2
+    lines = [l.strip() for l in body.splitlines() if l.strip()]
+    return re.sub(r'\n{3,}', '\n\n', '\n'.join(lines)).strip()
 
 
 def _extract_order_number(vendor: str, subject: str, body: str) -> str:
@@ -167,7 +183,7 @@ def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
         prompt = EXTRACT_PROMPT.format(
             vendor=vendor,
             subject=subject,
-            body=body[:4000],
+            body=_prep_for_llm(body)[:4000],
         )
         response = client.models.generate_content(
             model=GEMINI_FREE_MODEL,
