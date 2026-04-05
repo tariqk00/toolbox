@@ -264,4 +264,6 @@ def fetch_category_emails(service, category: str, config: dict,
         except Exception as e:
             logger.warning(f'Failed to fetch message {m["id"]}: {e}')
 
+    # Process oldest first so confirmation emails precede shipped/delivered
+    results.sort(key=lambda e: e['date_dt'])
     return results
