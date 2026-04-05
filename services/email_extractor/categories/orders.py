@@ -164,10 +164,25 @@ def _extract_product(vendor: str, subject: str, body: str) -> str:
         return m.group(1) if m else 'PillPack medications'
 
     if vendor == 'lululemon':
+        # html_to_text layout: NAME\n<whitespace>\nN x\n<whitespace>\nCOLOR / Size N
         m = re.search(
-            r"((?:Men's|Women's|Unisex)?\s*[A-Z][a-zA-Z\s]+"
-            r"(?:Short|Pant|Top|Jacket|Vest|Hoodie|Shirt|Tee|Bra|Legging|Tight|Shorts)[a-zA-Z\s]*)",
-            body[:3000]
+            r'([A-Z][A-Za-z0-9][A-Za-z0-9 \-\*\+\.]{4,79})\n'
+            r'(?:[ \t\n\r]+)(\d+)\s*x\s*\n'
+            r'(?:[ \t]+)([^\n\d][^\n]{2,39})',
+            body[:5000],
+        )
+        if m:
+            name = m.group(1).strip()[:80]
+            qty = m.group(2)
+            color_size = m.group(3).strip()
+            suffix = f' \u00d7{qty}' if qty != '1' else ''
+            return f'{name} ({color_size}){suffix}'
+        # Fallback: keyword-based match (allows hyphens/digits)
+        m = re.search(
+            r'([A-Z][A-Za-z0-9 \-\*\+\.]{5,80}'
+            r'(?:Short|Pant|Top|Jacket|Vest|Hoodie|Shirt|Tee|Bra|Legging|Tight|Shorts)'
+            r'[A-Za-z0-9\s\-\*]*)',
+            body[:3000],
         )
         if m:
             return m.group(0).strip()[:80]
@@ -198,6 +213,7 @@ def _extract_total(body: str) -> str:
     """Find the order total (not per-item price)."""
     patterns = [
         r'[Oo]rder\s+[Tt]otal[:\s]+\$\s*([\d,]+\.\d{1,2})',
+        r'[Tt]otal\s+[Dd]ue[:\s]+\$\s*([\d,]+\.\d{1,2})',  # WHOOP: "Total Due"
         r'[Tt]otal[:\s]+\$\s*([\d,]+\.\d{1,2})',
         r'[Aa]mount[:\s]+\$\s*([\d,]+\.\d{1,2})',
         r'[Ss]ubtotal[:\s]+\$\s*([\d,]+\.\d{1,2})',
