@@ -33,7 +33,7 @@ from toolbox.lib.drive_utils import (
     download_file_content, move_file,
     get_folder_path, resolve_folder_id,
     get_category_prompt_str,
-    INBOX_ID,
+    INBOX_ID, HISTORY_SHEET_ID,
 )
 
 # --- CONFIG ---
@@ -74,6 +74,31 @@ def save_state(state: dict) -> None:
     with open(tmp, 'w') as f:
         json.dump(state, f, indent=2)
     os.replace(tmp, STATE_PATH)
+
+
+# ---------------------------------------------------------------------------
+# Sheet logging (mirrors main.py logic)
+# ---------------------------------------------------------------------------
+
+def log_to_sheet(timestamp, file_id, original_name, new_name, target_folder_id, target_folder_name, run_type):
+    if not HISTORY_SHEET_ID:
+        return
+    safe_new_name = new_name.replace('"', '""')
+    link_file = f'=HYPERLINK("https://drive.google.com/open?id={file_id}", "{safe_new_name}")'
+    safe_target_name = target_folder_name.replace('"', '""')
+    if target_folder_id and target_folder_id not in ["None", "Unknown"]:
+        link_folder = f'=HYPERLINK("https://drive.google.com/drive/u/0/folders/{target_folder_id}", "{safe_target_name}")'
+    else:
+        link_folder = target_folder_name
+    try:
+        svc = get_sheets_service()
+        svc.spreadsheets().values().append(
+            spreadsheetId=HISTORY_SHEET_ID, range="Log!A:A",
+            valueInputOption="USER_ENTERED",
+            body={'values': [[timestamp, file_id, original_name, link_file, link_folder, run_type]]}
+        ).execute()
+    except Exception as e:
+        logger.error(f"  [Log Error] Failed to write to Sheet: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -313,18 +338,26 @@ def run(args):
             logger.info(f"  [AI] {name} -> {new_name} ({confidence})")
 
             if not dry_run:
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
+
                 if new_name != name and confidence in ('High', 'Medium'):
                     service.files().update(fileId=fid, body={'name': new_name}).execute()
                     renamed += 1
                     logger.info(f"  [Renamed] {new_name}")
+                    target_id_for_log = resolve_folder_id(folder_target) or 'Unknown'
+                    target_path_for_log = get_folder_path(service, target_id_for_log) if target_id_for_log != 'Unknown' else folder_path
+                    log_to_sheet(ts, fid, name, new_name, target_id_for_log, target_path_for_log, f'Backfill-Rename ({confidence})')
 
                 target_id = resolve_folder_id(folder_target)
                 if confidence == 'High' and target_id and target_id != folder_id:
                     if move_file(service, fid, target_id, new_name):
                         moved += 1
                         moved_fids.add(fid)
+                        full_path = get_folder_path(service, target_id)
                         move_details.append((name, new_name, folder_target or folder_path))
                         logger.info(f"  [Moved] -> {folder_target}")
+                        if new_name == name:
+                            log_to_sheet(ts, fid, name, new_name, target_id, full_path, 'Backfill-Move')
 
                 if new_name != name and confidence == 'Medium' and fid not in moved_fids:
                     rename_details.append((name, new_name))
