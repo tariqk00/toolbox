@@ -137,5 +137,7 @@ def process(email: dict, known_senders: dict) -> bool:
     content = '\n'.join(lines)
     filename = f'{source_name}.md'
     append_to_memory('Digests', filename, content)
+    titles = [a.get('title', '') for a in articles[:3] if a.get('title')]
+    summary = f'{source_name}: {len(articles)} articles — ' + '; '.join(titles)
     logger.info(f'Digests/{filename}: {len(articles)} articles from {date}')
-    return True
+    return summary

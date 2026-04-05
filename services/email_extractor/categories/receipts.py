@@ -97,5 +97,10 @@ def process(email: dict) -> bool:
     content = '\n'.join(lines)
     filename = f'{vendor}.md'
     append_to_memory('Receipts', filename, content)
-    logger.info(f'Receipts/{filename}: {receipt_type} {amount}')
-    return True
+    summary = f'{vendor}: {amount}' if amount else f'{vendor}: {receipt_type}'
+    if is_reminder:
+        summary += ' ⚠️'
+    if vendor == 'Uber' and (rider := _extract_uber_rider(subject, plain)):
+        summary += f' ({rider})'
+    logger.info(f'Receipts/{filename}: {summary}')
+    return summary

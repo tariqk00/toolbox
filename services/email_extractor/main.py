@@ -41,7 +41,8 @@ def run():
 
     service = get_gmail_service()
 
-    stats = {'orders': 0, 'receipts': 0, 'trips': 0, 'digests': 0, 'errors': 0}
+    summaries = {'orders': [], 'receipts': [], 'trips': [], 'digests': []}
+    errors = 0
     known_digest_senders = config.get('digests', {}).get('known_senders', {})
 
     # --- Orders ---
@@ -50,11 +51,12 @@ def run():
                                           after_date=after_date, first_run=first_run)
     for email in order_emails:
         try:
-            if orders.process(email):
-                stats['orders'] += 1
+            result = orders.process(email)
+            if result:
+                summaries['orders'].append(result)
         except Exception as e:
             logger.error(f'Order processing error ({email["subject"][:50]}): {e}')
-            stats['errors'] += 1
+            errors += 1
 
     # --- Receipts ---
     logger.info('Fetching receipts...')
@@ -62,11 +64,12 @@ def run():
                                             after_date=after_date, first_run=first_run)
     for email in receipt_emails:
         try:
-            if receipts.process(email):
-                stats['receipts'] += 1
+            result = receipts.process(email)
+            if result:
+                summaries['receipts'].append(result)
         except Exception as e:
             logger.error(f'Receipt processing error ({email["subject"][:50]}): {e}')
-            stats['errors'] += 1
+            errors += 1
 
     # --- Trips ---
     logger.info('Fetching trips...')
@@ -74,11 +77,12 @@ def run():
                                          after_date=after_date, first_run=first_run)
     for email in trip_emails:
         try:
-            if trips.process(email):
-                stats['trips'] += 1
+            result = trips.process(email)
+            if result:
+                summaries['trips'].append(result)
         except Exception as e:
             logger.error(f'Trip processing error ({email["subject"][:50]}): {e}')
-            stats['errors'] += 1
+            errors += 1
 
     # --- Digests ---
     logger.info('Fetching digests...')
@@ -89,34 +93,35 @@ def run():
     )
     for email in digest_emails:
         try:
-            if digests.process(email, known_digest_senders):
-                stats['digests'] += 1
+            result = digests.process(email, known_digest_senders)
+            if result:
+                summaries['digests'].append(result)
         except Exception as e:
             logger.error(f'Digest processing error ({email["subject"][:50]}): {e}')
-            stats['errors'] += 1
+            errors += 1
 
     # Update last_run
     state['last_run'] = date.today().isoformat()
     save_state(state)
 
-    # Telegram summary
-    total = sum(v for k, v in stats.items() if k != 'errors')
-    lines = [f'Email extractor: {total} items processed']
-    if stats['orders']:
-        lines.append(f'  Orders: {stats["orders"]}')
-    if stats['receipts']:
-        lines.append(f'  Receipts: {stats["receipts"]}')
-    if stats['trips']:
-        lines.append(f'  Trips: {stats["trips"]}')
-    if stats['digests']:
-        lines.append(f'  Digests: {stats["digests"]}')
-    if stats['errors']:
-        lines.append(f'  Errors: {stats["errors"]}')
-    if total == 0:
-        lines = ['Email extractor: nothing new today']
+    # Build Telegram message
+    total = sum(len(v) for v in summaries.values())
+    if total == 0 and errors == 0:
+        msg = 'Email extractor: nothing new today'
+    else:
+        lines = [f'Email extractor: {total} items']
+        for category, items in summaries.items():
+            if not items:
+                continue
+            lines.append(f'\n{category.capitalize()} ({len(items)}):')
+            for s in items:
+                lines.append(f'  • {s}')
+        if errors:
+            lines.append(f'\nErrors: {errors}')
+        msg = '\n'.join(lines)
 
-    logger.info('\n'.join(lines))
-    send_message('\n'.join(lines), service='email-extractor')
+    logger.info(msg)
+    send_message(msg, service='email-extractor')
 
 
 if __name__ == '__main__':

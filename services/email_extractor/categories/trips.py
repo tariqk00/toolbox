@@ -45,13 +45,23 @@ def _extract_dates(plain: str) -> str:
 
 def _extract_trip_type(vendor: str, subject: str) -> str:
     lower = subject.lower()
-    if vendor in ('Delta', 'AmEx Global Business Travel') or any(w in lower for w in ('flight', 'check in', 'boarding', 'airline')):
+    # Vendor-specific checks first to avoid keyword false-positives
+    if vendor in ('Delta', 'AmEx Global Business Travel'):
         return 'Flight'
-    if vendor in ('Marriott Vacation Club',) or any(w in lower for w in ('hotel', 'resort', 'reservation', 'check-in')):
-        return 'Hotel'
-    if vendor == 'National Car Rental' or 'car' in lower:
+    if vendor == 'National Car Rental':
         return 'Car Rental'
-    if vendor == 'Resy' or 'restaurant' in lower or 'dining' in lower:
+    if vendor == 'Resy':
+        return 'Dining'
+    if vendor == 'Marriott Vacation Club':
+        return 'Hotel'
+    # Keyword fallbacks for other vendors
+    if any(w in lower for w in ('flight', 'check in', 'boarding', 'airline')):
+        return 'Flight'
+    if any(w in lower for w in ('hotel', 'resort', 'check-in')):
+        return 'Hotel'
+    if 'car rental' in lower or 'car reservation' in lower:
+        return 'Car Rental'
+    if 'restaurant' in lower or 'dining' in lower:
         return 'Dining'
     return 'Travel'
 
@@ -117,5 +127,8 @@ def process(email: dict) -> bool:
 
     content = '\n'.join(lines)
     append_to_memory(None, 'Travel.md', content)
-    logger.info(f'Travel.md: {trip_type} {destination} — {vendor}')
-    return True
+    summary = f'{trip_type}: {destination} ({vendor})' if destination else f'{trip_type}: {vendor}'
+    if status not in ('Confirmed', 'Update'):
+        summary += f' [{status}]'
+    logger.info(f'Travel.md: {summary}')
+    return summary

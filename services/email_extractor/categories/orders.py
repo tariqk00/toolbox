@@ -112,5 +112,6 @@ def process(email: dict) -> bool:
     content = '\n'.join(lines)
     filename = f'{vendor}.md'
     append_to_memory('Orders', filename, content)
-    logger.info(f'Orders/{filename}: {status} — {order_num or subject[:40]}')
-    return True
+    summary = f'{vendor}: {status}' + (f' #{order_num}' if order_num else '') + (f' — {items}' if items else '')
+    logger.info(f'Orders/{filename}: {summary}')
+    return summary
