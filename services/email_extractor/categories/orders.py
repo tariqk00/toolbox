@@ -80,6 +80,35 @@ def _extract_pillpack_shipment_key(body: str, email_date: str) -> str:
     return email_date[:7]
 
 
+def _extract_items_amazon(body: str) -> list[dict]:
+    """
+    Extract all line items from an Amazon shipped email (plain text).
+    Format:
+        * Product Name
+          Quantity: N
+          PRICE USD
+    Returns list of {name, qty, price}.
+    """
+    items = []
+    pattern = re.compile(
+        r'^\*\s+(.+?)\n'
+        r'(?:\s+Quantity:\s*(\d+)\n)?'
+        r'\s+([\d,]+\.\d{2})\s+USD',
+        re.MULTILINE,
+    )
+    for m in pattern.finditer(body[:5000]):
+        name = m.group(1).strip()[:100]
+        qty = m.group(2) or '1'
+        price = f'${m.group(3)}'
+        items.append({'name': name, 'qty': qty, 'price': price})
+    return items
+
+
+def _item_key(name: str) -> str:
+    """Stable dict key from item name (no item numbers on Amazon)."""
+    return re.sub(r'\s+', '_', name[:30].lower().strip())
+
+
 def _extract_items_costco(html: str) -> list[dict]:
     """
     Extract all line items from a Costco HTML email.
@@ -130,12 +159,6 @@ def _extract_items_costco(html: str) -> list[dict]:
 
 
 def _extract_product(vendor: str, subject: str, body: str) -> str:
-    if vendor == 'Amazon':
-        m = re.search(r'Shipped:\s*"([^"]+)"(?:\s*and\s*(\d+)\s*more)?', subject)
-        if m:
-            name = m.group(1).rstrip('.')
-            return f'{name} (+{m.group(2)} more)' if m.group(2) else name
-
     if vendor == 'Amazon Pharmacy':
         m = re.search(r'containing\s+(\d+\s+of\s+\d+\s+medication)', body[:500])
         return m.group(1) if m else 'PillPack medications'
@@ -174,16 +197,20 @@ def _extract_product(vendor: str, subject: str, body: str) -> str:
 def _extract_total(body: str) -> str:
     """Find the order total (not per-item price)."""
     patterns = [
-        r'[Oo]rder\s+[Tt]otal[:\s]+\$\s*([\d,]+\.\d{2})',
-        r'[Tt]otal[:\s]+\$\s*([\d,]+\.\d{2})',
-        r'[Aa]mount[:\s]+\$\s*([\d,]+\.\d{2})',
-        r'[Ss]ubtotal[:\s]+\$\s*([\d,]+\.\d{2})',
+        r'[Oo]rder\s+[Tt]otal[:\s]+\$\s*([\d,]+\.\d{1,2})',
+        r'[Tt]otal[:\s]+\$\s*([\d,]+\.\d{1,2})',
+        r'[Aa]mount[:\s]+\$\s*([\d,]+\.\d{1,2})',
+        r'[Ss]ubtotal[:\s]+\$\s*([\d,]+\.\d{1,2})',
+        # Amazon plain text: "Total\n50.9 USD"
+        r'[Tt]otal\s*\n\s*([\d,]+\.\d{1,2})\s+USD',
     ]
     for pattern in patterns:
         m = re.search(pattern, body[:4000])
         if m:
-            return f'${m.group(1)}'
-    m = re.search(r'\$\s*([\d,]+\.\d{2})', body[:2000])
+            raw = m.group(1)
+            # Normalise to 2 decimal places
+            return f'${float(raw.replace(",", "")):.2f}'
+    m = re.search(r'\$\s*([\d,]+\.\d{1,2})', body[:2000])
     return f'${m.group(1)}' if m else ''
 
 
@@ -347,6 +374,76 @@ def process(email: dict, state: dict) -> str | None:
         if total:
             summary += f' — {total}'
         logger.info(f'Orders/{filename}: new shipment — {summary}')
+        return summary
+
+    # ── Amazon: multi-item path ─────────────────────────────────────────────
+    if vendor == 'Amazon':
+        items = _extract_items_amazon(body)
+
+        if order_num and order_num in known_orders:
+            prev_items = known_orders[order_num].get('items', {})
+            updated = []
+            for item in items:
+                key = _item_key(item['name'])
+                if key not in prev_items:
+                    continue
+                prev_status = prev_items[key].get('status', '')
+                if status == prev_status:
+                    continue
+                name = prev_items[key]['name']
+                price = prev_items[key]['price']
+                prev_date = prev_items[key].get('date', '')
+                old_line = f'- {name} — {price} [{prev_status}] {prev_date}'.rstrip()
+                new_line = f'- {name} — {price} [{status}] {date}'
+                update_in_memory('Orders', filename, old_line, new_line)
+                prev_items[key]['status'] = status
+                prev_items[key]['date'] = date
+                updated.append({'name': name, 'price': price})
+
+            if not updated:
+                return None
+
+            item_lines = '; '.join(f'{i["name"][:40]} — {i["price"]}' for i in updated)
+            summary = f'Amazon #{order_num} → {status}: {item_lines}'
+            if tracking:
+                summary += f' | Tracking: {tracking[:20]}'
+            logger.info(f'Orders/{filename}: status update {summary}')
+            return summary
+
+        # First time — full entry with all items
+        total = _extract_total(body)
+        lines = [f'## {date} — Order #{order_num or "N/A"} [{status}]']
+        lines.append(f'**Vendor:** {vendor}')
+        if total:
+            lines.append(f'**Total:** {total}')
+        if tracking:
+            lines.append(f'**Tracking:** {tracking}')
+        lines.append('')
+        for item in items:
+            qty_suffix = f' ×{item["qty"]}' if item['qty'] != '1' else ''
+            lines.append(f'- {item["name"]}{qty_suffix} — {item["price"]} [{status}] {date}')
+        if not items:
+            lines.append('*(items not extracted)*')
+        lines.append('---')
+
+        append_to_memory('Orders', filename, '\n'.join(lines))
+
+        if order_num:
+            item_dict = {
+                _item_key(i['name']): {
+                    'name': i['name'], 'price': i['price'],
+                    'status': status, 'date': date,
+                }
+                for i in items
+            }
+            known_orders[order_num] = {'vendor': vendor, 'date': date, 'items': item_dict}
+
+        n = len(items)
+        summary = f'Amazon #{order_num}: {n} item{"s" if n != 1 else ""}'
+        if total:
+            summary += f' — {total}'
+        summary += f' [{status}]'
+        logger.info(f'Orders/{filename}: new order — {summary}')
         return summary
 
     # ── Single-item path (all other vendors) ───────────────────────────────
