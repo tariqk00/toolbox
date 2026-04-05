@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 from toolbox.lib.drive_utils import get_drive_service, BASE_DIR, CONFIG_PATH
 from toolbox.lib.telegram import send_message
+from toolbox.lib.quota_manager import COST_LOG_PATH
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger("DriveTreeRefresh")
@@ -120,6 +121,47 @@ def get_root_name(service, folder_id):
         return folder_id
 
 
+def _weekly_spend_summary() -> str:
+    """Read cost_log.jsonl and return a 7-day spend summary string."""
+    from datetime import date, timedelta
+    cutoff = (date.today() - timedelta(days=7)).isoformat()
+    totals = {}  # run_type -> {tokens, cost}
+
+    try:
+        if not os.path.exists(COST_LOG_PATH):
+            return "Spend: no cost log yet"
+        with open(COST_LOG_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get('date', '') < cutoff:
+                    continue
+                rt = rec.get('run_type', 'unknown')
+                if rt not in totals:
+                    totals[rt] = {'tokens': 0, 'cost': 0.0, 'runs': 0}
+                totals[rt]['tokens'] += rec.get('tokens_used', 0)
+                totals[rt]['cost']   += rec.get('cost_usd_est', 0.0)
+                totals[rt]['runs']   += 1
+    except Exception as e:
+        return f"Spend: could not read cost log ({e})"
+
+    if not totals:
+        return "Spend (7d): no runs recorded"
+
+    lines = ["Spend (7d):"]
+    grand_cost = 0.0
+    for rt, d in sorted(totals.items()):
+        lines.append(f"  {rt}: {d['runs']} runs, {d['tokens']:,} tokens, ~${d['cost']:.4f}")
+        grand_cost += d['cost']
+    lines.append(f"  Total: ~${grand_cost:.4f}")
+    return "\n".join(lines)
+
+
 def main():
     logger.info("=== Drive Tree Refresh ===")
 
@@ -150,7 +192,11 @@ def main():
 
     logger.info(f"\nDone. Found {len(path_to_id)} folders across {len(roots)} roots.")
     logger.info(f"Written to: {TREE_PATH}")
-    send_message(f"Drive tree refreshed: {len(path_to_id)} folders across {len(roots)} roots", service="drive-tree-refresh")
+    spend = _weekly_spend_summary()
+    send_message(
+        f"Drive tree refreshed: {len(path_to_id)} folders across {len(roots)} roots\n{spend}",
+        service="drive-tree-refresh"
+    )
 
     # Print top-level summary
     top_level = sorted(k for k in path_to_id if '/' not in k)
