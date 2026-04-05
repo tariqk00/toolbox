@@ -202,7 +202,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             context_hint = f"File located in folder: {folder_name}. Created: {f.get('createdTime')}"
 
             # --- AI ANALYSIS ---
-            analysis, tokens = analyze_with_gemini(content, mime, name, folder_paths_str, context_hint, file_id=fid)
+            analysis, tokens = analyze_with_gemini(content, mime, name, folder_paths_str, context_hint, file_id=fid, use_free_tier=True)
             if tokens:
                 quota_manager.record_tokens(tokens)
 

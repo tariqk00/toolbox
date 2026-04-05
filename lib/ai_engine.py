@@ -7,6 +7,7 @@ import json
 import logging
 import io
 import re
+import time
 from google import genai
 from google.genai import types
 
@@ -27,36 +28,72 @@ CONFIG_DIR = os.path.join(BASE_DIR, 'config')
 SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_secret')
 CACHE_PATH = os.path.join(CONFIG_DIR, 'gemini_cache.json')
 
-# Default model — use gemini-flash-latest to always track the current Flash release.
-# Override via GEMINI_MODEL env var if needed.
+# Paid model — gemini-flash-latest (used by backfill and fallback)
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-flash-latest')
+# Free tier model — AI Studio project, 15 RPM / 1,000 RPD
+GEMINI_FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite-preview-06-17')
 
-def load_api_key():
-    # 1. Try environment variable
-    env_key = os.getenv('GEMINI_API_KEY')
-    if env_key:
-        return env_key
-        
-    # 2. Try file fallback
+FREE_SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_ai_studio_secret')
+# Min seconds between free-tier calls: 15 RPM = 1 per 4s
+_FREE_TIER_MIN_INTERVAL = 4.0
+_last_free_call_time: float = 0.0
+
+
+def _load_key(env_var: str, file_path: str):
+    val = os.getenv(env_var)
+    if val:
+        return val
     try:
-        if os.path.exists(SECRET_PATH):
-            with open(SECRET_PATH, 'r') as f:
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
                 return f.read().strip()
     except Exception as e:
-        logger.error(f"Error reading {SECRET_PATH}: {e}")
-        
+        logger.error(f"Error reading {file_path}: {e}")
     return None
 
-GEMINI_API_KEY = load_api_key()
 
-# Lazy singleton — avoids recreating the HTTP client on every file call
+GEMINI_API_KEY = _load_key('GEMINI_API_KEY', SECRET_PATH)
+GEMINI_FREE_API_KEY = _load_key('GEMINI_FREE_API_KEY', FREE_SECRET_PATH)
+
+# Lazy singletons
 _client = None
+_free_client = None
+
 
 def _get_client():
     global _client
     if _client is None:
         _client = genai.Client(api_key=GEMINI_API_KEY)
     return _client
+
+
+def _get_free_client():
+    global _free_client
+    if _free_client is None:
+        if not GEMINI_FREE_API_KEY:
+            raise ValueError("Free-tier Gemini API key missing (GEMINI_FREE_API_KEY or config/gemini_ai_studio_secret)")
+        _free_client = genai.Client(api_key=GEMINI_FREE_API_KEY)
+    return _free_client
+
+
+def _rate_limit_free_tier():
+    """Sleep if needed to stay under 15 RPM."""
+    global _last_free_call_time
+    elapsed = time.monotonic() - _last_free_call_time
+    if elapsed < _FREE_TIER_MIN_INTERVAL:
+        time.sleep(_FREE_TIER_MIN_INTERVAL - elapsed)
+    _last_free_call_time = time.monotonic()
+
+
+def _is_rate_limit_error(e: Exception) -> bool:
+    msg = str(e).upper()
+    return "429" in msg or "RESOURCE_EXHAUSTED" in msg or "QUOTA" in msg
+
+
+def _is_daily_limit_error(e: Exception) -> bool:
+    """Distinguish per-day quota exhaustion from per-minute rate limits."""
+    msg = str(e).upper()
+    return _is_rate_limit_error(e) and ("PER_DAY" in msg or "DAILY" in msg or "DAY" in msg)
 
 # --- CACHE LOGIC ---
 GEMINI_CACHE = {}
@@ -135,7 +172,7 @@ def get_ai_supported_mime(mime_type, filename=None):
             
     return None
 
-def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, context_hint="", file_id=None):
+def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, context_hint="", file_id=None, use_free_tier=False):
     """
     Sends content to Gemini for analysis using the google.genai SDK.
     """
@@ -203,8 +240,13 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             "confidence": "Low"
         }, 0
 
-    client = _get_client()
-    
+    if use_free_tier:
+        from toolbox.lib import quota_manager as _qm
+        if _qm.is_rpd_exhausted():
+            logger.warning(f"  [RPD] Daily free-tier request limit reached. Skipping {filename}.")
+            return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
+                    "summary": "RPD_Exhausted", "confidence": "Low"}, 0
+
     # Size limits before sending
     if ai_mime == 'text/plain' and len(content_bytes) > 1024 * 10:
         logger.info(f"  [Info] Truncating text ({len(content_bytes):,} bytes) to 10KB.")
@@ -227,23 +269,59 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
         else:
             logger.debug("  [Resize] Pillow not available; sending image at original size")
 
-    logger.info(f"  Sending to Gemini as {ai_mime} ({len(content_bytes):,} bytes)...")
-    
+    if use_free_tier:
+        model_name = GEMINI_FREE_MODEL
+        logger.info(f"  Sending to Gemini (free/{model_name}) as {ai_mime} ({len(content_bytes):,} bytes)...")
+    else:
+        model_name = GEMINI_MODEL
+        logger.info(f"  Sending to Gemini (paid/{model_name}) as {ai_mime} ({len(content_bytes):,} bytes)...")
+
     # Inject context
     prompt_with_context = SYSTEM_PROMPT.format(
         context_hint=context_hint,
         folder_paths=folder_paths_str
     )
-    
-    try:
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
+
+    _RETRY_DELAYS = [4, 16, 64]
+
+    def _call_api():
+        if use_free_tier:
+            _rate_limit_free_tier()
+            client = _get_free_client()
+        else:
+            client = _get_client()
+        return client.models.generate_content(
+            model=model_name,
             contents=[
                 prompt_with_context,
                 types.Part.from_bytes(data=content_bytes, mime_type=ai_mime)
             ],
             config=types.GenerateContentConfig(max_output_tokens=512)
         )
+
+    try:
+        response = None
+        for attempt, delay in enumerate([0] + _RETRY_DELAYS):
+            if delay:
+                logger.warning(f"  [429] Rate limited. Retrying in {delay}s (attempt {attempt+1}/3)...")
+                time.sleep(delay)
+            try:
+                response = _call_api()
+                if use_free_tier:
+                    from toolbox.lib import quota_manager as _qm
+                    _qm.record_call()
+                break
+            except Exception as api_err:
+                if _is_daily_limit_error(api_err):
+                    logger.error(f"  [RPD] Daily free-tier quota exhausted by API. Skipping.")
+                    return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
+                            "summary": "RPD_Exhausted", "confidence": "Low"}, 0
+                if _is_rate_limit_error(api_err) and attempt < len(_RETRY_DELAYS):
+                    continue
+                raise
+
+        if response is None:
+            raise RuntimeError("All retry attempts exhausted (429)")
 
         usage = response.usage_metadata
         token_count = 0

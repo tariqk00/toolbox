@@ -18,6 +18,7 @@ QUOTA_PATH = os.path.join(BASE_DIR, 'config', 'quota_state.json')
 DAILY_BUDGET = 500_000
 SORTER_RESERVED = 50_000   # tokens kept back for the hourly sorter; backfill stops before this
 FILES_PER_RUN = 50
+SORTER_RPD_LIMIT = 900     # free tier cap (1,000 RPD - 100 buffer)
 
 # Cost log
 COST_LOG_PATH = os.path.join(BASE_DIR, 'logs', 'cost_log.jsonl')
@@ -47,6 +48,7 @@ def load() -> dict:
         "total_tokens_used": 0,
         "daily_budget": DAILY_BUDGET,
         "files_per_run": FILES_PER_RUN,
+        "sorter_calls_today": 0,
     }
 
 
@@ -88,6 +90,23 @@ def backfill_remaining() -> int:
 
 def is_backfill_budget_exhausted() -> bool:
     return backfill_remaining() <= 0
+
+
+def record_call() -> dict:
+    """Increment the sorter's free-tier RPD counter and persist. Returns updated state."""
+    state = load()
+    state["sorter_calls_today"] = state.get("sorter_calls_today", 0) + 1
+    save(state)
+    return state
+
+
+def sorter_calls_remaining() -> int:
+    state = load()
+    return max(0, SORTER_RPD_LIMIT - state.get("sorter_calls_today", 0))
+
+
+def is_rpd_exhausted() -> bool:
+    return sorter_calls_remaining() <= 0
 
 
 def log_cost(run_type: str, files_processed: int, tokens_used: int) -> None:
