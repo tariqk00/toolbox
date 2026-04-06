@@ -3,6 +3,9 @@
     "known_senders": {
       "admin@the-syllabus.com": "The Syllabus",
       "sentinelteam@substack.com": "Sentinel Global Risks Watch"
+    },
+    "raw_senders": {
+      "takhan+cc@gmail.com": "Google CC"
     }
   },
   "orders": {

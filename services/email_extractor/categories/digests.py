@@ -78,12 +78,26 @@ def _is_known_sender(from_header: str, known_senders: dict) -> str | None:
     return None
 
 
-def process(email: dict, known_senders: dict) -> bool:
+def process(email: dict, known_senders: dict, raw_senders: dict = None) -> bool:
+    raw_senders = raw_senders or {}
     from_header = email['from']
     subject = email['subject']
     date = email['date']
     html = email.get('html', '')
     plain = email.get('plain', '')
+
+    source_name = _is_known_sender(from_header, raw_senders)
+    if source_name:
+        # Raw senders: store body verbatim, no LLM extraction
+        text, _ = html_to_text(html) if html else (plain, [])
+        # Light cleanup: collapse whitespace, drop blank lines
+        lines_clean = [l.strip() for l in text.splitlines() if l.strip()]
+        body = re.sub(r'\n{3,}', '\n\n', '\n'.join(lines_clean)).strip()
+        content = f'## {date} — {subject}\n\n{body}\n\n---'
+        filename = f'{source_name}.md'
+        append_to_memory('Digests', filename, content)
+        logger.info(f'Digests/{filename}: stored verbatim from {date}')
+        return f'{source_name}: daily brief'
 
     source_name = _is_known_sender(from_header, known_senders)
 

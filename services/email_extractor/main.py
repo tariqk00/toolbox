@@ -25,7 +25,7 @@ from .scanner import (
     get_gmail_service, load_config, load_state, save_state,
     fetch_category_emails,
 )
-from .categories import orders, receipts, trips, digests
+from .categories import orders, receipts, trips, digests, sweep
 
 
 def run():
@@ -41,9 +41,10 @@ def run():
 
     service = get_gmail_service()
 
-    summaries = {'orders': [], 'receipts': [], 'trips': [], 'digests': []}
+    summaries = {'orders': [], 'receipts': [], 'trips': [], 'digests': [], 'sweep': []}
     errors = 0
     known_digest_senders = config.get('digests', {}).get('known_senders', {})
+    raw_digest_senders = config.get('digests', {}).get('raw_senders', {})
 
     # --- Orders ---
     logger.info('Fetching orders...')
@@ -86,19 +87,30 @@ def run():
 
     # --- Digests ---
     logger.info('Fetching digests...')
+    all_digest_senders = {**known_digest_senders, **raw_digest_senders}
     digest_emails = fetch_category_emails(
         service, 'digests',
-        {'digests': {'senders': known_digest_senders}},
+        {'digests': {'senders': all_digest_senders}},
         after_date=after_date, first_run=first_run,
     )
     for email in digest_emails:
         try:
-            result = digests.process(email, known_digest_senders)
+            result = digests.process(email, known_digest_senders, raw_digest_senders)
             if result:
                 summaries['digests'].append(result)
         except Exception as e:
             logger.error(f'Digest processing error ({email["subject"][:50]}): {e}')
             errors += 1
+
+    # --- Weekly sweep ---
+    logger.info('Running sweep (weekly)...')
+    try:
+        result = sweep.run(service, config, state)
+        if result:
+            summaries['sweep'].append(result)
+    except Exception as e:
+        logger.error(f'Sweep error: {e}')
+        errors += 1
 
     # Update last_run
     state['last_run'] = date.today().isoformat()
