@@ -257,8 +257,10 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
     if ai_mime == 'text/plain' and len(content_bytes) > 1024 * 10:
         logger.info(f"  [Info] Truncating text ({len(content_bytes):,} bytes) to 10KB.")
         content_bytes = content_bytes[:1024 * 10]
+    original_pdf_bytes = None
     if ai_mime == 'application/pdf' and len(content_bytes) > 200 * 1024:
         logger.info(f"  [Info] Truncating PDF ({len(content_bytes):,} bytes) to 200KB.")
+        original_pdf_bytes = content_bytes
         content_bytes = content_bytes[:200 * 1024]
     if ai_mime == 'image/jpeg':
         if _PILLOW_AVAILABLE:
@@ -323,7 +325,19 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
                     return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
                             "summary": "RPD_Exhausted", "confidence": "Low"}, 0
                 if _is_invalid_pdf_error(api_err):
-                    logger.warning(f"  [PDF] Invalid/empty PDF (likely truncation artifact): {filename}. Skipping.")
+                    if original_pdf_bytes is not None:
+                        logger.warning(f"  [PDF] Truncated PDF invalid (no pages); retrying with full file ({len(original_pdf_bytes):,} bytes)...")
+                        content_bytes = original_pdf_bytes
+                        original_pdf_bytes = None
+                        try:
+                            response = _call_api()
+                            if use_free_tier:
+                                from toolbox.lib import quota_manager as _qm
+                                _qm.record_call()
+                            break
+                        except Exception:
+                            pass
+                    logger.warning(f"  [PDF] Invalid/empty PDF: {filename}. Skipping.")
                     return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
                             "summary": "Invalid_PDF", "confidence": "Low"}, 0
                 if _is_rate_limit_error(api_err) and attempt < len(_RETRY_DELAYS):
