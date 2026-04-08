@@ -95,6 +95,12 @@ def _is_daily_limit_error(e: Exception) -> bool:
     msg = str(e).upper()
     return _is_rate_limit_error(e) and ("PER_DAY" in msg or "DAILY" in msg or "DAY" in msg)
 
+
+def _is_invalid_pdf_error(e: Exception) -> bool:
+    """Detect corrupt/empty PDFs (often caused by raw byte truncation)."""
+    msg = str(e).upper()
+    return "NO PAGES" in msg or ("INVALID_ARGUMENT" in msg and "400" in msg and "PAGES" in msg)
+
 # --- CACHE LOGIC ---
 GEMINI_CACHE = {}
 
@@ -316,6 +322,10 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
                     logger.error(f"  [RPD] Daily free-tier quota exhausted by API. Skipping.")
                     return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
                             "summary": "RPD_Exhausted", "confidence": "Low"}, 0
+                if _is_invalid_pdf_error(api_err):
+                    logger.warning(f"  [PDF] Invalid/empty PDF (likely truncation artifact): {filename}. Skipping.")
+                    return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
+                            "summary": "Invalid_PDF", "confidence": "Low"}, 0
                 if _is_rate_limit_error(api_err) and attempt < len(_RETRY_DELAYS):
                     continue
                 raise
