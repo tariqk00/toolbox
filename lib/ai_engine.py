@@ -337,9 +337,13 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
                             break
                         except Exception:
                             pass
-                    logger.warning(f"  [PDF] Invalid/empty PDF: {filename}. Skipping.")
-                    return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
-                            "summary": "Invalid_PDF", "confidence": "Low"}, 0
+                    logger.warning(f"  [PDF] Invalid/empty PDF: {filename}. Caching to skip future retries.")
+                    result = {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
+                              "summary": "Invalid_PDF", "confidence": "Low"}
+                    if file_id:
+                        GEMINI_CACHE[file_id] = result
+                        save_cache()
+                    return result, 0
                 if _is_rate_limit_error(api_err) and attempt < len(_RETRY_DELAYS):
                     continue
                 raise

@@ -194,6 +194,11 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             logger.info(f"Skipping {name} (reserved for health pipeline)")
             continue
 
+        # Skip files flagged for manual review
+        if name.startswith('[MANUAL] '):
+            logger.info(f"Skipping {name} (flagged for manual review)")
+            continue
+
         # Validation: check if file is already processed
         is_valid_name = re.match(r'^\d{4}-\d{2}-\d{2} - .* - .*\.\w+$', name)
         if is_valid_name and not name.startswith("0000-00-00"):
@@ -221,6 +226,15 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
 
             # --- ACTION LOGIC ---
             if not dry_run:
+                # Flag unresolvable files for manual review
+                if analysis.get('summary') == 'Invalid_PDF' and not name.startswith('[MANUAL] '):
+                    manual_name = f'[MANUAL] {name}'
+                    service.files().update(fileId=fid, body={'name': manual_name}).execute()
+                    logger.warning(f"  [Manual] Flagged for manual review: {name}")
+                    send_message(f"Manual review needed: {name}\nCould not parse as PDF after full-file retry.", service="ai-sorter")
+                    stats.processed += 1
+                    continue
+
                 # Rename if High or Medium (Rename-only fallback for Medium)
                 if new_name != name and confidence in ['High', 'Medium']:
                     service.files().update(fileId=fid, body={'name': new_name}).execute()
