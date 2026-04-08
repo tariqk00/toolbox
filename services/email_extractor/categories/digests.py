@@ -48,6 +48,10 @@ def _get_gemini_client():
 
 
 def _call_gemini(text: str) -> list[dict]:
+    from toolbox.lib import quota_manager
+    if quota_manager.is_rpd_exhausted():
+        logger.warning('Free-tier RPD exhausted; skipping Gemini digest extraction')
+        return []
     client = _get_gemini_client()
     if not client:
         return []
@@ -57,6 +61,7 @@ def _call_gemini(text: str) -> list[dict]:
             model=GEMINI_FREE_MODEL,
             contents=prompt,
         )
+        quota_manager.record_call()
         raw = response.text.strip()
         # Strip markdown code fences if present
         raw = re.sub(r'^```(?:json)?\s*', '', raw)

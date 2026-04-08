@@ -54,12 +54,17 @@ def _get_gemini_client():
 
 
 def _classify_email(sender: str, subject: str, body: str) -> dict:
+    from toolbox.lib import quota_manager
+    if quota_manager.is_rpd_exhausted():
+        logger.warning(f'Free-tier RPD exhausted; skipping classification for {sender}')
+        return {'category': 'unknown', 'reason': 'RPD exhausted', 'vendor': sender}
     client = _get_gemini_client()
     if not client:
         return {'category': 'unknown', 'reason': 'Gemini unavailable', 'vendor': sender}
     try:
         prompt = CLASSIFY_PROMPT.format(sender=sender, subject=subject, body=body[:1500])
         resp = client.models.generate_content(model=GEMINI_FREE_MODEL, contents=prompt)
+        quota_manager.record_call()
         raw = resp.text.strip()
         raw = re.sub(r'^```(?:json)?\s*', '', raw)
         raw = re.sub(r'\s*```$', '', raw)

@@ -18,7 +18,7 @@ QUOTA_PATH = os.path.join(BASE_DIR, 'config', 'quota_state.json')
 DAILY_BUDGET = 500_000
 SORTER_RESERVED = 50_000   # tokens kept back for the hourly sorter; backfill stops before this
 FILES_PER_RUN = 50
-SORTER_RPD_LIMIT = 900     # free tier cap (1,000 RPD - 100 buffer)
+SORTER_RPD_LIMIT = 18      # free tier cap for gemini-2.5-flash-lite: 20 RPD - 2 buffer; shared across sorter + email extractor
 
 # Cost log
 COST_LOG_PATH = os.path.join(BASE_DIR, 'logs', 'cost_log.jsonl')

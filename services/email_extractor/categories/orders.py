@@ -176,6 +176,10 @@ def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
     Returns {items: [{name, qty, price}], total, tracking}.
     Falls back to empty dict on failure.
     """
+    from toolbox.lib import quota_manager
+    if quota_manager.is_rpd_exhausted():
+        logger.warning(f'Free-tier RPD exhausted; skipping Gemini extraction for {vendor}')
+        return {}
     client = _get_gemini_client()
     if not client:
         return {}
@@ -189,6 +193,7 @@ def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
             model=GEMINI_FREE_MODEL,
             contents=prompt,
         )
+        quota_manager.record_call()
         raw = response.text.strip()
         raw = re.sub(r'^```(?:json)?\s*', '', raw)
         raw = re.sub(r'\s*```$', '', raw)
