@@ -26,8 +26,6 @@ from ..scanner import html_to_text
 
 logger = logging.getLogger('EmailExtractor.Orders')
 
-GEMINI_FREE_SECRET = os.path.join(BASE_DIR, 'config', 'gemini_ai_studio_secret')
-GEMINI_FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite')
 
 ORDER_KEYWORDS = (
     'order', 'shipped', 'delivered', 'delivery', 'in transit', 'dispatched',
@@ -160,41 +158,22 @@ def _item_key(name: str) -> str:
 
 # ── Gemini extraction ────────────────────────────────────────────────────────
 
-def _get_gemini_client():
-    try:
-        from google import genai
-        key = open(GEMINI_FREE_SECRET).read().strip()
-        return genai.Client(api_key=key)
-    except Exception as e:
-        logger.error(f'Gemini client init failed: {e}')
-        return None
-
-
 def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
     """
     Ask Gemini to extract items, total, and tracking from an order email.
     Returns {items: [{name, qty, price}], total, tracking}.
     Falls back to empty dict on failure.
     """
-    from toolbox.lib import quota_manager
-    if quota_manager.is_rpd_exhausted():
-        logger.warning(f'Free-tier RPD exhausted; skipping Gemini extraction for {vendor}')
-        return {}
-    client = _get_gemini_client()
-    if not client:
+    from toolbox.lib.gemini import call_gemini
+    prompt = EXTRACT_PROMPT.format(
+        vendor=vendor,
+        subject=subject,
+        body=_prep_for_llm(body)[:4000],
+    )
+    raw = call_gemini(prompt)
+    if not raw:
         return {}
     try:
-        prompt = EXTRACT_PROMPT.format(
-            vendor=vendor,
-            subject=subject,
-            body=_prep_for_llm(body)[:4000],
-        )
-        response = client.models.generate_content(
-            model=GEMINI_FREE_MODEL,
-            contents=prompt,
-        )
-        quota_manager.record_call()
-        raw = response.text.strip()
         raw = re.sub(r'^```(?:json)?\s*', '', raw)
         raw = re.sub(r'\s*```$', '', raw)
         return json.loads(raw)

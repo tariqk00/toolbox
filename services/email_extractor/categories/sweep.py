@@ -20,8 +20,6 @@ from ..scanner import html_to_text, get_full_email, save_state
 
 logger = logging.getLogger('EmailExtractor.Sweep')
 
-GEMINI_FREE_SECRET = os.path.join(BASE_DIR, 'config', 'gemini_ai_studio_secret')
-GEMINI_FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite')
 SWEEP_INTERVAL_DAYS = 7
 TOP_SENDERS_TO_CLASSIFY = 15
 PERSONAL_DOMAINS = {'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com', 'me.com'}
@@ -43,29 +41,12 @@ Categories:
 Return ONLY valid JSON: {{"category": "...", "reason": "one sentence", "vendor": "short vendor name"}}"""
 
 
-def _get_gemini_client():
-    try:
-        from google import genai
-        key = open(GEMINI_FREE_SECRET).read().strip()
-        return genai.Client(api_key=key)
-    except Exception as e:
-        logger.error(f'Gemini client init failed: {e}')
-        return None
-
-
 def _classify_email(sender: str, subject: str, body: str) -> dict:
-    from toolbox.lib import quota_manager
-    if quota_manager.is_rpd_exhausted():
-        logger.warning(f'Free-tier RPD exhausted; skipping classification for {sender}')
-        return {'category': 'unknown', 'reason': 'RPD exhausted', 'vendor': sender}
-    client = _get_gemini_client()
-    if not client:
+    from toolbox.lib.gemini import call_gemini
+    raw = call_gemini(CLASSIFY_PROMPT.format(sender=sender, subject=subject, body=body[:1500]))
+    if not raw:
         return {'category': 'unknown', 'reason': 'Gemini unavailable', 'vendor': sender}
     try:
-        prompt = CLASSIFY_PROMPT.format(sender=sender, subject=subject, body=body[:1500])
-        resp = client.models.generate_content(model=GEMINI_FREE_MODEL, contents=prompt)
-        quota_manager.record_call()
-        raw = resp.text.strip()
         raw = re.sub(r'^```(?:json)?\s*', '', raw)
         raw = re.sub(r'\s*```$', '', raw)
         return json.loads(raw)

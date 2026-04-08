@@ -21,8 +21,6 @@ from ..writers import append_to_memory
 
 logger = logging.getLogger('EmailExtractor.Digests')
 
-GEMINI_FREE_SECRET = os.path.join(BASE_DIR, 'config', 'gemini_ai_studio_secret')
-GEMINI_FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite')
 
 EXTRACT_PROMPT = """You are processing a newsletter/digest email. Extract every article, paper, or item mentioned.
 For each item return:
@@ -37,33 +35,12 @@ Email content:
 {text}"""
 
 
-def _get_gemini_client():
-    try:
-        from google import genai
-        key = open(GEMINI_FREE_SECRET).read().strip()
-        return genai.Client(api_key=key)
-    except Exception as e:
-        logger.error(f'Gemini client init failed: {e}')
-        return None
-
-
 def _call_gemini(text: str) -> list[dict]:
-    from toolbox.lib import quota_manager
-    if quota_manager.is_rpd_exhausted():
-        logger.warning('Free-tier RPD exhausted; skipping Gemini digest extraction')
-        return []
-    client = _get_gemini_client()
-    if not client:
+    from toolbox.lib.gemini import call_gemini
+    raw = call_gemini(EXTRACT_PROMPT.format(text=text[:8000]))
+    if not raw:
         return []
     try:
-        prompt = EXTRACT_PROMPT.format(text=text[:8000])
-        response = client.models.generate_content(
-            model=GEMINI_FREE_MODEL,
-            contents=prompt,
-        )
-        quota_manager.record_call()
-        raw = response.text.strip()
-        # Strip markdown code fences if present
         raw = re.sub(r'^```(?:json)?\s*', '', raw)
         raw = re.sub(r'\s*```$', '', raw)
         return json.loads(raw)
