@@ -156,6 +156,13 @@ def _item_key(name: str) -> str:
     return re.sub(r'\s+', '_', name[:30].lower().strip())
 
 
+def _order_url(vendor: str, order_num: str) -> str:
+    """Return a direct order URL for vendors that support it, else empty string."""
+    if vendor == 'Amazon' and order_num:
+        return f'https://www.amazon.com/gp/your-account/order-details?orderID={order_num}'
+    return ''
+
+
 # ── Gemini extraction ────────────────────────────────────────────────────────
 
 def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
@@ -270,7 +277,10 @@ def process(email: dict, state: dict) -> str | None:
 
         prev['status'] = status
         summary = f'{vendor} #{order_num} → {status}'
-        logger.info(f'Orders/{filename}: status update — {summary}')
+        url = _order_url(vendor, order_num)
+        if url:
+            summary += f'\n{url}'
+        logger.info(f'Orders/{filename}: status update — {vendor} #{order_num} → {status}')
         return summary
 
     # New order — call LLM for item extraction
@@ -320,5 +330,8 @@ def process(email: dict, state: dict) -> str | None:
     if total:
         summary += f' — {total}'
     summary += f' [{status}]'
-    logger.info(f'Orders/{filename}: new order — {summary}')
+    url = _order_url(vendor, order_num)
+    if url:
+        summary += f'\n{url}'
+    logger.info(f'Orders/{filename}: new order — {label}: {n} items [{status}]')
     return summary

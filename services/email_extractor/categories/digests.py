@@ -133,7 +133,16 @@ def process(email: dict, known_senders: dict, raw_senders: dict = None) -> bool:
     content = '\n'.join(lines)
     filename = f'{source_name}.md'
     append_to_memory('Digests', filename, content)
-    titles = [a.get('title', '') for a in articles[:3] if a.get('title')]
-    summary = f'{source_name}: {len(articles)} articles — ' + '; '.join(titles)
+    summary_lines = [f'{source_name}: {len(articles)} articles']
+    for art in articles[:3]:
+        title = art.get('title', '').strip()
+        link = art.get('link', '').strip()
+        if not title:
+            continue
+        line = f'  → {title}'
+        if link:
+            line += f'\n    {link}'
+        summary_lines.append(line)
+    summary = '\n'.join(summary_lines)
     logger.info(f'Digests/{filename}: {len(articles)} articles from {date}')
     return summary
