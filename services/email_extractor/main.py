@@ -20,7 +20,7 @@ if os.path.dirname(BASE_DIR) not in sys.path:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(message)s')
 logger = logging.getLogger('EmailExtractor')
 
-from toolbox.lib.telegram import send_message
+from toolbox.lib.telegram import send_message, escape
 from .scanner import (
     get_gmail_service, load_config, load_state, save_state,
     fetch_category_emails,
@@ -121,13 +121,13 @@ def run():
     if total == 0 and errors == 0:
         msg = 'Email extractor: nothing new today'
     else:
-        lines = [f'Email extractor: {total} items']
+        lines = [f'<b>Email extractor: {total} items</b>']
         for category, items in summaries.items():
             if not items:
                 continue
-            lines.append(f'\n{category.capitalize()} ({len(items)}):')
+            lines.append(f'\n<b>{category.capitalize()} ({len(items)}):</b>')
             for s in items:
-                lines.append(f'  • {s}')
+                lines.append(f'  • {escape(s)}')
         if errors:
             lines.append(f'\nErrors: {errors}')
         msg = '\n'.join(lines)

@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timezone
 
 from toolbox.lib.drive_utils import get_drive_service, BASE_DIR, CONFIG_PATH
-from toolbox.lib.telegram import send_message
+from toolbox.lib.telegram import send_message, escape
 from toolbox.lib.quota_manager import COST_LOG_PATH
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -194,7 +194,7 @@ def main():
     logger.info(f"Written to: {TREE_PATH}")
     spend = _weekly_spend_summary()
     send_message(
-        f"Drive tree refreshed: {len(path_to_id)} folders across {len(roots)} roots\n{spend}",
+        f"<b>Drive tree refreshed:</b> {len(path_to_id)} folders across {len(roots)} roots\n{escape(spend)}",
         service="drive-tree-refresh"
     )
 

@@ -27,7 +27,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(message)s
 logger = logging.getLogger('ReadwiseDigest')
 
 from toolbox.lib.gemini import call_gemini
-from toolbox.lib.telegram import send_message
+from toolbox.lib.telegram import send_message, escape
+from toolbox.lib import ai_engine
 
 KEY_PATH = os.path.join(BASE_DIR, 'config', 'readwise_api_secret')
 STATE_PATH = os.path.join(BASE_DIR, 'config', 'readwise_digest_state.json')
@@ -149,20 +150,35 @@ def _summarize(article: dict) -> str:
         url=article.get('url', ''),
     )
     result = call_gemini(prompt)
+    
+    # --- SHADOW AI (PARALLEL SUMMARY) ---
+    logger.info(f"  [Shadow] Running parallel summary for article: {article.get('title')}")
+    gemma_summary, gemma_dur = ai_engine.call_ollama(prompt, None, None)
+    
+    shadow_msg = (
+        f"📚 *Readwise Shadow Summary*\n"
+        f"📄 `{article.get('title')}`\n\n"
+        f"🔹 *Gemini:* {result[:200]}...\n"
+        f"🔸 *Gemma 2B:* {gemma_summary[:200]}...\n\n"
+        f"⏱ Latency: {round(gemma_dur, 1)}s"
+    )
+    send_message(shadow_msg, service="shadow-ai", parse_mode="Markdown")
+
     return result if result else (existing[:200] if existing else 'No summary available.')
 
 
 def _format_message(articles: list[dict], summaries: list[str]) -> str:
-    lines = ['Reading Digest\n']
+    lines = ['<b>Reading Digest</b>\n']
     for i, (article, summary) in enumerate(zip(articles, summaries), 1):
-        title = article.get('title') or 'Untitled'
-        author = article.get('author') or 'Unknown'
+        title = escape(article.get('title') or 'Untitled')
+        author = escape(article.get('author') or 'Unknown')
         url = article.get('url', '')
-        lines.append(f'{i}. {title}')
-        lines.append(f'   by {author}')
-        lines.append(f'   {summary}')
         if url:
-            lines.append(f'   {url}')
+            lines.append(f'{i}. <a href="{url}">{title}</a>')
+        else:
+            lines.append(f'{i}. <b>{title}</b>')
+        lines.append(f'   <i>by {author}</i>')
+        lines.append(f'   {escape(summary)}')
         lines.append('')
     return '\n'.join(lines).strip()
 

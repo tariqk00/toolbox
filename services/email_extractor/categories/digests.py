@@ -15,7 +15,7 @@ if BASE_DIR not in sys.path:
 if os.path.dirname(BASE_DIR) not in sys.path:
     sys.path.insert(0, os.path.dirname(BASE_DIR))
 
-from toolbox.lib.telegram import send_message
+from toolbox.lib.telegram import send_message, escape
 from ..scanner import html_to_text, load_state, save_state
 from ..writers import append_to_memory
 
@@ -95,8 +95,9 @@ def process(email: dict, known_senders: dict, raw_senders: dict = None) -> bool:
             state['pending_digest_senders'] = pending
             save_state(state)
             send_message(
-                f'New digest sender found: {from_header}\n'
-                f'Subject: {subject}\n\n'
+                f'<b>New digest sender found:</b> <code>{escape(sender_email)}</code>\n'
+                f'From: {escape(from_header)}\n'
+                f'Subject: {escape(subject)}\n\n'
                 f'Reply with the source name to add it to the pipeline, or ignore to skip.',
                 service='email-extractor'
             )

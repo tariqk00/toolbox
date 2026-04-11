@@ -19,7 +19,7 @@ if repo_root not in sys.path:
     sys.path.append(repo_root)
 
 from toolbox.lib.ai_engine import analyze_with_gemini
-from toolbox.lib.telegram import send_message
+from toolbox.lib.telegram import send_message, escape
 from toolbox.lib import quota_manager
 from toolbox.lib.drive_utils import (
     get_drive_service, get_sheets_service,
@@ -65,16 +65,16 @@ class RunStats:
         if self.errors:
             summary_parts.append(f"{self.errors} error{'s' if self.errors > 1 else ''}")
         header = ", ".join(summary_parts) + f" ({duration}s)"
-        parts.append(header)
+        parts.append(f"<b>{escape(header)}</b>")
 
         MAX = 10
         all_lines = []
         for orig, new, folder in self.move_details:
-            all_lines.append(f"  Moved: {orig}\n    → {folder}/{new}")
+            all_lines.append(f"  Moved: <code>{escape(orig)}</code>\n    → {escape(folder)}/{escape(new)}")
         for orig, new in self.rename_details:
-            all_lines.append(f"  Renamed: {orig}\n    → {new}")
+            all_lines.append(f"  Renamed: <code>{escape(orig)}</code>\n    → <code>{escape(new)}</code>")
         for name, err in self.error_details:
-            all_lines.append(f"  Error: {name}\n    {err}")
+            all_lines.append(f"  Error: <code>{escape(name)}</code>\n    {escape(str(err))}")
 
         parts.extend(all_lines[:MAX])
         if len(all_lines) > MAX:
@@ -231,7 +231,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                     manual_name = f'[MANUAL] {name}'
                     service.files().update(fileId=fid, body={'name': manual_name}).execute()
                     logger.warning(f"  [Manual] Flagged for manual review: {name}")
-                    send_message(f"Manual review needed: {name}\nCould not parse as PDF after full-file retry.", service="ai-sorter")
+                    send_message(f"Manual review needed: <code>{escape(name)}</code>\nCould not parse as PDF after full-file retry.", service="ai-sorter")
                     stats.processed += 1
                     continue
 

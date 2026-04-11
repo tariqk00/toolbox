@@ -7,9 +7,13 @@ import json
 import logging
 import io
 import re
+import random
 import time
+import requests
+from datetime import datetime
 from google import genai
 from google.genai import types
+from toolbox.lib import telegram
 
 try:
     from PIL import Image as _PILImage
@@ -28,8 +32,15 @@ CONFIG_DIR = os.path.join(BASE_DIR, 'config')
 SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_secret')
 CACHE_PATH = os.path.join(CONFIG_DIR, 'gemini_cache.json')
 
-# Paid model — gemini-flash-latest (used by backfill and fallback)
+# Default model — use gemini-flash-latest to always track the current Flash release.
+# Override via GEMINI_MODEL env var if needed.
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-flash-latest')
+
+# --- SHADOW MODEL CONFIG ---
+OLLAMA_URL = "http://localhost:11434/api/generate"
+SHADOW_MODEL = "gemma4:e2b"
+SHADOW_SAMPLE_RATE = 0.20 # 20%
+COMPARISON_LOG_PATH = os.path.join(BASE_DIR, 'logs', 'model_comparison.jsonl')
 # Free tier model — AI Studio project, 15 RPM / 1,000 RPD
 GEMINI_FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite')
 
@@ -178,6 +189,71 @@ def get_ai_supported_mime(mime_type, filename=None):
             
     return None
 
+def call_ollama(prompt, content_bytes=None, mime_type=None):
+    """Calls the local Ollama instance on the NUC."""
+    payload = {
+        "model": SHADOW_MODEL,
+        "prompt": prompt,
+        "stream": False
+    }
+    
+    # If we have text content, append it to the prompt
+    if content_bytes and mime_type == 'text/plain':
+        try:
+           text_content = content_bytes.decode('utf-8', errors='ignore')
+           payload["prompt"] = f"{prompt}\n\nCONTENT TO ANALYZE:\n{text_content}"
+        except Exception:
+            pass
+
+    try:
+        start = time.time()
+        response = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        duration = time.time() - start
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("response", "").strip(), duration
+        return f"Error: Ollama status {response.status_code}", duration
+    except Exception as e:
+        return f"Error: {str(e)}", 0
+
+def log_comparison(filename, gemini_data, gemma_text, gemini_duration, gemma_duration):
+    """Logs the comparison between Gemini and Gemma."""
+    os.makedirs(os.path.dirname(COMPARISON_LOG_PATH), exist_ok=True)
+    
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "filename": filename,
+        "gemini": {
+            "result": gemini_data,
+            "latency": round(gemini_duration, 2)
+        },
+        "gemma": {
+            "result": gemma_text,
+            "latency": round(gemma_duration, 2)
+        }
+    }
+    
+    try:
+        with open(COMPARISON_LOG_PATH, 'a') as f:
+            f.write(json.dumps(log_entry) + "\n")
+            
+        # Send Telegram notification
+        summary = gemini_data.get('summary', 'No summary')
+        gemini_conf = gemini_data.get('confidence', 'N/A')
+        
+        msg = (
+            f"🤖 *Shadow AI Comparison*\n"
+            f"📄 `{filename}`\n\n"
+            f"🔹 *Gemini (Flash):* {gemini_conf} - {summary}\n"
+            f"🔸 *Gemma (2B):* {gemma_text[:150]}...\n\n"
+            f"⏱ Gemini: {round(gemini_duration,1)}s | Gemma: {round(gemma_duration,1)}s"
+        )
+        telegram.send_message(msg, service="shadow-ai", parse_mode="Markdown")
+        
+    except Exception as e:
+        logger.error(f"Failed to log comparison: {e}")
+
 def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, context_hint="", file_id=None, use_free_tier=False):
     """
     Sends content to Gemini for analysis using the google.genai SDK.
@@ -308,6 +384,7 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
         )
 
     try:
+        start_gemini = time.time()
         response = None
         for attempt, delay in enumerate([0] + _RETRY_DELAYS):
             if delay:
@@ -350,6 +427,8 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
 
         if response is None:
             raise RuntimeError("All retry attempts exhausted (429)")
+        
+        gemini_duration = time.time() - start_gemini
 
         usage = response.usage_metadata
         token_count = 0
@@ -388,6 +467,12 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             if file_id:
                 GEMINI_CACHE[file_id] = data
                 save_cache()
+            
+            # --- SHADOW AI PARALLEL CALL ---
+            if random.random() < SHADOW_SAMPLE_RATE:
+                logger.info(f"  [Shadow] Running parallel check for {filename}...")
+                gemma_text, gemma_duration = call_ollama(prompt_with_context, content_bytes, ai_mime)
+                log_comparison(filename, data, gemma_text, gemini_duration, gemma_duration)
 
             return data, token_count
 

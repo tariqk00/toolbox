@@ -27,7 +27,7 @@ for p in [str(TOOLBOX_ROOT), str(PARENT_DIR), str(SERVICE_DIR)]:
         sys.path.insert(0, p)
 
 from lib.google_api import GoogleAuth
-from lib.telegram import send_message
+from lib.telegram import send_message, escape
 import gym_extract
 import merger
 
@@ -113,7 +113,7 @@ def run(args):
                 elapsed, len(sessions), saved)
     if not dry_run:
         if saved:
-            lines = [f"{saved} session{'s' if saved > 1 else ''} saved ({elapsed}s)"] + saved_details
+            lines = [f"<b>{saved} session{'s' if saved > 1 else ''} saved ({elapsed}s)</b>"] + [escape(d) for d in saved_details]
         else:
             lines = [f"Done in {elapsed}s — no new sessions found"]
         send_message("\n".join(lines), service="workout-extract")

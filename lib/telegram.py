@@ -12,6 +12,13 @@ import urllib.error
 logger = logging.getLogger("DriveSorter.Telegram")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def escape(text: str) -> str:
+    """Escape text for Telegram HTML parse_mode."""
+    return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
 CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'telegram_config.json')
 
 _config_cache = None
@@ -32,7 +39,7 @@ def _load_config():
         return None
 
 
-def send_message(text: str, service: str = None, parse_mode: str = None) -> bool:
+def send_message(text: str, service: str = None, parse_mode: str = 'HTML') -> bool:
     """
     Send a message to the configured ops channel.
     If service is provided, prepends "[service] " to the message.
