@@ -11,6 +11,7 @@ Readwise Daily Digest — fetches top unread articles, summarizes via Gemini, se
 import json
 import logging
 import os
+import random
 import sys
 import urllib.request
 import urllib.error
@@ -113,18 +114,25 @@ def _fetch_articles(key: str) -> list[dict]:
 
 def _select_articles(articles: list[dict], surfaced: dict) -> list[dict]:
     """
-    Pick TOP_N articles, preferring unsurfaced ones (newest first).
+    Pick TOP_N articles: 1 newest unsurfaced + 2 random from the rest.
     Falls back to oldest surfaced articles if not enough fresh ones.
     """
     unsurfaced = [a for a in articles if str(a['id']) not in surfaced]
     already_surfaced = [a for a in articles if str(a['id']) in surfaced]
 
-    # Sort unsurfaced: newest saved first
     unsurfaced.sort(key=lambda a: a.get('saved_at', ''), reverse=True)
-    # Sort surfaced: oldest surfaced date first (least recently shown)
     already_surfaced.sort(key=lambda a: surfaced.get(str(a['id']), ''))
 
-    selected = unsurfaced[:TOP_N]
+    selected = []
+    if unsurfaced:
+        selected.append(unsurfaced[0])  # 1 newest
+        pool = unsurfaced[1:]
+        remaining = TOP_N - 1
+        if len(pool) >= remaining:
+            selected += random.sample(pool, remaining)
+        else:
+            selected += pool
+
     if len(selected) < TOP_N:
         selected += already_surfaced[:TOP_N - len(selected)]
 
