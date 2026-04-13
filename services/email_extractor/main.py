@@ -20,7 +20,7 @@ if os.path.dirname(BASE_DIR) not in sys.path:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(message)s')
 logger = logging.getLogger('EmailExtractor')
 
-from toolbox.lib.telegram import send_message, escape
+from toolbox.lib.telegram import send_message, escape, monit_link
 from .scanner import (
     get_gmail_service, load_config, load_state, save_state,
     fetch_category_emails,
@@ -43,6 +43,7 @@ def run():
 
     summaries = {'orders': [], 'receipts': [], 'trips': [], 'digests': [], 'sweep': []}
     errors = 0
+    error_details = []
     known_digest_senders = config.get('digests', {}).get('known_senders', {})
     raw_digest_senders = config.get('digests', {}).get('raw_senders', {})
 
@@ -58,6 +59,7 @@ def run():
         except Exception as e:
             logger.error(f'Order processing error ({email["subject"][:50]}): {e}')
             errors += 1
+            error_details.append(f'orders/{email["subject"][:40]}: {type(e).__name__}')
 
     # --- Receipts ---
     logger.info('Fetching receipts...')
@@ -71,6 +73,7 @@ def run():
         except Exception as e:
             logger.error(f'Receipt processing error ({email["subject"][:50]}): {e}')
             errors += 1
+            error_details.append(f'receipts/{email["subject"][:40]}: {type(e).__name__}')
 
     # --- Trips ---
     logger.info('Fetching trips...')
@@ -84,6 +87,7 @@ def run():
         except Exception as e:
             logger.error(f'Trip processing error ({email["subject"][:50]}): {e}')
             errors += 1
+            error_details.append(f'trips/{email["subject"][:40]}: {type(e).__name__}')
 
     # --- Digests ---
     logger.info('Fetching digests...')
@@ -101,6 +105,7 @@ def run():
         except Exception as e:
             logger.error(f'Digest processing error ({email["subject"][:50]}): {e}')
             errors += 1
+            error_details.append(f'digests/{email["subject"][:40]}: {type(e).__name__}')
 
     # --- Weekly sweep ---
     logger.info('Running sweep (weekly)...')
@@ -111,6 +116,7 @@ def run():
     except Exception as e:
         logger.error(f'Sweep error: {e}')
         errors += 1
+        error_details.append(f'sweep: {type(e).__name__}')
 
     # Update last_run
     state['last_run'] = date.today().isoformat()
@@ -129,7 +135,10 @@ def run():
             for s in items:
                 lines.append(f'  • {escape(s)}')
         if errors:
-            lines.append(f'\nErrors: {errors}')
+            lines.append(f'\n<b>{errors} error{"s" if errors > 1 else ""}:</b>')
+            for detail in error_details:
+                lines.append(f'  • {escape(detail)}')
+            lines.append(f'  {monit_link("Check Monit")} · <code>journalctl --user -u email-extractor -n 50</code>')
         msg = '\n'.join(lines)
 
     logger.info(msg)

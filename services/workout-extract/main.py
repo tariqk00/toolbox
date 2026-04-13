@@ -27,7 +27,7 @@ for p in [str(TOOLBOX_ROOT), str(PARENT_DIR), str(SERVICE_DIR)]:
         sys.path.insert(0, p)
 
 from lib.google_api import GoogleAuth
-from lib.telegram import send_message, escape
+from lib.telegram import send_message, escape, monit_link
 import gym_extract
 import merger
 
@@ -119,6 +119,18 @@ def run(args):
         send_message("\n".join(lines), service="workout-extract")
 
 
+def run_with_error_reporting(args):
+    try:
+        run(args)
+    except Exception as e:
+        logger.exception("Unhandled error in workout-extract")
+        send_message(
+            f"<b>workout-extract failed</b>\n{escape(type(e).__name__)}: {escape(str(e))}\n"
+            f"{monit_link('Check Monit')} · <code>journalctl --user -u workout-extract -n 50</code>",
+            service="workout-extract",
+        )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Workout Extract Service")
     parser.add_argument("--execute", action="store_true",
@@ -134,4 +146,4 @@ if __name__ == "__main__":
     args = parse_args()
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    run(args)
+    run_with_error_reporting(args)

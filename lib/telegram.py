@@ -13,6 +13,22 @@ logger = logging.getLogger("DriveSorter.Telegram")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+MONIT_URL = 'http://172.30.0.169:2812'
+
+
+def monit_link(label: str = 'Monit') -> str:
+    return f'<a href="{MONIT_URL}">{escape(label)}</a>'
+
+
+def drive_file_link(file_id: str, label: str) -> str:
+    url = f'https://drive.google.com/file/d/{file_id}'
+    return f'<a href="{url}">{escape(label)}</a>'
+
+
+def drive_folder_link(folder_id: str, label: str) -> str:
+    url = f'https://drive.google.com/drive/folders/{folder_id}'
+    return f'<a href="{url}">{escape(label)}</a>'
+
 
 def escape(text: str) -> str:
     """Escape text for Telegram HTML parse_mode."""

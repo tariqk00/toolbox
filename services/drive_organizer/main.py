@@ -19,7 +19,7 @@ if repo_root not in sys.path:
     sys.path.append(repo_root)
 
 from toolbox.lib.ai_engine import analyze_with_gemini
-from toolbox.lib.telegram import send_message, escape
+from toolbox.lib.telegram import send_message, escape, drive_file_link, monit_link
 from toolbox.lib import quota_manager
 from toolbox.lib.drive_utils import (
     get_drive_service, get_sheets_service,
@@ -45,9 +45,9 @@ class RunStats:
         self.renamed = 0
         self.errors = 0
         self.start_time = time.time()
-        self.move_details = []    # (original_name, new_name, folder_path)
-        self.rename_details = []  # (original_name, new_name) — rename-only, no move
-        self.error_details = []   # (name, error_str)
+        self.move_details = []    # (original_name, new_name, folder_path, file_id)
+        self.rename_details = []  # (original_name, new_name, file_id)
+        self.error_details = []   # (name, error_str, file_id)
         self._moved_fids = set()  # track which files were moved (to avoid duplicate rename lines)
 
     def get_summary(self):
@@ -69,12 +69,17 @@ class RunStats:
 
         MAX = 10
         all_lines = []
-        for orig, new, folder in self.move_details:
-            all_lines.append(f"  Moved: <code>{escape(orig)}</code>\n    → {escape(folder)}/{escape(new)}")
-        for orig, new in self.rename_details:
-            all_lines.append(f"  Renamed: <code>{escape(orig)}</code>\n    → <code>{escape(new)}</code>")
-        for name, err in self.error_details:
-            all_lines.append(f"  Error: <code>{escape(name)}</code>\n    {escape(str(err))}")
+        for orig, new, folder, fid in self.move_details:
+            label = drive_file_link(fid, new) if fid else f"<code>{escape(new)}</code>"
+            all_lines.append(f"  Moved: {label}\n    → {escape(folder)}")
+        for orig, new, fid in self.rename_details:
+            label = drive_file_link(fid, new) if fid else f"<code>{escape(new)}</code>"
+            all_lines.append(f"  Renamed: <code>{escape(orig)}</code> → {label}")
+        for name, err, fid in self.error_details:
+            label = drive_file_link(fid, name) if fid else f"<code>{escape(name)}</code>"
+            all_lines.append(f"  Error: {label}\n    {escape(str(err))}")
+        if self.error_details:
+            all_lines.append(f"  {monit_link('Check Monit')} · <code>journalctl --user -u ai-sorter -n 50</code>")
 
         parts.extend(all_lines[:MAX])
         if len(all_lines) > MAX:
@@ -231,7 +236,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                     manual_name = f'[MANUAL] {name}'
                     service.files().update(fileId=fid, body={'name': manual_name}).execute()
                     logger.warning(f"  [Manual] Flagged for manual review: {name}")
-                    send_message(f"Manual review needed: <code>{escape(name)}</code>\nCould not parse as PDF after full-file retry.", service="ai-sorter")
+                    send_message(f"Manual review needed: {drive_file_link(fid, name)}\nCould not parse as PDF after full-file retry.", service="ai-sorter")
                     stats.processed += 1
                     continue
 
@@ -253,7 +258,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                         stats.moved += 1
                         stats._moved_fids.add(fid)
                         full_path = ID_TO_PATH.get(target_id, folder_path or 'Unknown')
-                        stats.move_details.append((name, new_name, folder_path or full_path))
+                        stats.move_details.append((name, new_name, folder_path or full_path, fid))
                         logger.info(f"  [Moved] -> {full_path}")
                         # Log move (if not already logged via Rename)
                         if new_name == name:
@@ -263,14 +268,14 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
 
                 # Record rename-only (not moved)
                 if new_name != name and confidence == 'Medium' and fid not in stats._moved_fids:
-                    stats.rename_details.append((name, new_name))
+                    stats.rename_details.append((name, new_name, fid))
 
             stats.processed += 1
                 
         except Exception as e:
             logger.error(f"  [Error] {name}: {e}")
             stats.errors += 1
-            stats.error_details.append((name, str(e)))
+            stats.error_details.append((name, str(e), fid))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AI Drive Sorter (Modular v0.6)")
