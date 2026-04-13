@@ -2,7 +2,7 @@
 Shared Gemini helper for the email extraction pipeline.
 
 Tries the free tier (gemini-2.5-flash-lite) first; falls back to paid
-(gemini-2.0-flash-lite) if the daily RPD quota is exhausted.
+(gemini-2.0-flash) if the daily RPD quota is exhausted.
 
 Usage:
     from toolbox.lib.gemini import call_gemini
@@ -21,7 +21,7 @@ FREE_SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_ai_studio_secret')
 PAID_SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_secret')
 
 FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite')
-PAID_MODEL = os.getenv('GEMINI_PAID_MODEL', 'gemini-2.0-flash-lite')
+PAID_MODEL = os.getenv('GEMINI_PAID_MODEL', 'gemini-2.0-flash')
 
 # Lazy singletons
 _free_client = None
