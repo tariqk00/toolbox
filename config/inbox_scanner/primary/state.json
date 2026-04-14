@@ -1,5 +1,500 @@
 {
-  "last_run": null,
-  "state_date": null,
-  "processed_ids": []
+  "last_run": "2026-04-13",
+  "state_date": "2026-04-13",
+  "processed_ids": [
+    "19ce1bf888292ea7",
+    "19d5126a952bc756",
+    "19d8159cd7638414",
+    "19d849d5b4f28eec",
+    "19d86803af87ab5c",
+    "19d8281f7249f031",
+    "19d862f4ba134966",
+    "19d86a32e9953051",
+    "19d87ddf7feed9f7",
+    "19d87d4b8978d756",
+    "19d87c3063f6d3ea",
+    "19d84500bdd16511",
+    "1812c656bb327491",
+    "19d849e4119990df",
+    "19d87933daed5ae4",
+    "19d7c3360efeef28",
+    "19d63a6da8fd796e",
+    "19d7f1647ccca5c5",
+    "19d875aec6be7097",
+    "19d7a341aa2f1882",
+    "19d86ac39dd20d39",
+    "19d85f47a5aacfd9",
+    "19d0ecb4f99c8519",
+    "19d86f4f6ddbabc7",
+    "19d86e880e46931e",
+    "169df296ce65d1b6",
+    "19d86b492fa7f400",
+    "19d86d642e2e2054",
+    "19d85986be4aaedd",
+    "19d87258c72da50e",
+    "19d87479a7530869",
+    "19d84b183662898f",
+    "19d8492a8c50830f",
+    "19d791023b07c756",
+    "19d5e83e6608b1f4",
+    "19d48993742d46af",
+    "19d84af52ae03f35",
+    "19d83fc3407a461d",
+    "19d165f24d198732",
+    "19d879b4eccf0a46",
+    "19d4e5c573275f47",
+    "19d200920e31c8d6",
+    "19d86fdcca53d3a8",
+    "19d853a1703b0811",
+    "19d82f8ceb7b76f2",
+    "19d86be969a13900",
+    "19d849ed99e32d92",
+    "19d7f0bc2ecf8645",
+    "19d788ce97a97a6a",
+    "19c687e59bc64d95",
+    "19d8391577734a51",
+    "19d874e8a37d7df3",
+    "19d3f44f0b6450d1",
+    "19d3af487f614f24",
+    "19d87e3b27cca9d0",
+    "1980eb10d3eafc79",
+    "19d85a87df56b67d",
+    "19d86bbc68afda6e",
+    "19d86bf4a8da6cdb",
+    "19d87da0b62a1257"
+  ],
+  "classification_cache": {
+    "19d87ddf7feed9f7": {
+      "category": "skip",
+      "reason": "This is an automated notification about an upcoming Subscribe & Save delivery, which doesn't require immediate action beyond the user's existing subscription management.",
+      "priority": "normal",
+      "_sender": "no-reply@amazon.com",
+      "_from_header": "\"Amazon Subscribe & Save\" <no-reply@amazon.com>",
+      "_subject": "Review your upcoming delivery",
+      "_date": "2026-04-13"
+    },
+    "19d87da0b62a1257": {
+      "category": "skip",
+      "reason": "This is a marketing email from Cloudflare about their Agent Cloud product.",
+      "priority": "normal",
+      "_sender": "em@em1.cloudflare.com",
+      "_from_header": "Cloudflare Developers <em@em1.cloudflare.com>",
+      "_subject": "It's Agents Week.",
+      "_date": "2026-04-13"
+    },
+    "19d87933daed5ae4": {
+      "category": "skip",
+      "reason": "This is an automated notification about a tax return acceptance and doesn't require immediate action, though it is useful for record-keeping.",
+      "priority": "normal",
+      "_sender": "turbotax@intuit.com",
+      "_from_header": "TurboTax@intuit.com",
+      "_subject": "TurboTax Update: State Return Accepted",
+      "_date": "2026-04-13"
+    },
+    "19d875aec6be7097": {
+      "category": "skip",
+      "reason": "This is an automated shipping update from UPS, not requiring any action from the recipient.",
+      "priority": "normal",
+      "_sender": "mcinfo@ups.com",
+      "_from_header": "UPS <mcinfo@ups.com>",
+      "_subject": "UPS Update: Package Scheduled for Delivery Today",
+      "_date": "2026-04-13"
+    },
+    "19d874e8a37d7df3": {
+      "category": "skip",
+      "reason": "This is an automated notification confirming purchase of Audit Defense and providing instructions for future use, but it does not require any immediate action.",
+      "priority": "normal",
+      "_sender": "donotreply@receipt.taxaudit.com",
+      "_from_header": "DONOTREPLY@receipt.taxaudit.com",
+      "_subject": "TurboTax\u00ae Audit Defense",
+      "_date": "2026-04-13"
+    },
+    "19d87258c72da50e": {
+      "category": "skip",
+      "reason": "This is an automated notification about account balance from a wine subscription service, and although it suggests options, it doesn't require immediate action from the user.",
+      "priority": "normal",
+      "_sender": "chat@nakedwines.com",
+      "_from_header": "\"nakedwines.com\" <chat@nakedwines.com>",
+      "_subject": "Reminder - You have $186.46 in your account to spend on wine",
+      "_date": "2026-04-13"
+    },
+    "19d86fdcca53d3a8": {
+      "category": "skip",
+      "reason": "This is an automated shipping update from Costco and does not require any action.",
+      "priority": "normal",
+      "_sender": "deliverystatus@logistics.costco.com",
+      "_from_header": "Costco <deliverystatus@logistics.costco.com>",
+      "_subject": "Your Costco shipment is out for delivery",
+      "_date": "2026-04-13"
+    },
+    "19d86f4f6ddbabc7": {
+      "category": "skip",
+      "reason": "Automated price alert notification from pointsyeah.com, not requiring immediate action.",
+      "priority": "normal",
+      "_sender": "alert@pointsyeah.com",
+      "_from_header": "PointsYeah Alerts <alert@pointsyeah.com>",
+      "_subject": "LIH - NYC 2026-05-03 - 2026-05-03, You have points price alerts",
+      "_date": "2026-04-13"
+    },
+    "19d86d642e2e2054": {
+      "category": "skip",
+      "reason": "This is an automated order and shipping update notification from Reef and does not require any action.",
+      "priority": "normal",
+      "_sender": "reef@reef.com",
+      "_from_header": "REEF <reef@reef.com>",
+      "_subject": "Your order is out for delivery! RF3644738",
+      "_date": "2026-04-13"
+    },
+    "19d86bf4a8da6cdb": {
+      "category": "skip",
+      "reason": "This is an automated daily digest email from USPS Informed Delivery providing a summary of incoming mail and packages, not requiring any action from the user.",
+      "priority": "normal",
+      "_sender": "uspsinformeddelivery@email.informeddelivery.usps.com",
+      "_from_header": "USPS Informed Delivery <USPSInformeddelivery@email.informeddelivery.usps.com>",
+      "_subject": "Your Daily Digest for Mon, 4/13 is ready to view",
+      "_date": "2026-04-13"
+    },
+    "19d86be969a13900": {
+      "category": "skip",
+      "reason": "This is an automated service reminder from a car dealership and does not require immediate action, despite suggesting scheduling service.",
+      "priority": "normal",
+      "_sender": "xt_noreply@xtime.com",
+      "_from_header": "Infiniti City of Massapequa <xt_noreply@xtime.com>",
+      "_subject": "Don't forget to schedule service",
+      "_date": "2026-04-13"
+    },
+    "19d86bbc68afda6e": {
+      "category": "skip",
+      "reason": "This is an automated shipping update from USPS and does not require any action.",
+      "priority": "normal",
+      "_sender": "auto-reply@usps.com",
+      "_from_header": "auto-reply@usps.com",
+      "_subject": "USPS\u00ae Expected Delivery on Monday, April 13, 2026 Between 9:00am and 1:00pm 9434636208303391353692",
+      "_date": "2026-04-13"
+    },
+    "19d86b492fa7f400": {
+      "category": "skip",
+      "reason": "This is an automated notification from Nextdoor summarizing top posts and local news, and doesn't require any action from the recipient.",
+      "priority": "normal",
+      "_sender": "no-reply@is.email.nextdoor.com",
+      "_from_header": "Your New Horizons neighbors <no-reply@is.email.nextdoor.com>",
+      "_subject": "Top post: Good morning! Whoever is dropping their smoked cigarettes at the...",
+      "_date": "2026-04-13"
+    },
+    "19d86ac39dd20d39": {
+      "category": "skip",
+      "reason": "This is an automated shipping update from USPS and does not require any action from my side.",
+      "priority": "normal",
+      "_sender": "auto-reply@usps.com",
+      "_from_header": "auto-reply@usps.com",
+      "_subject": "USPS\u00ae Expected Delivery on Monday, April 13, 2026 Between 9:00am and 1:00pm 9434636208303392439579",
+      "_date": "2026-04-13"
+    },
+    "19d86a32e9953051": {
+      "category": "skip",
+      "reason": "This is an automated shipping update from USPS and does not require any action from the recipient.",
+      "priority": "normal",
+      "_sender": "auto-reply@usps.com",
+      "_from_header": "auto-reply@usps.com",
+      "_subject": "USPS\u00ae Expected Delivery on Monday, April 13, 2026 Between 9:00am and 1:00pm 9434636208303391078335",
+      "_date": "2026-04-13"
+    },
+    "19d862f4ba134966": {
+      "category": "skip",
+      "reason": "This is a newsletter providing AI news and industry updates, which falls under the category of automated notifications and does not require immediate action or a reply.",
+      "priority": "normal",
+      "_sender": "theneuron@newsletter.theneurondaily.com",
+      "_from_header": "The Neuron <theneuron@newsletter.theneurondaily.com>",
+      "_subject": "\ud83d\ude3a Do you have the wrong degree?",
+      "_date": "2026-04-13"
+    },
+    "19d85f47a5aacfd9": {
+      "category": "skip",
+      "reason": "This is an automated notification from American Express regarding a potentially unusual purchase, not requiring immediate action from the user.",
+      "priority": "normal",
+      "_sender": "americanexpress@welcome.americanexpress.com",
+      "_from_header": "American Express <AmericanExpress@welcome.americanexpress.com>",
+      "_subject": "Your Card may not have been present for a purchase",
+      "_date": "2026-04-13"
+    },
+    "19d85a87df56b67d": {
+      "category": "skip",
+      "reason": "This is an automated weekly running report, providing summaries and stats and not requiring any action from the recipient.",
+      "priority": "normal",
+      "_sender": "hi@smashrun.com",
+      "_from_header": "Smashrun <hi@smashrun.com>",
+      "_subject": "Week in running",
+      "_date": "2026-04-13"
+    },
+    "19d84b183662898f": {
+      "category": "skip",
+      "reason": "Automated notification about scheduled maintenance at a hotel, not requiring immediate action or response.",
+      "priority": "normal",
+      "_sender": "supportbns@anotherstar.com",
+      "_from_header": "Support Boston North Station <supportbns@anotherstar.com>",
+      "_subject": "Maintenance at your citizenM Boston North Station hotel",
+      "_date": "2026-04-13"
+    },
+    "19d84af52ae03f35": {
+      "category": "skip",
+      "reason": "This is an automated notification from TurboTax confirming that the federal tax return has been accepted, and does not require immediate action.",
+      "priority": "normal",
+      "_sender": "turbotax@intuit.com",
+      "_from_header": "TurboTax@intuit.com",
+      "_subject": "TurboTax Update: Federal Return Accepted",
+      "_date": "2026-04-13"
+    },
+    "19d849ed99e32d92": {
+      "category": "action_required",
+      "reason": "The email is an automated security alert stating that the user's tax return was accessed and recommends contacting TurboTax Support if the user did not authorize the access.",
+      "priority": "high",
+      "_sender": "turbotax@em2.turbotax.intuit.com",
+      "_from_header": "TurboTax <TurboTax@em2.turbotax.intuit.com>",
+      "_subject": "Your TurboTax account has been updated",
+      "_date": "2026-04-13"
+    },
+    "19d849e4119990df": {
+      "category": "skip",
+      "reason": "This is an automated notification from TurboTax about the status of a tax return, which doesn't require immediate action beyond monitoring.",
+      "priority": "normal",
+      "_sender": "turbotax@intuit.com",
+      "_from_header": "TurboTax@intuit.com",
+      "_subject": "In Progress: Your TurboTax Return Status",
+      "_date": "2026-04-13"
+    },
+    "19d8492a8c50830f": {
+      "category": "skip",
+      "reason": "This is an automated order confirmation email from Intuit and does not require any action, although it confirms a past transaction.",
+      "priority": "normal",
+      "_sender": "do_not_reply@intuit.com",
+      "_from_header": "Intuit TurboTax Customer Service <do_not_reply@intuit.com>",
+      "_subject": "Your Order Confirmation",
+      "_date": "2026-04-13"
+    },
+    "19d84500bdd16511": {
+      "category": "inquiry",
+      "reason": "This email is a direct response to Tarsha's inquiry about renting a unit and requires a response to answer the questions and move forward with the rental process.",
+      "priority": "normal",
+      "_sender": "studio@3creativeinc.com",
+      "_from_header": "Christina Manzella <studio@3creativeinc.com>",
+      "_subject": "Availability at the Uptown",
+      "_date": "2026-04-12"
+    },
+    "19d83fc3407a461d": {
+      "category": "skip",
+      "reason": "This is an automated notification about an upcoming AutoPay, and while it provides information, it doesn't require any immediate action from the user.",
+      "priority": "normal",
+      "_sender": "americanexpress@welcome.americanexpress.com",
+      "_from_header": "American Express <AmericanExpress@welcome.americanexpress.com>",
+      "_subject": "Your AutoPay Reminder",
+      "_date": "2026-04-12"
+    },
+    "19d8391577734a51": {
+      "category": "skip",
+      "reason": "This is an automated payment reminder from American Express and doesn't require any action unless the user wants to adjust their AutoPay settings.",
+      "priority": "normal",
+      "_sender": "americanexpress@welcome.americanexpress.com",
+      "_from_header": "American Express <AmericanExpress@welcome.americanexpress.com>",
+      "_subject": "Your AutoPay Reminder",
+      "_date": "2026-04-12"
+    },
+    "19d82f8ceb7b76f2": {
+      "category": "skip",
+      "reason": "This is a newsletter about AI news and developments, so it falls under the 'skip' category for newsletters and automated updates.",
+      "priority": "normal",
+      "_sender": "theneuron@newsletter.theneurondaily.com",
+      "_from_header": "The Neuron <theneuron@newsletter.theneurondaily.com>",
+      "_subject": "\ud83d\ude3a Demis says chat came too soon",
+      "_date": "2026-04-12"
+    },
+    "19d8281f7249f031": {
+      "category": "skip",
+      "reason": "This is a newsletter from Readwise containing curated content and book previews, not requiring immediate action.",
+      "priority": "normal",
+      "_sender": "hello@readwise.io",
+      "_from_header": "Readwise <hello@readwise.io>",
+      "_subject": "Wisereads Vol. 138 \u2014 The Book of Delights by Ross Gay, the cost of outsourcing curiosity, and more",
+      "_date": "2026-04-12"
+    },
+    "19d7f1647ccca5c5": {
+      "category": "skip",
+      "reason": "This is an automated order shipment notification from a retailer, providing tracking information and does not require any action from the recipient.",
+      "priority": "normal",
+      "_sender": "reef@reef.com",
+      "_from_header": "REEF <reef@reef.com>",
+      "_subject": "Your REEF order is on its way!",
+      "_date": "2026-04-12"
+    },
+    "19d7f0bc2ecf8645": {
+      "category": "skip",
+      "reason": "This is an automated subscription renewal notification that does not require immediate action unless the user wants to cancel.",
+      "priority": "normal",
+      "_sender": "garminservicesbilling@garmin.com",
+      "_from_header": "Garmin <GarminServicesBilling@garmin.com>",
+      "_subject": "Your Garmin Connect+ Annual Plan Renews Soon",
+      "_date": "2026-04-12"
+    },
+    "19d7a341aa2f1882": {
+      "category": "action_required",
+      "reason": "An SSH key was added to the account, and the user needs to verify if it was intentional and remove it if not.",
+      "priority": "high",
+      "_sender": "noreply@github.com",
+      "_from_header": "GitHub <noreply@github.com>",
+      "_subject": "[GitHub] A new SSH authentication public key was added to your account",
+      "_date": "2026-04-10"
+    },
+    "19d791023b07c756": {
+      "category": "skip",
+      "reason": "This is an automated shipping update regarding a delayed order, not requiring immediate action beyond checking the tracking link.",
+      "priority": "normal",
+      "_sender": "costco@trx.costco.com",
+      "_from_header": "Costco Operations <Costco@trx.costco.com>",
+      "_subject": "Delayed in Transit",
+      "_date": "2026-04-10"
+    },
+    "19d788ce97a97a6a": {
+      "category": "skip",
+      "reason": "This is a promotional email from Fidelity Investments offering webinars and resources, not requiring immediate action.",
+      "priority": "normal",
+      "_sender": "fidelity.investments@mail.fidelity.com",
+      "_from_header": "Hewlett Packard Enterprise Benefits Service Center <Fidelity.Investments@mail.fidelity.com>",
+      "_subject": "You don\u2019t have to have all the answers. Fidelity Investments\u00ae is here to help.",
+      "_date": "2026-04-10"
+    },
+    "19d63a6da8fd796e": {
+      "category": "inquiry",
+      "reason": "The email is from a real person (Christina) responding to an inquiry about renting a unit and asking follow-up questions to proceed with the application process.",
+      "priority": "normal",
+      "_sender": "operations@uptownedenton.com",
+      "_from_header": "Christina Manzella <operations@uptownedenton.com>",
+      "_subject": "Availability at The Uptown Edenton",
+      "_date": "2026-04-06"
+    },
+    "19d5e83e6608b1f4": {
+      "category": "skip",
+      "reason": "This is a newsletter from Readwise sharing highlighted content and book previews, which doesn't require any specific action.",
+      "priority": "normal",
+      "_sender": "hello@readwise.io",
+      "_from_header": "Readwise <hello@readwise.io>",
+      "_subject": "Wisereads Vol. 137 \u2014 David and Goliath by Malcolm Gladwell, Cal Newport on the crisis of shallow thinking, and more",
+      "_date": "2026-04-05"
+    },
+    "19d5126a952bc756": {
+      "category": "action_required",
+      "reason": "This email is an automated notification that the vehicle inspection has expired, which requires the recipient to take action to renew the inspection to avoid potential fines or legal issues.",
+      "priority": "high",
+      "_sender": "eservices@messages.dmv.ny.gov",
+      "_from_header": "New York State DMV eServices <eservices@messages.dmv.ny.gov>",
+      "_subject": "Notification \u2014 Inspection Expired",
+      "_date": "2026-04-03"
+    },
+    "19d4e5c573275f47": {
+      "category": "skip",
+      "reason": "This appears to be a newsletter sharing an article and offering general information, not requiring any specific action from the recipient.",
+      "priority": "normal",
+      "_sender": "annelaure@nesslabs.com",
+      "_from_header": "Anne-Laure Le Cunff <annelaure@nesslabs.com>",
+      "_subject": "Ness Labs: Thinking Deeper \ud83e\ude8f",
+      "_date": "2026-04-02"
+    },
+    "19d48993742d46af": {
+      "category": "skip",
+      "reason": "This is an automated notification about a product update, not requiring immediate action or a response.",
+      "priority": "normal",
+      "_sender": "contact@veliaring.community",
+      "_from_header": "The Velia Team <contact@veliaring.community>",
+      "_subject": "A more reliable, redesigned Velia experience - now on iOS & Android",
+      "_date": "2026-04-01"
+    },
+    "19d3f44f0b6450d1": {
+      "category": "skip",
+      "reason": "This is an automated email from Claude providing tips and shortcuts, which falls under the category of newsletters/automated notifications and doesn't require any specific action.",
+      "priority": "normal",
+      "_sender": "no-reply@email.claude.com",
+      "_from_header": "Claude Team <no-reply@email.claude.com>",
+      "_subject": "Tips to get the most out of Claude Code",
+      "_date": "2026-03-30"
+    },
+    "19d3af487f614f24": {
+      "category": "skip",
+      "reason": "This is a newsletter from Readwise, providing highlighted content and updates, which falls under automated notifications and doesn't require immediate action.",
+      "priority": "normal",
+      "_sender": "hello@readwise.io",
+      "_from_header": "Readwise <hello@readwise.io>",
+      "_subject": "Wisereads Vol. 136 \u2014 The Book of Elon by Eric Jorgenson, Armin Ronacher on the importance of time, and more",
+      "_date": "2026-03-29"
+    },
+    "19d200920e31c8d6": {
+      "category": "skip",
+      "reason": "This appears to be a newsletter or blog post about the sender's experiences in Nagasaki, Japan, and does not require any action or a reply.",
+      "priority": "normal",
+      "_sender": "craig@specialprojects.jp",
+      "_from_header": "Craig Mod <craig@specialprojects.jp>",
+      "_subject": "\u2af9\u2afa Ridgeline: 225 \u2014 A Return to Nagasaki",
+      "_date": "2026-03-25"
+    },
+    "19d165f24d198732": {
+      "category": "skip",
+      "reason": "This is a newsletter from Readwise containing curated content and updates, which doesn't require immediate action.",
+      "priority": "normal",
+      "_sender": "hello@readwise.io",
+      "_from_header": "Readwise <hello@readwise.io>",
+      "_subject": "Wisereads Vol. 135 \u2014 Sharif Shameem on how embarrassment kills good ideas, what legalized sports betting really costs, and more",
+      "_date": "2026-03-22"
+    },
+    "19d0ecb4f99c8519": {
+      "category": "skip",
+      "reason": "This is a newsletter from Craig Mod, containing personal updates and thoughts, and doesn't require any specific action.",
+      "priority": "normal",
+      "_sender": "craig@specialprojects.jp",
+      "_from_header": "Craig Mod <craig@specialprojects.jp>",
+      "_subject": "\u29bf Roden: 112 \u2014 Meditation, Language, and LLMs",
+      "_date": "2026-03-21"
+    },
+    "19ce1bf888292ea7": {
+      "category": "skip",
+      "reason": "This is a newsletter-style email about a specific location in Japan, not requiring any action or reply.",
+      "priority": "normal",
+      "_sender": "craig@specialprojects.jp",
+      "_from_header": "Craig Mod <craig@specialprojects.jp>",
+      "_subject": "\u2af9\u2afa Ridgeline: 224 \u2014 The Shops Atop the Canal in Toyohashi",
+      "_date": "2026-03-12"
+    },
+    "19c687e59bc64d95": {
+      "category": "inquiry",
+      "reason": "Christina is forwarding an example email and asking Tariq to implement a similar system, implying a task requiring a response and discussion.",
+      "priority": "normal",
+      "_sender": "christina@3creativeinc.com",
+      "_from_header": "Christina Manzella <christina@3creativeinc.com>",
+      "_subject": "Fwd: The Uptown Edenton - Availibility",
+      "_date": "2026-02-16"
+    },
+    "1980eb10d3eafc79": {
+      "category": "skip",
+      "reason": "Automated notification from the U.S. Department of State reminding about passport renewal; while it suggests action, there is no specific deadline or urgent requirement.",
+      "priority": "normal",
+      "_sender": "uspassportrenewal@state.gov",
+      "_from_header": "<USPassportRenewal@state.gov>",
+      "_subject": "Act Now \u2013 Renew Your U.S. Passport!",
+      "_date": "2025-07-15"
+    },
+    "1812c656bb327491": {
+      "category": "skip",
+      "reason": "Automated notification from RoyalFLiX about a service invite, requiring no immediate action or reply.",
+      "priority": "normal",
+      "_sender": "royalef@gmail.com",
+      "_from_header": "RoyalFlix <royalef@gmail.com>",
+      "_subject": "Invite to RoyalFLiX Requests",
+      "_date": "2022-06-03"
+    },
+    "169df296ce65d1b6": {
+      "category": "action_required",
+      "reason": "The email informs the recipient that their OCI application was rejected and requires them to reapply with the correct form, thus requiring action.",
+      "priority": "high",
+      "_sender": "noreply.usa@ckgs.com",
+      "_from_header": "noreply.usa@ckgs.com",
+      "_subject": "OCI - Application Rejection - Incorrect Government Form",
+      "_date": "2019-04-02"
+    }
+  }
 }

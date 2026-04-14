@@ -140,11 +140,12 @@ def run(mailbox_id: str = 'primary') -> None:
     today = date.today().isoformat()
     last_run = state.get('last_run')
 
-    # Per-day dedup: reset processed_ids when date changes
+    # Per-day dedup: reset processed_ids when date changes (cache persists across days)
     if state.get('state_date') != today:
         state['processed_ids'] = []
         state['state_date'] = today
     processed_ids = set(state.get('processed_ids', []))
+    classification_cache: dict = state.get('classification_cache', {})
 
     logger.info(f'=== Inbox Scanner [{mailbox_id}] {"(first run)" if not last_run else f"(since {last_run})"} ===')
 
@@ -174,16 +175,18 @@ def run(mailbox_id: str = 'primary') -> None:
             skipped_seen += 1
             continue
 
-        # Fetch sender via metadata only (cheap)
+        # Fetch metadata: sender, subject, and Gmail category labels
         try:
             meta = service.users().messages().get(
                 userId='me', id=msg_id,
                 format='metadata',
-                metadataHeaders=['From', 'Subject'],
+                metadataHeaders=['From', 'Subject', 'Date'],
             ).execute()
             headers = {h['name']: h['value'] for h in meta['payload']['headers']}
             from_h = headers.get('From', '')
+            subject = headers.get('Subject', '')
             sender = _sender_email(from_h)
+            label_ids = meta.get('labelIds', [])
         except Exception as e:
             logger.warning(f'Metadata fetch failed {msg_id}: {e}')
             continue
@@ -193,11 +196,40 @@ def run(mailbox_id: str = 'primary') -> None:
             skipped_known += 1
             continue
 
-        # Rate-limit Gemini calls
-        if classified > 0:
-            time.sleep(GEMINI_DELAY_SECONDS)
+        # Gmail auto-label pre-filter: promotions and social are never actionable
+        auto_skip_labels = {'CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL'}
+        if auto_skip_labels.intersection(label_ids):
+            processed_ids.add(msg_id)
+            skipped_known += 1
+            logger.debug(f'  [skip/label] {sender} — {subject[:60]}')
+            continue
 
+        # Cache hit: reconstruct result from stored data, no full email fetch needed
+        if msg_id in classification_cache:
+            cached = classification_cache[msg_id]
+            category = cached.get('category', 'skip')
+            logger.info(f'  [{category}] {sender} — {subject[:60]} (cached)')
+            classified += 1
+            processed_ids.add(msg_id)
+            if category in PROCESSORS:
+                fake_email = {
+                    'from': cached.get('_from_header', from_h),
+                    'subject': cached.get('_subject', subject),
+                    'date': cached.get('_date', ''),
+                }
+                result = PROCESSORS[category].process(fake_email, cached)
+                if result:
+                    results[category].append(result)
+                    if category == 'action_required' and cached.get('priority') == 'high':
+                        actions.send_immediate_alert(result, telegram_service)
+            continue
+
+        # Cache miss: fetch full email, classify, store
         try:
+            # Rate-limit Gemini calls
+            if classified > 0:
+                time.sleep(GEMINI_DELAY_SECONDS)
+
             full = get_full_email(service, msg_id)
             html = full.get('html', '')
             plain = full.get('plain', '')
@@ -205,8 +237,14 @@ def run(mailbox_id: str = 'primary') -> None:
             body_clean = '\n'.join(line.strip() for line in body.splitlines() if line.strip())
 
             classification = classify_email(sender, full['subject'], body_clean)
+            classification['_sender'] = sender
+            classification['_from_header'] = from_h
+            classification['_subject'] = full['subject']
+            classification['_date'] = full['date']
+            classification_cache[msg_id] = classification
             category = classification.get('category', 'skip')
             classified += 1
+            logger.info(f'  [{category}] {sender} — {full["subject"][:60]} ({classification.get("reason","")[:60]})')
 
             processed_ids.add(msg_id)
 
@@ -245,6 +283,7 @@ def run(mailbox_id: str = 'primary') -> None:
     state['last_run'] = today
     state['state_date'] = today
     state['processed_ids'] = list(processed_ids)
+    state['classification_cache'] = classification_cache
     save_state(mailbox_id, state)
 
     # Telegram summary
