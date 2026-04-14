@@ -207,7 +207,7 @@ def call_ollama(prompt, content_bytes=None, mime_type=None):
 
     try:
         start = time.time()
-        response = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        response = requests.post(OLLAMA_URL, json=payload, timeout=180)
         duration = time.time() - start
         
         if response.status_code == 200:
