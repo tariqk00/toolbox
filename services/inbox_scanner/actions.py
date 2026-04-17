@@ -121,6 +121,100 @@ def send_immediate_alert(item: dict, telegram_service: str) -> None:
     send_message(msg, service=telegram_service)
 
 
+PROPERTY_INQUIRY_PROMPT = """You are processing a property rental inquiry email.
+Extract the following from the email content:
+- prospective_tenant: name of the prospective tenant (null if not found)
+- move_in_date: desired move-in timeframe (null if not mentioned)
+- unit_type: unit size or type they are interested in (null if not mentioned)
+- questions: list of specific questions asked (empty list if none)
+- notes: any other relevant detail (null if nothing)
+
+Return ONLY valid JSON, no other text:
+{{"prospective_tenant": "...", "move_in_date": "...", "unit_type": "...", "questions": ["..."], "notes": "..."}}
+
+Email:
+{text}"""
+
+
+def handle_monitored_inquiry(email: dict, classification: dict, monitor_config: dict,
+                              telegram_service: str) -> None:
+    """Structured extraction + dedicated Drive log + immediate Telegram alert for monitored senders."""
+    import json
+    import re
+    from toolbox.lib.gemini import call_gemini
+    from toolbox.services.email_extractor.scanner import html_to_text
+    from toolbox.services.email_extractor.writers import append_to_memory
+
+    label = monitor_config.get('label', 'Property')
+    property_name = monitor_config.get('property', label)
+    date = email.get('date', '')
+    subject = email.get('subject', '')
+    from_h = email.get('from', '')
+    html = email.get('html', '')
+    plain = email.get('plain', '')
+
+    text, _ = html_to_text(html) if html else (plain, [])
+
+    # Gemini extraction
+    extracted = {}
+    if text and len(text) > 50:
+        raw = call_gemini(PROPERTY_INQUIRY_PROMPT.format(text=text[:5000]))
+        if raw:
+            try:
+                raw = re.sub(r'^```(?:json)?\s*', '', raw.strip())
+                raw = re.sub(r'\s*```$', '', raw)
+                extracted = json.loads(raw)
+            except Exception as e:
+                logger.warning(f'Property inquiry extraction failed: {e}')
+
+    tenant = extracted.get('prospective_tenant')
+    move_in = extracted.get('move_in_date')
+    unit_type = extracted.get('unit_type')
+    questions = extracted.get('questions') or []
+    notes = extracted.get('notes')
+
+    # Build Drive content
+    lines = [f'## {date} — {subject}', '', f'**From:** {from_h}']
+    if tenant:
+        lines.append(f'**Prospective tenant:** {tenant}')
+    detail_parts = []
+    if move_in:
+        detail_parts.append(f'Move-in: {move_in}')
+    if unit_type:
+        detail_parts.append(f'Unit: {unit_type}')
+    if detail_parts:
+        lines.append(f'**{" • ".join(detail_parts)}**')
+    if questions:
+        lines.append('**Questions:**')
+        for q in questions:
+            lines.append(f'- {q}')
+    if not tenant and not questions:
+        reason = classification.get('reason', '')
+        if reason:
+            lines.append(f'**Summary:** {reason}')
+    if notes:
+        lines.append(f'*{notes}*')
+    lines += ['', '---']
+
+    append_to_memory('Properties', f'{label} Inquiries.md', '\n'.join(lines))
+    logger.info(f'Monitored inquiry written: {label} — {subject}')
+
+    # Immediate Telegram alert
+    alert_lines = [f'<b>New inquiry — {escape(property_name)}</b>',
+                   f'Subject: {escape(subject)}']
+    if tenant:
+        alert_lines.append(f'Tenant: {escape(tenant)}')
+    detail_str = ' | '.join(filter(None, [
+        f'Move-in: {move_in}' if move_in else None,
+        f'Unit: {unit_type}' if unit_type else None,
+    ]))
+    if detail_str:
+        alert_lines.append(detail_str)
+    if questions:
+        alert_lines.append(f'Questions: {escape(", ".join(str(q) for q in questions[:3]))}')
+    send_message('\n'.join(alert_lines), service=telegram_service)
+
+
 def send_run_summary(results: dict, errors: int, mailbox_email: str, telegram_service: str) -> None:
     """Send end-of-run Telegram summary."""
     total = sum(len(v) for v in results.values())

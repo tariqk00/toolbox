@@ -75,7 +75,7 @@ def save_state(mailbox_id: str, state: dict) -> None:
 def get_gmail_service(config: dict):
     auth = GoogleAuth(base_dir=config['token_base_dir'])
     creds = auth.get_credentials(
-        token_filename='token.json',
+        token_filename=config.get('token_filename', 'token.json'),
         credentials_filename=config.get('credentials_path', os.path.join(BASE_DIR, 'config', 'credentials.json')),
         scopes=GMAIL_SCOPES,
     )
@@ -157,6 +157,7 @@ def run(mailbox_id: str = 'primary') -> None:
     except Exception:
         extractor_config = {}
     known_senders = collect_known_senders(extractor_config)
+    monitored_senders = config.get('monitored_senders', {})
 
     after_date = last_run.replace('-', '/') if last_run else None
     raw_messages = fetch_inbox_since(service, after_date)
@@ -202,6 +203,24 @@ def run(mailbox_id: str = 'primary') -> None:
             processed_ids.add(msg_id)
             skipped_known += 1
             logger.debug(f'  [skip/label] {sender} — {subject[:60]}')
+            continue
+
+        # Monitored sender: structured extraction + immediate alert + dedicated Drive log
+        # Intercept before cache routing so we always have the full email body
+        monitor_config = monitored_senders.get(sender)
+        if monitor_config:
+            # Skip if already handled (classification_cache carries a handled flag)
+            cached_entry = classification_cache.get(msg_id, {})
+            if not cached_entry.get('monitored_handled'):
+                try:
+                    full = get_full_email(service, msg_id)
+                    actions.handle_monitored_inquiry(full, cached_entry, monitor_config, telegram_service)
+                    cached_entry['monitored_handled'] = True
+                    classification_cache[msg_id] = cached_entry
+                except Exception as e:
+                    logger.error(f'Monitored inquiry handler error ({subject[:50]}): {e}')
+                    errors += 1
+            processed_ids.add(msg_id)
             continue
 
         # Cache hit: reconstruct result from stored data, no full email fetch needed

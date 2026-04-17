@@ -2,45 +2,17 @@
   "last_run": "2026-04-16",
   "state_date": "2026-04-16",
   "processed_ids": [
-    "19d95f2a80c4f937",
-    "19d9649f0fdc34f6",
-    "19d961fe2713e840",
-    "19d956c84a8d3e38",
-    "19d96114012de969",
-    "19d963ca2e59dd17",
-    "19d96d7bef9f8cfe",
-    "19d9284b4b0da746",
-    "19d9755893cb8e6e",
-    "19d96cf3f073329f",
-    "19d90e5620ada54a",
-    "19d96d0c7dd9da95",
-    "19d93c97c5f9fd2d",
-    "19d967f370016ae7",
-    "19d93ce6ab9f76ae",
-    "19d97809dc357659",
-    "19d965c3bd907a41",
-    "19d9698b7c2e630e",
-    "19d96dbb744e738f",
-    "19d93bd5582815b6",
-    "19d95002d3bd9140",
-    "19d96658f258c49f",
-    "19d96833f903950b",
-    "19d9706fac79e3c3",
-    "19d9623745ba6565",
-    "19d96db0426eaf07",
-    "19d961f64d367ad1",
-    "19d97618014aac1d",
-    "19d90cc845c22cbb",
-    "19d96b65b808d22e",
+    "19d8e0046c6f6626",
+    "19d8b32d6fff48ba",
     "19d98270895b35d3",
-    "19d9734315f29d4b",
-    "19d97341923b7ff7",
-    "19d93e3b7b98803f",
-    "19d965f87835e8f1",
+    "19d63a6da8fd796e",
+    "19d96114012de969",
+    "19d84500bdd16511",
+    "19d996b4930954e4",
+    "19d95002d3bd9140",
+    "19d90e5620ada54a",
     "19d96d7295a29417",
-    "19d9703320a2be16",
-    "19d95f9d0dce0d05",
-    "19d917530d619740"
+    "19d967f370016ae7"
   ],
   "classification_cache": {
     "19d87ddf7feed9f7": {
@@ -347,7 +319,8 @@
       "_sender": "operations@uptownedenton.com",
       "_from_header": "Christina Manzella <operations@uptownedenton.com>",
       "_subject": "Availability at The Uptown Edenton",
-      "_date": "2026-04-06"
+      "_date": "2026-04-06",
+      "monitored_handled": true
     },
     "19d5e83e6608b1f4": {
       "category": "skip",
@@ -1157,6 +1130,15 @@
       "_sender": "americanexpress@welcome.americanexpress.com",
       "_from_header": "American Express <AmericanExpress@welcome.americanexpress.com>",
       "_subject": "Your Additional Card may not have been present for a purchase",
+      "_date": "2026-04-16"
+    },
+    "19d996b4930954e4": {
+      "category": "skip",
+      "reason": "Gemini unavailable",
+      "priority": "normal",
+      "_sender": "noreply@github.com",
+      "_from_header": "GitHub <noreply@github.com>",
+      "_subject": "[GitHub] Your fine-grained personal access token is about to expire",
       "_date": "2026-04-16"
     }
   }
