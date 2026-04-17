@@ -86,7 +86,7 @@ def get_gmail_service(config: dict):
 def collect_known_senders(extractor_config: dict) -> set:
     """Build set of sender emails/domains already handled by email_extractor."""
     known = set()
-    for cat in ('orders', 'receipts', 'trips'):
+    for cat in ('orders', 'receipts', 'trips', 'google_brief'):
         for s in extractor_config.get(cat, {}).get('senders', {}):
             known.add(s.lower())
         for domain in extractor_config.get(cat, {}).get('sender_domains', {}):

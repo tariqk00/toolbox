@@ -25,7 +25,7 @@ from .scanner import (
     get_gmail_service, load_config, load_state, save_state,
     fetch_category_emails,
 )
-from .categories import orders, receipts, trips, digests, sweep
+from .categories import orders, receipts, trips, digests, sweep, google_brief
 
 
 def run():
@@ -41,7 +41,7 @@ def run():
 
     service = get_gmail_service()
 
-    summaries = {'orders': [], 'receipts': [], 'trips': [], 'digests': [], 'sweep': []}
+    summaries = {'orders': [], 'receipts': [], 'trips': [], 'digests': [], 'google_brief': [], 'sweep': []}
     errors = 0
     error_details = []
     known_digest_senders = config.get('digests', {}).get('known_senders', {})
@@ -106,6 +106,20 @@ def run():
             logger.error(f'Digest processing error ({email["subject"][:50]}): {e}')
             errors += 1
             error_details.append(f'digests/{email["subject"][:40]}: {type(e).__name__}')
+
+    # --- Google CC Daily Brief ---
+    logger.info('Fetching Google CC brief...')
+    brief_emails = fetch_category_emails(service, 'google_brief', config,
+                                         after_date=after_date, first_run=first_run)
+    for email in brief_emails:
+        try:
+            result = google_brief.process(email, state)
+            if result:
+                summaries['google_brief'].append(result)
+        except Exception as e:
+            logger.error(f'Google brief error ({email["subject"][:50]}): {e}')
+            errors += 1
+            error_details.append(f'google_brief/{email["subject"][:40]}: {type(e).__name__}')
 
     # --- Weekly sweep ---
     logger.info('Running sweep (weekly)...')

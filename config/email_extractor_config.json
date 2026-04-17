@@ -4,7 +4,10 @@
       "admin@the-syllabus.com": "The Syllabus",
       "sentinelteam@substack.com": "Sentinel Global Risks Watch"
     },
-    "raw_senders": {
+    "raw_senders": {}
+  },
+  "google_brief": {
+    "senders": {
       "takhan+cc@gmail.com": "Google CC"
     }
   },
