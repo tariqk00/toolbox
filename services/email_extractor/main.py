@@ -142,11 +142,16 @@ def run():
         logger.info('Email extractor: nothing new today')
         return
     else:
+        category_labels = {
+            'orders': 'Orders', 'receipts': 'Receipts', 'trips': 'Trips',
+            'digests': 'Digests', 'google_brief': 'Google CC', 'sweep': 'Sweep',
+        }
         lines = [f'<b>Email extractor: {total} items</b>']
         for category, items in summaries.items():
             if not items:
                 continue
-            lines.append(f'\n<b>{category.capitalize()} ({len(items)}):</b>')
+            label = category_labels.get(category, category.capitalize())
+            lines.append(f'\n<b>{label} ({len(items)}):</b>')
             for s in items:
                 lines.append(f'  • {escape(s)}')
         if errors:
