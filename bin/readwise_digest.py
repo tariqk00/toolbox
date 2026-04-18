@@ -28,7 +28,6 @@ logger = logging.getLogger('ReadwiseDigest')
 
 from toolbox.lib.gemini import call_gemini
 from toolbox.lib.telegram import send_message, escape
-from toolbox.lib import ai_engine
 
 KEY_PATH = os.path.join(BASE_DIR, 'config', 'readwise_api_secret')
 STATE_PATH = os.path.join(BASE_DIR, 'config', 'readwise_digest_state.json')
@@ -177,12 +176,12 @@ def run():
 
     articles = _fetch_articles(key)
     if not articles:
-        send_message('Reading Digest: no unread articles in Readwise.', service='readwise-digest')
+        logger.info('No unread articles in Readwise.')
         return
 
     selected = _select_articles(articles, surfaced)
     if not selected:
-        send_message('Reading Digest: nothing to surface today.', service='readwise-digest')
+        logger.info('Nothing to surface today.')
         return
 
     summaries = []

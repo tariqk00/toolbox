@@ -87,6 +87,19 @@ def _extract_destination(vendor: str, subject: str, plain: str) -> str:
     return ''
 
 
+def _trip_url(vendor: str, confirmation: str) -> str:
+    """Return a direct reservation lookup URL for known vendors, else empty string."""
+    if not confirmation:
+        return ''
+    if vendor in ('Delta', 'AmEx Global Business Travel'):
+        return f'https://www.delta.com/us/en/my-trips/reservation-details?confirmationNumber={confirmation}'
+    if vendor == 'Marriott Vacation Club':
+        return f'https://www.marriott.com/reservation/retrieveReservation.mi?confirmationNumber={confirmation}'
+    if vendor == 'National Car Rental':
+        return f'https://www.nationalcar.com/en_US/car-rental/reservation/deeplink/retrieve.html?resNumber={confirmation}'
+    return ''
+
+
 def _extract_status(subject: str) -> str | None:
     lower = subject.lower()
     if 'cancel' in lower:
@@ -135,6 +148,9 @@ def process(email: dict, state: dict) -> str | None:
         dest = prev.get('destination', '')
         summary = f'{trip_type}: {dest} ({vendor})' if dest else f'{trip_type}: {vendor}'
         summary += f' → {status} [{date}]'
+        url = _trip_url(vendor, confirmation)
+        if url:
+            summary += f'\n{url}'
         logger.info(f'Travel.md: status update {summary}')
         return summary
 
@@ -162,5 +178,8 @@ def process(email: dict, state: dict) -> str | None:
     summary += f' [{status}]'
     if dates:
         summary += f' — {dates[:40]}'
+    url = _trip_url(vendor, confirmation)
+    if url:
+        summary += f'\n{url}'
     logger.info(f'Travel.md: {summary}')
     return summary
