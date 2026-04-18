@@ -274,25 +274,6 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             "confidence": "High"
         }, 0
 
-    # --- GEMINI JOURNAL RULE ---
-    if " - Journal - " in filename:
-        logger.info(f"  [Rule] Detected Gemini Journal: {filename}")
-        parts = filename.split(" - ")
-        if len(parts) >= 3:
-            doc_date = parts[0]
-            summary = os.path.splitext(parts[2])[0]
-        else:
-            doc_date = "0000-00-00"
-            summary = filename
-
-        return {
-            "doc_date": doc_date,
-            "entity": "Journal",
-            "folder_path": "01 - Second Brain/Gemini",
-            "summary": summary,
-            "confidence": "High"
-        }, 0
-
     # --- CACHE CHECK ---
     if file_id:
         cache_key = file_id

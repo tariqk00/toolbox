@@ -244,29 +244,6 @@ class TestRuleBasedShortcuts(unittest.TestCase):
         self.assertEqual(tokens, 0)
         self.assertEqual(result['folder_path'], "01 - Second Brain/Plaud")
 
-    # --- Gemini Journal ---
-
-    def test_journal_filename_routed_to_gemini_folder(self):
-        result, tokens = self._call("2026-03-20 - Journal - Morning thoughts.md")
-        self.assertEqual(tokens, 0)
-        self.assertEqual(result['folder_path'], "01 - Second Brain/Gemini")
-        self.assertEqual(result['entity'], "Journal")
-        self.assertEqual(result['confidence'], "High")
-
-    def test_journal_date_extracted_from_filename(self):
-        result, tokens = self._call("2026-04-01 - Journal - April fools.md")
-        self.assertEqual(result['doc_date'], "2026-04-01")
-
-    def test_journal_summary_extracted_from_filename(self):
-        result, tokens = self._call("2026-04-01 - Journal - April fools.md")
-        self.assertEqual(result['summary'], "April fools")
-
-    def test_journal_malformed_falls_back_gracefully(self):
-        # Fewer than 3 parts after split — shouldn't crash
-        result, tokens = self._call("x - Journal - .md")
-        self.assertEqual(tokens, 0)
-        self.assertEqual(result['folder_path'], "01 - Second Brain/Gemini")
-
     # --- MM-DD heuristic ---
 
     def test_mm_dd_prefix_routed_to_plaud(self):
