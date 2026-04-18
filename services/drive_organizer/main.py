@@ -204,8 +204,19 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             logger.info(f"Skipping {name} (flagged for manual review)")
             continue
 
-        # Validation: check if file is already processed
-        is_valid_name = re.match(r'^\d{4}-\d{2}-\d{2} - .* - .*\.\w+$', name)
+        # Skip Google Apps types that can't be meaningfully renamed
+        _SKIP_MIME = {
+            'application/vnd.google-apps.form',
+            'application/vnd.google-apps.script',
+            'application/vnd.google-apps.drawing',
+            'application/vnd.google-apps.map',
+            'application/vnd.google-apps.site',
+        }
+        if mime in _SKIP_MIME:
+            continue
+
+        # Validation: check if file is already processed (extension optional for Google Docs)
+        is_valid_name = re.match(r'^\d{4}-\d{2}-\d{2} - .* - .*(\.\w+)?$', name)
         if is_valid_name and not name.startswith("0000-00-00"):
             if mode != 'inbox':
                 continue
