@@ -5,6 +5,14 @@
   "credentials_path": "~/github/tariqk00/toolbox/config/credentials.json",
   "telegram_service": "inbox-scanner",
   "categories": ["action_required", "inquiry"],
+  "skip_senders": [
+    "auto-reply@usps.com",
+    "mcinfo@ups.com",
+    "reef@reef.com",
+    "deliverystatus@logistics.costco.com",
+    "craig@specialprojects.jp",
+    "no-reply@is.email.nextdoor.com"
+  ],
   "monitored_senders": {
     "operations@uptownedenton.com": {
       "label": "Uptown Edenton",

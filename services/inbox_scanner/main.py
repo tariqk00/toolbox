@@ -157,6 +157,7 @@ def run(mailbox_id: str = 'primary') -> None:
     except Exception:
         extractor_config = {}
     known_senders = collect_known_senders(extractor_config)
+    known_senders.update(s.lower() for s in config.get('skip_senders', []))
     monitored_senders = config.get('monitored_senders', {})
 
     after_date = last_run.replace('-', '/') if last_run else None

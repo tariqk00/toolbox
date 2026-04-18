@@ -23,6 +23,7 @@ Categories:
 Rules:
 - If automated or system-generated, prefer skip over action_required unless there is a clear deadline or required action
 - If from a real person asking something, prefer inquiry
+- Government renewal deadlines (passport, driver's license, REAL ID, visa, registration) → action_required regardless of whether the sender looks automated
 - When in doubt, use skip
 
 Return ONLY valid JSON: {{"category": "...", "reason": "one sentence", "priority": "high|normal"}}"""

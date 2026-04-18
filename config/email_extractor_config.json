@@ -2,7 +2,9 @@
   "digests": {
     "known_senders": {
       "admin@the-syllabus.com": "The Syllabus",
-      "sentinelteam@substack.com": "Sentinel Global Risks Watch"
+      "sentinelteam@substack.com": "Sentinel Global Risks Watch",
+      "hello@readwise.io": "Readwise",
+      "theneuron@newsletter.theneurondaily.com": "The Neuron Daily"
     },
     "raw_senders": {}
   },
