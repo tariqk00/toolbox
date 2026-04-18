@@ -136,10 +136,11 @@ def run():
     state['last_run'] = date.today().isoformat()
     save_state(state)
 
-    # Build Telegram message
+    # Build Telegram message — only send if there's something to report
     total = sum(len(v) for v in summaries.values())
     if total == 0 and errors == 0:
-        msg = 'Email extractor: nothing new today'
+        logger.info('Email extractor: nothing new today')
+        return
     else:
         lines = [f'<b>Email extractor: {total} items</b>']
         for category, items in summaries.items():

@@ -219,7 +219,6 @@ def send_run_summary(results: dict, errors: int, mailbox_email: str, telegram_se
     """Send end-of-run Telegram summary."""
     total = sum(len(v) for v in results.values())
     if total == 0 and errors == 0:
-        send_message(f'Inbox scanner ({mailbox_email}): nothing actionable', service=telegram_service)
         return
 
     lines = [f'<b>Inbox scanner ({escape(mailbox_email)}): {total} items</b>']

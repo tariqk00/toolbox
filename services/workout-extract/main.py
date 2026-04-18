@@ -114,9 +114,7 @@ def run(args):
     if not dry_run:
         if saved:
             lines = [f"<b>{saved} session{'s' if saved > 1 else ''} saved ({elapsed}s)</b>"] + [escape(d) for d in saved_details]
-        else:
-            lines = [f"Done in {elapsed}s — no new sessions found"]
-        send_message("\n".join(lines), service="workout-extract")
+            send_message("\n".join(lines), service="workout-extract")
 
 
 def run_with_error_reporting(args):
