@@ -158,6 +158,49 @@ def generate_new_name(analysis, original_name, created_time_str):
 
     return f"{date} - {safe_entity} - {safe_summary}{ext}"
 
+_SKIP_MIME_TYPES = {
+    'application/vnd.google-apps.folder',
+    'application/vnd.google-apps.form',
+    'application/vnd.google-apps.script',
+    'application/vnd.google-apps.drawing',
+    'application/vnd.google-apps.map',
+    'application/vnd.google-apps.site',
+}
+
+_ALREADY_NAMED = re.compile(r'^\d{4}-\d{2}-\d{2} - .* - .*(\.\w+)?$')
+
+
+def sweep_drive_root(dry_run=True, service=None):
+    """Move un-named files from Drive root into Inbox so the sorter picks them up."""
+    if not service:
+        service = get_drive_service()
+
+    results = service.files().list(
+        q="'root' in parents and trashed = false",
+        fields="files(id, name, mimeType)",
+        pageSize=100,
+    ).execute()
+    files = results.get('files', [])
+
+    swept = 0
+    for f in files:
+        if f['mimeType'] in _SKIP_MIME_TYPES:
+            continue
+        if _ALREADY_NAMED.match(f['name']):
+            continue
+        if not dry_run:
+            if move_file(service, f['id'], INBOX_ID, f['name']):
+                logger.info(f"  [Sweep] {f['name']} → Inbox")
+                stats.rename_details.append((f['name'], f"→ Inbox", f['id']))
+                swept += 1
+        else:
+            logger.info(f"  [Sweep/dry] {f['name']}")
+            swept += 1
+
+    if swept:
+        logger.info(f"Sweep: {swept} file(s) moved to Inbox")
+
+
 def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan', folder_name="Inbox", service=None, recursive=True):
     if not service:
         service = get_drive_service()
@@ -205,18 +248,11 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             continue
 
         # Skip Google Apps types that can't be meaningfully renamed
-        _SKIP_MIME = {
-            'application/vnd.google-apps.form',
-            'application/vnd.google-apps.script',
-            'application/vnd.google-apps.drawing',
-            'application/vnd.google-apps.map',
-            'application/vnd.google-apps.site',
-        }
-        if mime in _SKIP_MIME:
+        if mime in _SKIP_MIME_TYPES:
             continue
 
         # Validation: check if file is already processed (extension optional for Google Docs)
-        is_valid_name = re.match(r'^\d{4}-\d{2}-\d{2} - .* - .*(\.\w+)?$', name)
+        is_valid_name = _ALREADY_NAMED.match(name)
         if is_valid_name and not name.startswith("0000-00-00"):
             if mode != 'inbox':
                 continue
@@ -312,9 +348,11 @@ if __name__ == "__main__":
     try:
         if args.execute:
             logger.info(f"Mode: Execute (Target: {target_name})")
+            sweep_drive_root(dry_run=False)
             scan_folder(target_id, dry_run=False, limit=args.limit, mode='inbox' if target_id == INBOX_ID else 'scan', folder_name=target_name, recursive=args.recursive)
         else:
             logger.info(f"Mode: Dry-Run/Scan (Target: {target_name})")
+            sweep_drive_root(dry_run=True)
             scan_folder(target_id, dry_run=True, limit=args.limit, folder_name=target_name, recursive=args.recursive)
             
     finally:
