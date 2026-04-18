@@ -10,7 +10,6 @@ Usage:
 """
 import logging
 import os
-import re
 
 logger = logging.getLogger('toolbox.gemini')
 

@@ -36,11 +36,10 @@ CACHE_PATH = os.path.join(CONFIG_DIR, 'gemini_cache.json')
 # Override via GEMINI_MODEL env var if needed.
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-flash-latest')
 
-# --- SHADOW MODEL CONFIG ---
-OLLAMA_URL = "http://localhost:11434/api/generate"
-SHADOW_MODEL = "gemma4:e2b"
-SHADOW_SAMPLE_RATE = 0.20 # 20%
-COMPARISON_LOG_PATH = os.path.join(BASE_DIR, 'logs', 'model_comparison.jsonl')
+# --- LOCAL MODEL CONFIG ---
+OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434/api/generate')
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma4:e2b')
+OLLAMA_LOG_PATH = os.path.join(BASE_DIR, 'logs', 'ollama_metrics.jsonl')
 # Free tier model — AI Studio project, 15 RPM / 1,000 RPD
 GEMINI_FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite')
 
@@ -192,7 +191,7 @@ def get_ai_supported_mime(mime_type, filename=None):
 def call_ollama(prompt, content_bytes=None, mime_type=None):
     """Calls the local Ollama instance on the NUC."""
     payload = {
-        "model": SHADOW_MODEL,
+        "model": OLLAMA_MODEL,
         "prompt": prompt,
         "stream": False
     }
@@ -274,6 +273,25 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             "confidence": "High"
         }, 0
 
+    # --- GEMINI JOURNAL RULE ---
+    if " - Journal - " in filename:
+        logger.info(f"  [Rule] Detected Gemini Journal: {filename}")
+        parts = filename.split(" - ")
+        if len(parts) >= 3:
+            doc_date = parts[0]
+            summary = os.path.splitext(parts[2])[0]
+        else:
+            doc_date = "0000-00-00"
+            summary = filename
+
+        return {
+            "doc_date": doc_date,
+            "entity": "Journal",
+            "folder_path": "01 - Second Brain/Gemini",
+            "summary": summary,
+            "confidence": "High"
+        }, 0
+
     # --- CACHE CHECK ---
     if file_id:
         cache_key = file_id
@@ -347,6 +365,35 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
         folder_paths=folder_paths_str
     )
 
+    # --- PRIMARY OLLAMA CALL ---
+    logger.info(f"  Sending to Ollama (primary/{OLLAMA_MODEL}) as {ai_mime}...")
+    ollama_text, ollama_duration = call_ollama(prompt_with_context, content_bytes, ai_mime)
+    
+    if not ollama_text.startswith("Error:"):
+        try:
+            # Robust JSON extraction for Ollama
+            start_idx = ollama_text.find('{')
+            if start_idx != -1:
+                json_snippet = ollama_text[start_idx:]
+                decoder = json.JSONDecoder()
+                data, _ = decoder.raw_decode(json_snippet)
+                if isinstance(data, str) and "```json" in data:
+                     json_text = data.split("```json")[-1].split("```")[0].strip()
+                     data = json.loads(json_text)
+                if isinstance(data, list) and len(data) > 0:
+                    data = data[0]
+                
+                logger.info(f"  [Ollama Success] Parsed JSON in {round(ollama_duration, 1)}s")
+                if file_id:
+                    GEMINI_CACHE[file_id] = data
+                    save_cache()
+                return data, 0
+        except Exception as e:
+            logger.warning(f"  [Ollama Parse Error] {e}. Falling back to Gemini.")
+    else:
+        logger.warning(f"  [Ollama Failed] {ollama_text}. Falling back to Gemini.")
+
+    # --- FALLBACK TO GEMINI ---
     _RETRY_DELAYS = [4, 16, 64]
 
     def _call_api():
@@ -449,12 +496,6 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
                 GEMINI_CACHE[file_id] = data
                 save_cache()
             
-            # --- SHADOW AI PARALLEL CALL ---
-            if random.random() < SHADOW_SAMPLE_RATE:
-                logger.info(f"  [Shadow] Running parallel check for {filename}...")
-                gemma_text, gemma_duration = call_ollama(prompt_with_context, content_bytes, ai_mime)
-                log_comparison(filename, data, gemma_text, gemini_duration, gemma_duration)
-
             return data, token_count
 
         except json.JSONDecodeError:
