@@ -6,5 +6,19 @@
   "credentials_path": "~/github/tariqk00/toolbox/config/credentials.json",
   "telegram_service": "inbox-scanner",
   "categories": ["inquiry"],
+  "skip_senders": [
+    "team@rentredi.com",
+    "crystal@rentredi.com",
+    "noreply@pdffiller.com",
+    "no-reply@business.amazon.com",
+    "auto-confirm@amazon.com",
+    "account-update@amazon.com",
+    "susan.creed@edentonchamber.org",
+    "susan.creed-edentonchamber.org@shared1.ccsend.com",
+    "tsccards@info17.citi.com",
+    "donotreply@logicssolutions.com",
+    "operations@uptownedenton.com",
+    "mail-noreply@google.com"
+  ],
   "monitored_senders": {}
 }
