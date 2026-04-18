@@ -43,6 +43,7 @@ class RunStats:
         self.processed = 0
         self.moved = 0
         self.renamed = 0
+        self.swept = 0
         self.errors = 0
         self.start_time = time.time()
         self.move_details = []    # (original_name, new_name, folder_path, file_id)
@@ -62,6 +63,8 @@ class RunStats:
             summary_parts.append(f"{self.moved} moved")
         if self.renamed:
             summary_parts.append(f"{self.renamed} renamed")
+        if self.swept:
+            summary_parts.append(f"{self.swept} swept")
         if self.errors:
             summary_parts.append(f"{self.errors} error{'s' if self.errors > 1 else ''}")
         header = ", ".join(summary_parts) + f" ({duration}s)"
@@ -71,7 +74,10 @@ class RunStats:
         all_lines = []
         for orig, new, folder, fid in self.move_details:
             label = drive_file_link(fid, new) if fid else f"<code>{escape(new)}</code>"
-            all_lines.append(f"  Moved: {label}\n    → {escape(folder)}")
+            if orig != new:
+                all_lines.append(f"  Moved: <code>{escape(orig)}</code> → {label}\n    → {escape(folder)}")
+            else:
+                all_lines.append(f"  Moved: {label}\n    → {escape(folder)}")
         for orig, new, fid in self.rename_details:
             label = drive_file_link(fid, new) if fid else f"<code>{escape(new)}</code>"
             all_lines.append(f"  Renamed: <code>{escape(orig)}</code> → {label}")
@@ -80,6 +86,8 @@ class RunStats:
             all_lines.append(f"  Error: {label}\n    {escape(str(err))}")
         if self.error_details:
             all_lines.append(f"  {monit_link('Check Monit')} · <code>journalctl --user -u ai-sorter -n 50</code>")
+        if self.swept:
+            all_lines.append(f"  Swept {self.swept} file{'s' if self.swept > 1 else ''} → Inbox")
 
         parts.extend(all_lines[:MAX])
         if len(all_lines) > MAX:
@@ -191,7 +199,7 @@ def sweep_drive_root(dry_run=True, service=None):
         if not dry_run:
             if move_file(service, f['id'], INBOX_ID, f['name']):
                 logger.info(f"  [Sweep] {f['name']} → Inbox")
-                stats.rename_details.append((f['name'], f"→ Inbox", f['id']))
+                stats.swept += 1
                 swept += 1
         else:
             logger.info(f"  [Sweep/dry] {f['name']}")
@@ -359,5 +367,5 @@ if __name__ == "__main__":
         logger.info(stats.get_summary())
         tokens_this_run = quota_manager.load().get('total_tokens_used', 0) - tokens_before
         quota_manager.log_cost('sorter', stats.processed, tokens_this_run)
-        if stats.moved > 0 or stats.renamed > 0 or stats.errors > 0:
+        if stats.moved > 0 or stats.renamed > 0 or stats.swept > 0 or stats.errors > 0:
             send_message(stats.get_notification(), service="ai-sorter")
