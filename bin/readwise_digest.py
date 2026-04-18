@@ -28,7 +28,6 @@ logger = logging.getLogger('ReadwiseDigest')
 
 from toolbox.lib.gemini import call_gemini
 from toolbox.lib.telegram import send_message, escape
-from toolbox.lib import ai_engine
 
 KEY_PATH = os.path.join(BASE_DIR, 'config', 'readwise_api_secret')
 STATE_PATH = os.path.join(BASE_DIR, 'config', 'readwise_digest_state.json')
@@ -150,20 +149,6 @@ def _summarize(article: dict) -> str:
         url=article.get('url', ''),
     )
     result = call_gemini(prompt)
-    
-    # --- SHADOW AI (PARALLEL SUMMARY) ---
-    logger.info(f"  [Shadow] Running parallel summary for article: {article.get('title')}")
-    gemma_summary, gemma_dur = ai_engine.call_ollama(prompt, None, None)
-    
-    shadow_msg = (
-        f"📚 *Readwise Shadow Summary*\n"
-        f"📄 `{article.get('title')}`\n\n"
-        f"🔹 *Gemini:* {result[:200]}...\n"
-        f"🔸 *Gemma 2B:* {gemma_summary[:200]}...\n\n"
-        f"⏱ Latency: {round(gemma_dur, 1)}s"
-    )
-    send_message(shadow_msg, service="shadow-ai", parse_mode="Markdown")
-
     return result if result else (existing[:200] if existing else 'No summary available.')
 
 
@@ -191,12 +176,12 @@ def run():
 
     articles = _fetch_articles(key)
     if not articles:
-        send_message('Reading Digest: no unread articles in Readwise.', service='readwise-digest')
+        logger.info('Reading Digest: no unread articles in Readwise.')
         return
 
     selected = _select_articles(articles, surfaced)
     if not selected:
-        send_message('Reading Digest: nothing to surface today.', service='readwise-digest')
+        logger.info('Reading Digest: nothing to surface today.')
         return
 
     summaries = []
