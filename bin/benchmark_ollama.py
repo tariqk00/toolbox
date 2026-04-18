@@ -5,10 +5,10 @@ import requests
 import sys
 
 # Ollama API Base URL (on NUC)
-OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_URL = "http://100.118.102.93:11434/api/generate"
 
 # Benchmark Models
-MODELS = ["gemma4:e2b", "gemma4:e4b"]
+MODELS = ["gemma2:2b", "gemma2:9b", "llama3.1:8b", "qwen2.5:14b"]
 
 # Test Prompt (Large enough to measure ingestion)
 TEST_PROMPT = """
