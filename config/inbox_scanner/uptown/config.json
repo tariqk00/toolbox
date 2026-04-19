@@ -4,7 +4,7 @@
   "token_base_dir": "~/github/tariqk00/toolbox",
   "token_filename": "token_uptown.json",
   "credentials_path": "~/github/tariqk00/toolbox/config/credentials.json",
-  "telegram_service": "inbox-scanner",
+  "telegram_service": "inbox-scanner · uptown",
   "categories": ["inquiry"],
   "skip_senders": [
     "team@rentredi.com",

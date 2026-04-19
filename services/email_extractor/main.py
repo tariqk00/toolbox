@@ -162,7 +162,7 @@ def run():
         msg = '\n'.join(lines)
 
     logger.info(msg)
-    send_message(msg, service='email-extractor')
+    send_message(msg, service='email-extractor · takhan')
 
 
 if __name__ == '__main__':

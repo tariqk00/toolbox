@@ -206,7 +206,7 @@ def _maybe_flag_new_trip(folder_path: str, file_name: str, file_id: str) -> None
         f'Create <code>08 - Travel/Active/{escape(trip_name)}</code> in Drive '
         f'and add it to drive_tree.json to enable auto-routing.'
     )
-    send_message(msg, service='ai-sorter')
+    send_message(msg, service='ai-sorter · takhan')
     logger.info(f'  [NewTrip] Flagged new trip destination: {trip_name}')
 
 
