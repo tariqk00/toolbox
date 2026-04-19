@@ -162,6 +162,7 @@ RULES:
 3. For medical docs, choose the Health folder.
 4. For ID cards/passports, choose the Personal ID folder.
 5. For generic transcripts/logs not matching other rules, choose the Archive Source_Dumps folder.
+6. For trip research files (menus, maps, activity guides, itineraries, resort info, restaurant recommendations, local guides), route to the most specific active trip folder under 08 - Travel/Active/. Match by destination name (e.g. "Maui", "Peru", "Inca Trail"). If no specific trip matches, use 08 - Travel.
 """
 
 def get_ai_supported_mime(mime_type, filename=None):
