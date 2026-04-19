@@ -15,6 +15,7 @@ from pathlib import Path
 TOOLBOX_ROOT = Path(__file__).resolve().parent.parent
 LIFE_DOCS_REPO = Path.home() / 'github' / 'tariqk00' / 'life-docs'
 LIFE_DOCS_DIR = LIFE_DOCS_REPO / 'docs' / 'life'
+MKDOCS = TOOLBOX_ROOT / 'google-drive' / 'venv' / 'bin' / 'mkdocs'
 
 # Fix sys.path for toolbox modules
 sys.path.insert(0, str(TOOLBOX_ROOT.parent))
@@ -139,7 +140,7 @@ def main():
     if last_digest.exists():
         try:
             data = json.loads(last_digest.read_text())
-            if data.get('date') == yesterday:
+            if data.get('date') == date.today().isoformat():
                 for a in data.get('articles', []):
                     title = a.get('title', 'Unknown')
                     author = a.get('author', 'Unknown')
@@ -173,31 +174,28 @@ def main():
     index_path = LIFE_DOCS_DIR / 'index.md'
     if index_path.exists():
         lines = index_path.read_text().split('\n')
-        # find where to insert
-        insert_idx = 0
-        for i, line in enumerate(lines):
-            if line.startswith('- ['):
-                insert_idx = i
-                break
-        if insert_idx > 0:
-            link = f"- [{yesterday}]({yesterday}.md) — {yesterday_date.strftime('%a %d %b')}"
-            # Check if it's already there
-            if link not in lines:
-                lines.insert(insert_idx, link)
-                # Keep last 30
-                list_start = insert_idx
-                list_end = list_start
-                while list_end < len(lines) and lines[list_end].startswith('- ['):
-                    list_end += 1
-                if list_end - list_start > 30:
-                    lines = lines[:list_start + 30] + lines[list_end:]
-                index_path.write_text("\n".join(lines))
+        link = f"- [{yesterday}]({yesterday}.md) — {yesterday_date.strftime('%a %d %b')}"
+        if link not in lines:
+            # Find first existing entry, or insert after the header line
+            insert_idx = next((i for i, l in enumerate(lines) if l.startswith('- [')), None)
+            if insert_idx is None:
+                # First run: no entries yet — find header and insert after it
+                header_idx = next((i for i, l in enumerate(lines) if l.startswith('# ')), 0)
+                insert_idx = header_idx + 1
+            lines.insert(insert_idx, link)
+            # Keep last 30 entries
+            list_start = insert_idx
+            list_end = list_start
+            while list_end < len(lines) and lines[list_end].startswith('- ['):
+                list_end += 1
+            if list_end - list_start > 30:
+                lines = lines[:list_start + 30] + lines[list_end:]
+            index_path.write_text("\n".join(lines))
                 
     # Build and Push
     print("Building site and pushing to Git...")
     try:
-        subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)
-        subprocess.run(['mkdocs', 'build', '--quiet'], cwd=LIFE_DOCS_REPO, check=True)
+        subprocess.run([str(MKDOCS), 'build', '--quiet'], cwd=LIFE_DOCS_REPO, check=True)
         subprocess.run(['git', 'add', 'docs/life/'], cwd=LIFE_DOCS_REPO, check=True)
         subprocess.run(['git', 'commit', '-m', f"daily: {yesterday}"], cwd=LIFE_DOCS_REPO, check=False)
         subprocess.run(['git', 'push'], cwd=LIFE_DOCS_REPO, check=True)
@@ -206,4 +204,6 @@ def main():
         print(f"Git/Build operation failed: {e}")
 
 if __name__ == '__main__':
+    # Pull before generating to avoid dirty-tree conflict on rebase
+    subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)
     main()

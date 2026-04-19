@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 TOOLBOX_ROOT = Path(__file__).resolve().parent.parent
 LIFE_DOCS_REPO = Path.home() / 'github' / 'tariqk00' / 'life-docs'
 WORK_DOCS_DIR = LIFE_DOCS_REPO / 'docs' / 'work'
+MKDOCS = TOOLBOX_ROOT / 'google-drive' / 'venv' / 'bin' / 'mkdocs'
 
 def build_backlog():
     repos = ['tariqk00/toolbox', 'tariqk00/setup', 'tariqk00/plaud']
@@ -187,17 +188,17 @@ def build_health():
 def build_site_and_push():
     print("Building site and pushing to Git...")
     try:
-        # Avoid push conflicts with manual remote updates
-        subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)
-        subprocess.run(['mkdocs', 'build', '--quiet'], cwd=LIFE_DOCS_REPO, check=True)
+        subprocess.run([str(MKDOCS), 'build', '--quiet'], cwd=LIFE_DOCS_REPO, check=True)
         subprocess.run(['git', 'add', 'docs/work/'], cwd=LIFE_DOCS_REPO, check=True)
-        subprocess.run(['git', 'commit', '-m', f"work: {datetime.now().strftime('%Y-%m-%d')}"], cwd=LIFE_DOCS_REPO, check=False) # check=False because it might be empty
+        subprocess.run(['git', 'commit', '-m', f"work: {datetime.now().strftime('%Y-%m-%d')}"], cwd=LIFE_DOCS_REPO, check=False)
         subprocess.run(['git', 'push'], cwd=LIFE_DOCS_REPO, check=True)
         print("Success.")
     except subprocess.CalledProcessError as e:
         print(f"Git/Build operation failed: {e}")
 
 if __name__ == '__main__':
+    # Pull before generating to avoid dirty-tree conflict on rebase
+    subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)
     WORK_DOCS_DIR.mkdir(parents=True, exist_ok=True)
     build_backlog()
     build_changelog()
