@@ -198,6 +198,27 @@ def run():
     for article in selected:
         surfaced[str(article['id'])] = today
     state['surfaced'] = surfaced
+    
+    # Export for life-docs daily_reporter
+    digest_export = {
+        "date": today,
+        "articles": [
+            {
+                "title": a.get("title", "Untitled"),
+                "author": a.get("author", "Unknown"),
+                "url": a.get("url", ""),
+                "summary": s
+            }
+            for a, s in zip(selected, summaries)
+        ]
+    }
+    digest_path = os.path.join(BASE_DIR, 'config', 'readwise_last_digest.json')
+    try:
+        with open(digest_path, 'w') as f:
+            json.dump(digest_export, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to write readwise_last_digest.json: {e}")
+
     _save_state(state)
     logger.info(f'Done. Surfaced {len(selected)} articles.')
 
