@@ -7,6 +7,7 @@ import time
 import argparse
 import sys
 import logging
+import json
 from logging.handlers import RotatingFileHandler
 import re
 
@@ -166,6 +167,49 @@ def generate_new_name(analysis, original_name, created_time_str):
 
     return f"{date} - {safe_entity} - {safe_summary}{ext}"
 
+_NEW_TRIPS_STATE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    'config', 'new_trips_flagged.json'
+)
+_ACTIVE_TRIP_PREFIX = '08 - Travel/Active/'
+
+
+def _load_flagged_trips() -> set:
+    try:
+        with open(_NEW_TRIPS_STATE) as f:
+            return set(json.load(f).get('flagged', []))
+    except Exception:
+        return set()
+
+
+def _save_flagged_trips(flagged: set) -> None:
+    tmp = _NEW_TRIPS_STATE + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump({'flagged': sorted(flagged)}, f, indent=2)
+    os.replace(tmp, _NEW_TRIPS_STATE)
+
+
+def _maybe_flag_new_trip(folder_path: str, file_name: str, file_id: str) -> None:
+    """Send a one-time Telegram alert when AI suggests an unknown Active trip folder."""
+    if not folder_path or not folder_path.startswith(_ACTIVE_TRIP_PREFIX):
+        return
+    trip_name = folder_path[len(_ACTIVE_TRIP_PREFIX):]
+    flagged = _load_flagged_trips()
+    if trip_name in flagged:
+        return
+    flagged.add(trip_name)
+    _save_flagged_trips(flagged)
+    label = drive_file_link(file_id, file_name) if file_id else f'<code>{escape(file_name)}</code>'
+    msg = (
+        f'<b>New trip detected: {escape(trip_name)}</b>\n'
+        f'File: {label}\n'
+        f'Create <code>08 - Travel/Active/{escape(trip_name)}</code> in Drive '
+        f'and add it to drive_tree.json to enable auto-routing.'
+    )
+    send_message(msg, service='ai-sorter')
+    logger.info(f'  [NewTrip] Flagged new trip destination: {trip_name}')
+
+
 _SKIP_MIME_TYPES = {
     'application/vnd.google-apps.folder',
     'application/vnd.google-apps.form',
@@ -316,6 +360,8 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
 
                 # Move ONLY if High confidence and we have a target
                 target_id = resolve_folder_id(folder_path)
+                if not target_id and folder_path:
+                    _maybe_flag_new_trip(folder_path, name, fid)
                 if confidence == 'High' and target_id and target_id != folder_id:
                     if move_file(service, fid, target_id, new_name):
                         stats.moved += 1
