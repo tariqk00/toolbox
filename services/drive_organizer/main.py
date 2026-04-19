@@ -266,7 +266,15 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                 continue
 
         try:
-            content = download_file_content(service, fid, mime)
+            try:
+                content = download_file_content(service, fid, mime)
+            except Exception as dl_err:
+                if '500' in str(dl_err) or 'internalError' in str(dl_err).lower():
+                    logger.warning(f"  [Export] {name}: Drive export 500, classifying by name only")
+                    content = f"File: {name}\n(Export failed; classify by filename only)".encode('utf-8')
+                    mime = 'text/plain'
+                else:
+                    raise
             if not content: continue
 
             context_hint = f"File located in folder: {folder_name}. Created: {f.get('createdTime')}"
