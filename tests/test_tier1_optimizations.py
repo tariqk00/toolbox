@@ -136,8 +136,8 @@ class TestAiEngineFileSizeLimits(unittest.TestCase):
         resp.usage_metadata = usage
         return resp
 
-    def _call_analyze(self, content_bytes, mime_type, filename='test.pdf', folder_paths_str='01 - Second Brain'):
-        """Call analyze_with_gemini with a mocked genai client."""
+    def _call_analyze_gemini(self, content_bytes, mime_type, filename='test.pdf', folder_paths_str='01 - Second Brain'):
+        """Call analyze_with_gemini with Groq disabled and Gemini mocked — for PDF/image path tests."""
         from toolbox.lib import ai_engine
         captured = {}
 
@@ -149,49 +149,68 @@ class TestAiEngineFileSizeLimits(unittest.TestCase):
         fake_client = MagicMock()
         fake_client.models.generate_content.side_effect = fake_generate_content
 
-        # Reset singleton so the mock is picked up cleanly
         with patch.object(ai_engine, 'GEMINI_API_KEY', 'fake-key'), \
              patch.object(ai_engine, 'GEMINI_CACHE', {}), \
              patch.object(ai_engine, '_client', None), \
+             patch.dict('os.environ', {'GROQ_PROVIDER': 'off'}), \
              patch('google.genai.Client', return_value=fake_client):
             result, tokens = ai_engine.analyze_with_gemini(
                 content_bytes, mime_type, filename, folder_paths_str
             )
         return result, tokens, captured
 
-    def _sent_bytes(self, captured):
-        """Extract raw bytes from the captured Part object (google-genai SDK stores at .inline_data.data)."""
+    def _call_analyze_groq(self, content_bytes, mime_type, filename='note.txt', folder_paths_str='01 - Second Brain'):
+        """Call analyze_with_gemini and capture what Groq receives — for text/plain path tests."""
+        from toolbox.lib import ai_engine
+        from toolbox.lib.providers.groq import GroqProvider
+        captured = {}
+        good_json = '{"doc_date":"2026-01-01","entity":"Test","folder_path":"01 - Second Brain","summary":"Test","confidence":"High"}'
+
+        def fake_groq_analyze(self_inner, content_bytes_inner, mime_type_inner, prompt):
+            captured['content_bytes'] = content_bytes_inner
+            return good_json, 10
+
+        with patch.object(ai_engine, 'GEMINI_API_KEY', 'fake-key'), \
+             patch.object(ai_engine, 'GEMINI_CACHE', {}), \
+             patch.object(GroqProvider, 'analyze', fake_groq_analyze):
+            result, tokens = ai_engine.analyze_with_gemini(
+                content_bytes, mime_type, filename, folder_paths_str
+            )
+        return result, tokens, captured
+
+    def _sent_bytes_gemini(self, captured):
+        """Extract raw bytes from the captured Gemini Part object."""
         part = captured['content_part']
         return part.inline_data.data
 
     def test_text_truncated_to_10kb(self):
-        # Change #5: 100KB → 10KB for text
+        # Text/plain routes to Groq first — check Groq receives ≤10KB
         large_text = b'A' * (1024 * 50)  # 50KB
-        result, tokens, captured = self._call_analyze(large_text, 'text/plain', 'big.txt')
-        self.assertLessEqual(len(self._sent_bytes(captured)), 1024 * 10 + 1)
+        result, tokens, captured = self._call_analyze_groq(large_text, 'text/plain', 'big.txt')
+        self.assertLessEqual(len(captured['content_bytes']), 1024 * 10 + 1)
 
     def test_text_under_10kb_not_truncated(self):
         small_text = b'Hello world ' * 100  # ~1.2KB
-        result, tokens, captured = self._call_analyze(small_text, 'text/plain', 'small.txt')
-        self.assertEqual(len(self._sent_bytes(captured)), len(small_text))
+        result, tokens, captured = self._call_analyze_groq(small_text, 'text/plain', 'small.txt')
+        self.assertEqual(len(captured['content_bytes']), len(small_text))
 
     def test_pdf_truncated_to_200kb(self):
-        # Change #4: PDFs capped at 200KB
-        large_pdf = b'%PDF' + b'X' * (500 * 1024)  # 500KB
-        result, tokens, captured = self._call_analyze(large_pdf, 'application/pdf', 'big.pdf')
-        self.assertLessEqual(len(self._sent_bytes(captured)), 200 * 1024 + 1)
+        # Scanned PDF (no extractable text) still routes to Gemini — check cap
+        large_pdf = b'%PDF' + b'X' * (500 * 1024)  # 500KB, no real text
+        result, tokens, captured = self._call_analyze_gemini(large_pdf, 'application/pdf', 'big.pdf')
+        self.assertLessEqual(len(self._sent_bytes_gemini(captured)), 200 * 1024 + 1)
 
     def test_pdf_under_200kb_not_truncated(self):
         small_pdf = b'%PDF' + b'X' * (50 * 1024)  # 50KB
-        result, tokens, captured = self._call_analyze(small_pdf, 'application/pdf', 'small.pdf')
-        self.assertEqual(len(self._sent_bytes(captured)), len(small_pdf))
+        result, tokens, captured = self._call_analyze_gemini(small_pdf, 'application/pdf', 'small.pdf')
+        self.assertEqual(len(self._sent_bytes_gemini(captured)), len(small_pdf))
 
     def test_max_output_tokens_set(self):
-        # Change #6: max_output_tokens=512 passed in config
-        content = b'Hello'
-        result, tokens, captured = self._call_analyze(content, 'text/plain', 'note.txt')
+        # Gemini still receives max_output_tokens=512 when processing images (non-text path)
+        content = b'\xff\xd8\xff' + b'X' * 100  # fake JPEG header
+        result, tokens, captured = self._call_analyze_gemini(content, 'image/jpeg', 'photo.jpg')
         cfg = captured.get('config')
-        self.assertIsNotNone(cfg, "GenerateContentConfig not passed")
+        self.assertIsNotNone(cfg, "GenerateContentConfig not passed to Gemini for image content")
         self.assertEqual(cfg.max_output_tokens, 512)
 
 
