@@ -183,6 +183,34 @@ def _extract_pdf_text(content_bytes: bytes) -> str:
         return ''
 
 
+def _extract_docx_text(content_bytes: bytes) -> str:
+    """Extract text from a .docx file."""
+    try:
+        import docx, io
+        doc = docx.Document(io.BytesIO(content_bytes))
+        return '\n'.join(p.text for p in doc.paragraphs).strip()
+    except Exception as e:
+        logger.debug(f"  [docx extract] failed: {e}")
+        return ''
+
+
+def _extract_pptx_text(content_bytes: bytes) -> str:
+    """Extract text from a .pptx file."""
+    try:
+        from pptx import Presentation
+        import io
+        prs = Presentation(io.BytesIO(content_bytes))
+        lines = []
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, 'text') and shape.text.strip():
+                    lines.append(shape.text.strip())
+        return '\n'.join(lines)
+    except Exception as e:
+        logger.debug(f"  [pptx extract] failed: {e}")
+        return ''
+
+
 def _parse_json_response(text: str) -> dict | None:
     """Extract and parse the first JSON object from a provider response. Returns None on failure."""
     if not text:
@@ -218,7 +246,13 @@ def get_ai_supported_mime(mime_type, filename=None):
     if any(st in mime_type for st in supported_text):
         return 'text/plain'
         
-    # 4. Handle octet-stream/unknown via extension
+    # 4. Office Open XML formats (text extracted before sending)
+    if 'wordprocessingml.document' in mime_type:
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    if 'presentationml.presentation' in mime_type:
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
+    # 5. Handle octet-stream/unknown via extension
     if mime_type == 'application/octet-stream' or '/' not in mime_type:
         ext = os.path.splitext(filename or "")[1].lower()
         if ext in ['.txt', '.csv', '.md', '.log']:
@@ -383,9 +417,9 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
         else:
             logger.debug("  [Resize] Pillow not available; sending image at original size")
 
-    # --- PDF TEXT EXTRACTION ---
-    # For native (text-based) PDFs, extract text and route to Groq.
-    # Scanned PDFs yield little/no text and fall through to Gemini unchanged.
+    # --- OFFICE FORMAT TEXT EXTRACTION ---
+    # PDF: extract text for native PDFs → Groq; scanned → Gemini.
+    # docx/pptx: always extract text → Groq if substantial, else skip.
     if ai_mime == 'application/pdf':
         extracted = _extract_pdf_text(content_bytes)
         if len(extracted) >= _PDF_TEXT_THRESHOLD:
@@ -394,6 +428,28 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             ai_mime = 'text/plain'
         else:
             logger.info(f"  [PDF] Scanned/image ({len(extracted)} chars extracted), routing to Gemini")
+
+    elif ai_mime == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        extracted = _extract_docx_text(content_bytes)
+        if len(extracted) >= _PDF_TEXT_THRESHOLD:
+            logger.info(f"  [docx] Extracted {len(extracted)} chars, routing to Groq")
+            content_bytes = extracted.encode('utf-8')
+            ai_mime = 'text/plain'
+        else:
+            logger.info(f"  [docx] No extractable text ({len(extracted)} chars), skipping")
+            return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
+                    "summary": "Empty_Document", "confidence": "Low"}, 0
+
+    elif ai_mime == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        extracted = _extract_pptx_text(content_bytes)
+        if len(extracted) >= _PDF_TEXT_THRESHOLD:
+            logger.info(f"  [pptx] Extracted {len(extracted)} chars, routing to Groq")
+            content_bytes = extracted.encode('utf-8')
+            ai_mime = 'text/plain'
+        else:
+            logger.info(f"  [pptx] No extractable text ({len(extracted)} chars), skipping")
+            return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
+                    "summary": "Empty_Document", "confidence": "Low"}, 0
 
     if use_free_tier:
         model_name = GEMINI_FREE_MODEL

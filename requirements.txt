@@ -4,6 +4,8 @@ google-auth-oauthlib
 google-genai>=1.0.0
 groq
 pypdf
+python-docx
+python-pptx
 # google-generativeai  # Deprecated
 Pillow
 PyYAML
