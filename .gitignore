@@ -41,6 +41,7 @@ config/email_extractor_state.json
 config/readwise_api_secret
 config/groq_secret
 config/readwise_digest_state.json
+config/readwise_last_digest.json
 config/token_tasks.json
 config/inbox_scanner/*/state.json
 config/inbox_scanner/*/classification_cache.json
