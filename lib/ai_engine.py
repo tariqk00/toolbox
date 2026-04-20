@@ -359,13 +359,6 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             "confidence": "Low"
         }, 0
 
-    if use_free_tier:
-        from toolbox.lib import quota_manager as _qm
-        if _qm.is_rpd_exhausted():
-            logger.warning(f"  [RPD] Daily free-tier request limit reached. Skipping {filename}.")
-            return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
-                    "summary": "RPD_Exhausted", "confidence": "Low"}, 0
-
     # Size limits before sending
     if ai_mime == 'text/plain' and len(content_bytes) > 1024 * 10:
         logger.info(f"  [Info] Truncating text ({len(content_bytes):,} bytes) to 10KB.")
