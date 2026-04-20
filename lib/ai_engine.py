@@ -374,10 +374,8 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
 
     if use_free_tier:
         model_name = GEMINI_FREE_MODEL
-        logger.info(f"  Sending to Gemini (free/{model_name}) as {ai_mime} ({len(content_bytes):,} bytes)...")
     else:
         model_name = GEMINI_MODEL
-        logger.info(f"  Sending to Gemini (paid/{model_name}) as {ai_mime} ({len(content_bytes):,} bytes)...")
 
     # Inject context
     prompt_with_context = SYSTEM_PROMPT.format(
@@ -385,12 +383,17 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
         folder_paths=folder_paths_str
     )
 
-    # --- PROVIDER CHAIN: Ollama → Groq → Gemini ---
+    # --- PROVIDER CHAIN: Groq → (Ollama if enabled) → Gemini ---
+    # Ollama is disabled by default — re-enable via OLLAMA_PROVIDER=on
     from toolbox.lib.providers.base import ProviderSkip
-    from toolbox.lib.providers.ollama import OllamaProvider
     from toolbox.lib.providers.groq import GroqProvider
 
-    for provider in [OllamaProvider(), GroqProvider()]:
+    text_providers = [GroqProvider()]
+    if os.getenv('OLLAMA_PROVIDER') == 'on':
+        from toolbox.lib.providers.ollama import OllamaProvider
+        text_providers.append(OllamaProvider())
+
+    for provider in text_providers:
         if not provider.supports(ai_mime):
             continue
         try:
