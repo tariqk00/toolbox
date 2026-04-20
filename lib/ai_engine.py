@@ -1,6 +1,6 @@
 """
 AI Abstraction Layer.
-Handles interactions with Gemini via `google-genai` SDK, including Prompting, JSON parsing, and Caching.
+Provider chain: Ollama (local) → Groq (remote, text) → Gemini (remote, all types).
 """
 import os
 import json
@@ -164,6 +164,25 @@ RULES:
 5. For generic transcripts/logs not matching other rules, choose the Archive Source_Dumps folder.
 6. For trip research files (menus, maps, activity guides, itineraries, resort info, restaurant recommendations, local guides), route to the most specific active trip folder under 08 - Travel/Active/. Match by destination name (e.g. "Maui", "Peru", "Inca Trail"). If no specific trip matches, use 08 - Travel.
 """
+
+def _parse_json_response(text: str) -> dict | None:
+    """Extract and parse the first JSON object from a provider response. Returns None on failure."""
+    if not text:
+        return None
+    try:
+        start_idx = text.find('{')
+        if start_idx == -1:
+            return None
+        decoder = json.JSONDecoder()
+        data, _ = decoder.raw_decode(text[start_idx:])
+        if isinstance(data, str) and "```json" in data:
+            data = json.loads(data.split("```json")[-1].split("```")[0].strip())
+        if isinstance(data, list):
+            data = data[0] if data else None
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
 
 def get_ai_supported_mime(mime_type, filename=None):
     """Returns a Gemini-supported MIME type or None if unsupported."""
@@ -366,33 +385,27 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
         folder_paths=folder_paths_str
     )
 
-    # --- PRIMARY OLLAMA CALL ---
-    logger.info(f"  Sending to Ollama (primary/{OLLAMA_MODEL}) as {ai_mime}...")
-    ollama_text, ollama_duration = call_ollama(prompt_with_context, content_bytes, ai_mime)
-    
-    if not ollama_text.startswith("Error:"):
+    # --- PROVIDER CHAIN: Ollama → Groq → Gemini ---
+    from toolbox.lib.providers.base import ProviderSkip
+    from toolbox.lib.providers.ollama import OllamaProvider
+    from toolbox.lib.providers.groq import GroqProvider
+
+    for provider in [OllamaProvider(), GroqProvider()]:
+        if not provider.supports(ai_mime):
+            continue
         try:
-            # Robust JSON extraction for Ollama
-            start_idx = ollama_text.find('{')
-            if start_idx != -1:
-                json_snippet = ollama_text[start_idx:]
-                decoder = json.JSONDecoder()
-                data, _ = decoder.raw_decode(json_snippet)
-                if isinstance(data, str) and "```json" in data:
-                     json_text = data.split("```json")[-1].split("```")[0].strip()
-                     data = json.loads(json_text)
-                if isinstance(data, list) and len(data) > 0:
-                    data = data[0]
-                
-                logger.info(f"  [Ollama Success] Parsed JSON in {round(ollama_duration, 1)}s")
+            raw, _ = provider.analyze(content_bytes, ai_mime, prompt_with_context)
+            data = _parse_json_response(raw)
+            if data:
                 if file_id:
                     GEMINI_CACHE[file_id] = data
                     save_cache()
                 return data, 0
+            logger.warning(f"  [{provider.name}] JSON parse failed, trying next provider")
+        except ProviderSkip as e:
+            logger.warning(f"  [{provider.name}] skipped: {e}")
         except Exception as e:
-            logger.warning(f"  [Ollama Parse Error] {e}. Falling back to Gemini.")
-    else:
-        logger.warning(f"  [Ollama Failed] {ollama_text}. Falling back to Gemini.")
+            logger.warning(f"  [{provider.name}] failed: {e}, trying next provider")
 
     # --- FALLBACK TO GEMINI ---
     _RETRY_DELAYS = [4, 16, 64]
@@ -471,53 +484,15 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
             )
 
         text = response.text.strip()
-        
-        # Robust JSON extraction
-        try:
-            start_idx = text.find('{')
-            if start_idx == -1:
-                raise ValueError("No JSON-like structure found")
-            
-            json_snippet = text[start_idx:]
-            decoder = json.JSONDecoder()
-            data, end_pos = decoder.raw_decode(json_snippet)
-            
-            if isinstance(data, str) and "```json" in data:
-                 json_text = data.split("```json")[-1].split("```")[0].strip()
-                 data = json.loads(json_text)
+        data = _parse_json_response(text)
+        if data is None:
+            logger.error(f"    [No JSON] Raw text: {text}")
+            raise ValueError("No JSON found in Gemini response")
 
-            if isinstance(data, list):
-                if len(data) > 0:
-                    data = data[0]
-                else:
-                    raise ValueError("Empty JSON list returned")
-            
-            # --- SAVE TO CACHE ---
-            if file_id:
-                GEMINI_CACHE[file_id] = data
-                save_cache()
-            
-            return data, token_count
-
-        except json.JSONDecodeError:
-             # Fallback: legacy regex extraction
-             start_idx = text.find('{')
-             end_idx = text.rfind('}')
-
-             if start_idx != -1 and end_idx != -1:
-                json_text = text[start_idx:end_idx+1]
-                try:
-                    data = json.loads(json_text)
-                    if file_id:
-                         GEMINI_CACHE[file_id] = data
-                         save_cache()
-                    return data, token_count
-                except json.JSONDecodeError as je:
-                     logger.error(f"    [JSON Error] Raw text: {text}")
-                     raise je
-             else:
-                  logger.error(f"    [No JSON] Raw text: {text}")
-                  raise ValueError("No JSON found in response")
+        if file_id:
+            GEMINI_CACHE[file_id] = data
+            save_cache()
+        return data, token_count
 
     except Exception as e:
         logger.error(f"Gemini Error during analysis: {e}", exc_info=True)
