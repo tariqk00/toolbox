@@ -3,6 +3,7 @@ google-auth-httplib2
 google-auth-oauthlib
 google-genai>=1.0.0
 groq
+pypdf
 # google-generativeai  # Deprecated
 Pillow
 PyYAML

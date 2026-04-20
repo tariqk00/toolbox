@@ -165,6 +165,24 @@ RULES:
 6. For trip research files (menus, maps, activity guides, itineraries, resort info, restaurant recommendations, local guides), route to the most specific active trip folder under 08 - Travel/Active/. Match by destination name (e.g. "Maui", "Peru", "Inca Trail"). If no specific trip matches, use 08 - Travel.
 """
 
+_PDF_TEXT_THRESHOLD = 200  # chars below this → treat as scanned, send to Gemini
+
+
+def _extract_pdf_text(content_bytes: bytes) -> str:
+    """Extract text from a native PDF. Returns empty string for scanned/image PDFs."""
+    try:
+        import pypdf
+        import io
+        reader = pypdf.PdfReader(io.BytesIO(content_bytes))
+        text = '\n'.join(
+            page.extract_text() or '' for page in reader.pages
+        ).strip()
+        return text
+    except Exception as e:
+        logger.debug(f"  [PDF extract] failed: {e}")
+        return ''
+
+
 def _parse_json_response(text: str) -> dict | None:
     """Extract and parse the first JSON object from a provider response. Returns None on failure."""
     if not text:
@@ -371,6 +389,18 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
                 logger.warning(f"  [Resize] Failed ({e}); sending original")
         else:
             logger.debug("  [Resize] Pillow not available; sending image at original size")
+
+    # --- PDF TEXT EXTRACTION ---
+    # For native (text-based) PDFs, extract text and route to Groq.
+    # Scanned PDFs yield little/no text and fall through to Gemini unchanged.
+    if ai_mime == 'application/pdf':
+        extracted = _extract_pdf_text(content_bytes)
+        if len(extracted) >= _PDF_TEXT_THRESHOLD:
+            logger.info(f"  [PDF] Native — extracted {len(extracted)} chars, routing to Groq")
+            content_bytes = extracted.encode('utf-8')
+            ai_mime = 'text/plain'
+        else:
+            logger.info(f"  [PDF] Scanned/image ({len(extracted)} chars extracted), routing to Gemini")
 
     if use_free_tier:
         model_name = GEMINI_FREE_MODEL
