@@ -139,9 +139,7 @@ Email:
 def handle_monitored_inquiry(email: dict, classification: dict, monitor_config: dict,
                               telegram_service: str) -> None:
     """Structured extraction + dedicated Drive log + immediate Telegram alert for monitored senders."""
-    import json
-    import re
-    from toolbox.lib.gemini import call_gemini
+    from toolbox.lib.llm import call_json
     from toolbox.services.email_extractor.scanner import html_to_text
     from toolbox.services.email_extractor.writers import append_to_memory
 
@@ -155,17 +153,10 @@ def handle_monitored_inquiry(email: dict, classification: dict, monitor_config: 
 
     text, _ = html_to_text(html) if html else (plain, [])
 
-    # Gemini extraction
+    # LLM extraction
     extracted = {}
     if text and len(text) > 50:
-        raw = call_gemini(PROPERTY_INQUIRY_PROMPT.format(text=text[:5000]))
-        if raw:
-            try:
-                raw = re.sub(r'^```(?:json)?\s*', '', raw.strip())
-                raw = re.sub(r'\s*```$', '', raw)
-                extracted = json.loads(raw)
-            except Exception as e:
-                logger.warning(f'Property inquiry extraction failed: {e}')
+        extracted = call_json(PROPERTY_INQUIRY_PROMPT.format(text=text[:5000]))
 
     tenant = extracted.get('prospective_tenant')
     move_in = extracted.get('move_in_date')

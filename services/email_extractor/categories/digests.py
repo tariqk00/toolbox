@@ -35,9 +35,9 @@ Email content:
 {text}"""
 
 
-def _call_gemini(text: str) -> list[dict]:
-    from toolbox.lib.gemini import call_gemini
-    raw = call_gemini(EXTRACT_PROMPT.format(text=text[:8000]))
+def _call_llm(text: str) -> list[dict]:
+    from toolbox.lib.llm import call
+    raw = call(EXTRACT_PROMPT.format(text=text[:8000]), max_tokens=1000)
     if not raw:
         return []
     try:
@@ -110,7 +110,7 @@ def process(email: dict, known_senders: dict, raw_senders: dict = None) -> bool:
     else:
         text = plain
 
-    articles = _call_gemini(text)
+    articles = _call_llm(text)
     if not articles:
         logger.warning(f'No articles extracted from {source_name} ({subject})')
         return False

@@ -42,17 +42,9 @@ Return ONLY valid JSON: {{"category": "...", "reason": "one sentence", "vendor":
 
 
 def _classify_email(sender: str, subject: str, body: str) -> dict:
-    from toolbox.lib.gemini import call_gemini
-    raw = call_gemini(CLASSIFY_PROMPT.format(sender=sender, subject=subject, body=body[:1500]))
-    if not raw:
-        return {'category': 'unknown', 'reason': 'Gemini unavailable', 'vendor': sender}
-    try:
-        raw = re.sub(r'^```(?:json)?\s*', '', raw)
-        raw = re.sub(r'\s*```$', '', raw)
-        return json.loads(raw)
-    except Exception as e:
-        logger.warning(f'Classify failed for {sender}: {e}')
-        return {'category': 'unknown', 'reason': str(e)[:80], 'vendor': sender}
+    from toolbox.lib.llm import call_json
+    result = call_json(CLASSIFY_PROMPT.format(sender=sender, subject=subject, body=body[:1500]))
+    return result if result else {'category': 'unknown', 'reason': 'LLM unavailable', 'vendor': sender}
 
 
 def _collect_known_senders(config: dict) -> set:

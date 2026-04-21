@@ -193,22 +193,13 @@ def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
     Returns {items: [{name, qty, price}], total, tracking}.
     Falls back to empty dict on failure.
     """
-    from toolbox.lib.gemini import call_gemini
+    from toolbox.lib.llm import call_json
     prompt = EXTRACT_PROMPT.format(
         vendor=vendor,
         subject=subject,
         body=_prep_for_llm(body)[:4000],
     )
-    raw = call_gemini(prompt)
-    if not raw:
-        return {}
-    try:
-        raw = re.sub(r'^```(?:json)?\s*', '', raw)
-        raw = re.sub(r'\s*```$', '', raw)
-        return json.loads(raw)
-    except Exception as e:
-        logger.error(f'Gemini order extraction failed ({vendor}): {e}')
-        return {}
+    return call_json(prompt)
 
 
 # ── Main processor ───────────────────────────────────────────────────────────

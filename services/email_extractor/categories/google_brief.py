@@ -59,10 +59,10 @@ Email:
 {{text}}"""
 
 
-def _call_gemini(text: str, today: str, year: str) -> dict | None:
-    from toolbox.lib.gemini import call_gemini
+def _call_llm(text: str, today: str, year: str) -> dict | None:
+    from toolbox.lib.llm import call
     prompt = EXTRACT_PROMPT.format(today=today, year=year).replace('{text}', text[:6000])
-    raw = call_gemini(prompt)
+    raw = call(prompt, max_tokens=1000)
     if not raw:
         return None
     try:
@@ -118,7 +118,7 @@ def process(email: dict, state: dict) -> str | None:
         logger.warning(f'Google CC email body too short to process ({email_date})')
         return None
 
-    result = _call_gemini(text, today.isoformat(), str(today.year))
+    result = _call_llm(text, today.isoformat(), str(today.year))
     if not result:
         return None
 

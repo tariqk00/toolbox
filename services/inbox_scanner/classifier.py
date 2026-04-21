@@ -30,8 +30,8 @@ Return ONLY valid JSON: {{"category": "...", "reason": "one sentence", "priority
 
 
 def classify_email(sender: str, subject: str, body: str) -> dict:
-    from toolbox.lib.gemini import call_gemini
-    raw = call_gemini(CLASSIFY_PROMPT.format(
+    from toolbox.lib.llm import call
+    raw = call(CLASSIFY_PROMPT.format(
         sender=sender,
         subject=subject,
         body=body[:2000],
