@@ -50,7 +50,7 @@ def _call_llm(text: str) -> list[dict]:
                 if isinstance(v, list):
                     parsed = v
                     break
-        return parsed if isinstance(parsed, list) else []
+        return [a for a in parsed if isinstance(a, dict)] if isinstance(parsed, list) else []
     except Exception as e:
         logger.error(f'Digest extraction failed: {e}')
         return []

@@ -26,7 +26,7 @@ def call(prompt: str, max_tokens: int = 500) -> str:
             messages=[{'role': 'user', 'content': prompt}],
             max_tokens=max_tokens,
         )
-        text = resp.choices[0].message.content.strip()
+        text = (resp.choices[0].message.content or '').strip()
         tokens = resp.usage.total_tokens if resp.usage else 0
         logger.debug(f'[Groq/{GROQ_MODEL}] tokens={tokens}')
         return text
