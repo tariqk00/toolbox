@@ -122,9 +122,8 @@ def build_sessions():
 
 def build_health():
     services = [
-        'ai-sorter', 'email-extractor', 'inbox-scanner',
-        'plaud-direct', 'workout-extract', 'system-check',
-        'weekly-ops', 'n8n-backup',
+        'ai-sorter', 'email-extractor', 'inbox-scanner', 'inbox-scanner-uptown',
+        'plaud-direct', 'workout-extract', 'system-check', 'weekly-ops',
     ]
     
     lines = ["# System Health (last 7 days)\n"]
@@ -178,6 +177,8 @@ def build_health():
         for date_str in sorted(daily_stats.keys(), reverse=True):
             tokens = daily_stats[date_str]['tokens']
             cost = daily_stats[date_str]['cost']
+            if tokens == 0 and cost == 0.0:
+                continue  # skip zero-activity days
             lines.append(f"| {date_str} | {tokens:,} | ${cost:.6f} |")
             
     lines.append(f"\n**7-day total: ${total_cost:.4f}**\n")
