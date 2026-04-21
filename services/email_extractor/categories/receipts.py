@@ -117,7 +117,9 @@ def process(email: dict, state: dict) -> str | None:
 
     lines.append('---')
 
-    append_to_memory('Receipts', filename, '\n'.join(lines))
+    dedup_ids = (amount,) if amount else ()
+    append_to_memory('Receipts', filename, '\n'.join(lines),
+                     dedup_date=date, dedup_ids=dedup_ids)
 
     if dedup_key and receipt_type == 'Reminder':
         known_receipts[dedup_key] = {

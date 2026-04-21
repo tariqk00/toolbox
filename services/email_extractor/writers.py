@@ -123,11 +123,15 @@ def update_in_memory(category: str, filename: str, old_text: str, new_text: str)
     return True
 
 
-def append_to_memory(category: str, filename: str, new_content: str) -> None:
+def append_to_memory(category: str, filename: str, new_content: str,
+                      dedup_date: str = '', dedup_ids: tuple = ()) -> bool:
     """
     Append new_content to Memory/{category}/{filename}.
     category: e.g. 'Orders', 'Receipts', 'Digests' (or None for Travel.md at Memory root)
     filename: e.g. 'Amazon.md'
+
+    If dedup_date is provided, checks block_exists before appending.
+    Returns True if content was written, False if skipped as duplicate.
     """
     service = get_drive_service()
 
@@ -142,6 +146,9 @@ def append_to_memory(category: str, filename: str, new_content: str) -> None:
     if file_id:
         existing_bytes = service.files().get_media(fileId=file_id).execute()
         existing = existing_bytes.decode('utf-8') if isinstance(existing_bytes, bytes) else existing_bytes
+        if dedup_date and block_exists(existing, dedup_date, *dedup_ids):
+            logger.info(f'Skipping duplicate block in {category}/{filename} [{dedup_date}]')
+            return False
         full_content = existing.rstrip('\n') + '\n\n' + new_content
         media = MediaIoBaseUpload(io.BytesIO(full_content.encode()), mimetype='text/markdown')
         service.files().update(fileId=file_id, media_body=media).execute()
@@ -151,3 +158,4 @@ def append_to_memory(category: str, filename: str, new_content: str) -> None:
         meta = {'name': filename, 'parents': [folder_id]}
         service.files().create(body=meta, media_body=media, fields='id').execute()
         logger.info(f'Created {category}/{filename}')
+    return True
