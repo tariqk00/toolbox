@@ -18,7 +18,7 @@ WORK_DOCS_DIR = LIFE_DOCS_REPO / 'docs' / 'work'
 MKDOCS = TOOLBOX_ROOT / 'google-drive' / 'venv' / 'bin' / 'mkdocs'
 
 def build_backlog():
-    repos = ['tariqk00/toolbox', 'tariqk00/setup', 'tariqk00/plaud']
+    repos = ['tariqk00/toolbox', 'tariqk00/setup', 'tariqk00/plaud', 'tariqk00/life-docs']
     priorities = {'now': [], 'next': [], 'later': [], 'deferred': []}
     
     for repo in repos:
