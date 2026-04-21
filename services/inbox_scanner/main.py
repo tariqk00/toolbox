@@ -27,18 +27,27 @@ from toolbox.services.email_extractor.scanner import get_full_email, html_to_tex
 from toolbox.services.inbox_scanner.classifier import classify_email
 from toolbox.services.inbox_scanner.categories.action_required import ActionRequiredProcessor
 from toolbox.services.inbox_scanner.categories.inquiry import InquiryProcessor
+from toolbox.services.inbox_scanner.categories.uptown_inquiry import UptownInquiryProcessor
 from toolbox.services.inbox_scanner import actions
 
 GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 CONFIG_DIR = os.path.join(BASE_DIR, 'config', 'inbox_scanner')
 EXTRACTOR_CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'email_extractor_config.json')
 
-# Rate limit between Gemini calls (free tier: ~10 req/min)
+# Rate limit between LLM calls
 GEMINI_DELAY_SECONDS = 7
+
+# Uptown inquiry response timeout — alert if no reply within this many hours
+UPTOWN_RESPONSE_TIMEOUT_HOURS = 48
 
 PROCESSORS = {
     'action_required': ActionRequiredProcessor(),
     'inquiry': InquiryProcessor(),
+}
+
+UPTOWN_PROCESSORS = {
+    'action_required': ActionRequiredProcessor(),
+    'inquiry': UptownInquiryProcessor(),
 }
 
 
@@ -131,6 +140,41 @@ def fetch_inbox_since(service, after_date: str | None) -> list:
     return messages
 
 
+def _check_uptown_responses(service, state: dict, telegram_service: str) -> None:
+    """Check open Uptown inquiries for replies; nudge if unresponded after timeout."""
+    open_inquiries = state.get('uptown_open_inquiries', {})
+    if not open_inquiries:
+        return
+
+    now = time.time()
+    for thread_id, inquiry in list(open_inquiries.items()):
+        if inquiry.get('responded'):
+            continue
+
+        # Check if thread has a sent reply
+        try:
+            thread = service.users().threads().get(
+                userId='me', id=thread_id, format='metadata',
+            ).execute()
+            messages = thread.get('messages', [])
+            has_reply = any('SENT' in m.get('labelIds', []) for m in messages)
+            if has_reply:
+                inquiry['responded'] = True
+                logger.info(f'Uptown inquiry marked responded: {inquiry.get("subject", "")}')
+                continue
+        except Exception as e:
+            logger.warning(f'Thread check failed {thread_id}: {e}')
+            continue
+
+        # Nudge if overdue
+        if not inquiry.get('nudge_sent'):
+            age_hours = int((now - inquiry.get('timestamp', now)) / 3600)
+            if age_hours >= UPTOWN_RESPONSE_TIMEOUT_HOURS:
+                actions.send_uptown_nudge(inquiry, age_hours, telegram_service)
+                inquiry['nudge_sent'] = True
+                logger.info(f'Uptown nudge sent: {inquiry.get("subject", "")} ({age_hours}h old)')
+
+
 def run(mailbox_id: str = 'primary') -> None:
     config = load_mailbox_config(mailbox_id)
     state = load_state(mailbox_id)
@@ -147,9 +191,15 @@ def run(mailbox_id: str = 'primary') -> None:
     processed_ids = set(state.get('processed_ids', []))
     classification_cache: dict = state.get('classification_cache', {})
 
+    processors = UPTOWN_PROCESSORS if mailbox_id == 'uptown' else PROCESSORS
+
     logger.info(f'=== Inbox Scanner [{mailbox_id}] {"(first run)" if not last_run else f"(since {last_run})"} ===')
 
     service = get_gmail_service(config)
+
+    # Uptown: check existing open inquiries for replies before processing new messages
+    if mailbox_id == 'uptown':
+        _check_uptown_responses(service, state, telegram_service)
 
     try:
         with open(EXTRACTOR_CONFIG_PATH) as f:
@@ -164,7 +214,7 @@ def run(mailbox_id: str = 'primary') -> None:
     raw_messages = fetch_inbox_since(service, after_date)
     logger.info(f'Found {len(raw_messages)} inbox messages to evaluate')
 
-    results: dict[str, list] = {cat: [] for cat in PROCESSORS}
+    results: dict[str, list] = {cat: [] for cat in processors}
     errors = 0
     skipped_known = 0
     skipped_seen = 0
@@ -231,13 +281,13 @@ def run(mailbox_id: str = 'primary') -> None:
             logger.info(f'  [{category}] {sender} — {subject[:60]} (cached)')
             classified += 1
             processed_ids.add(msg_id)
-            if category in PROCESSORS:
+            if category in processors:
                 fake_email = {
                     'from': cached.get('_from_header', from_h),
                     'subject': cached.get('_subject', subject),
                     'date': cached.get('_date', ''),
                 }
-                result = PROCESSORS[category].process(fake_email, cached)
+                result = processors[category].process(fake_email, cached)
                 if result:
                     results[category].append(result)
                     if category == 'action_required' and cached.get('priority') == 'high':
@@ -246,7 +296,7 @@ def run(mailbox_id: str = 'primary') -> None:
 
         # Cache miss: fetch full email, classify, store
         try:
-            # Rate-limit Gemini calls
+            # Rate-limit LLM calls
             if classified > 0:
                 time.sleep(GEMINI_DELAY_SECONDS)
 
@@ -261,6 +311,7 @@ def run(mailbox_id: str = 'primary') -> None:
             classification['_from_header'] = from_h
             classification['_subject'] = full['subject']
             classification['_date'] = full['date']
+            classification['_thread_id'] = m.get('threadId', '')
             classification_cache[msg_id] = classification
             category = classification.get('category', 'skip')
             classified += 1
@@ -268,12 +319,28 @@ def run(mailbox_id: str = 'primary') -> None:
 
             processed_ids.add(msg_id)
 
-            if category in PROCESSORS:
-                result = PROCESSORS[category].process(full, classification)
+            if category in processors:
+                result = processors[category].process(full, classification)
                 if result:
                     results[category].append(result)
                     if category == 'action_required' and classification.get('priority') == 'high':
                         actions.send_immediate_alert(result, telegram_service)
+                    # Uptown: send Telegram alert immediately on new inquiry
+                    if mailbox_id == 'uptown' and category == 'inquiry':
+                        actions.send_uptown_inquiry_alert(result, telegram_service)
+                        thread_id = result.get('thread_id', '')
+                        if thread_id:
+                            open_inquiries = state.setdefault('uptown_open_inquiries', {})
+                            if thread_id not in open_inquiries:
+                                open_inquiries[thread_id] = {
+                                    'tenant': result.get('tenant', ''),
+                                    'email': result.get('sender', ''),
+                                    'subject': result.get('subject', ''),
+                                    'date': result.get('date', ''),
+                                    'timestamp': time.time(),
+                                    'responded': False,
+                                    'nudge_sent': False,
+                                }
         except Exception as e:
             logger.error(f'Processing failed {msg_id}: {e}')
             errors += 1
@@ -294,7 +361,10 @@ def run(mailbox_id: str = 'primary') -> None:
 
     if results.get('inquiry'):
         try:
-            actions.write_inquiries(results['inquiry'])
+            if mailbox_id == 'uptown':
+                actions.write_uptown_inquiries(results['inquiry'])
+            else:
+                actions.write_inquiries(results['inquiry'])
         except Exception as e:
             logger.error(f'Drive write failed (inquiry): {e}')
             errors += 1

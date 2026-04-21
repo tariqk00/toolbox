@@ -206,6 +206,95 @@ def handle_monitored_inquiry(email: dict, classification: dict, monitor_config: 
     send_message('\n'.join(alert_lines), service=telegram_service)
 
 
+def send_uptown_inquiry_alert(item: dict, telegram_service: str) -> None:
+    """Send two Telegram messages for a new Uptown Edenton inquiry: details + shadow response."""
+    tenant = item.get('tenant') or 'Unknown'
+    platform = item.get('platform', 'Direct')
+    subject = item.get('subject', '')
+    sender = item.get('sender', '')
+    unit_interest = item.get('unit_interest', '')
+    move_in = item.get('move_in', '')
+    questions = item.get('questions', [])
+    contact_phone = item.get('contact_phone', '')
+    shadow = item.get('shadow_response', '')
+
+    # Message 1: inquiry details
+    lines = [f'<b>New inquiry — Uptown Edenton</b>']
+    lines.append(f'<b>From:</b> {escape(tenant)} via {escape(platform)}')
+    lines.append(f'<b>Email:</b> {escape(sender)}')
+    if contact_phone:
+        lines.append(f'<b>Phone:</b> {escape(contact_phone)}')
+    if unit_interest:
+        lines.append(f'<b>Interested in:</b> {escape(unit_interest)}')
+    if move_in:
+        lines.append(f'<b>Move-in:</b> {escape(move_in)}')
+    if questions:
+        lines.append(f'<b>Questions:</b>')
+        for q in questions[:5]:
+            lines.append(f'  • {escape(str(q))}')
+    lines.append(f'\n<i>Subject: {escape(subject)}</i>')
+    send_message('\n'.join(lines), service=telegram_service)
+
+    # Message 2: shadow response draft
+    if shadow:
+        draft_msg = f'<b>Shadow response draft:</b>\n\n{escape(shadow)}'
+        send_message(draft_msg, service=telegram_service)
+
+
+def send_uptown_nudge(inquiry: dict, hours_old: int, telegram_service: str) -> None:
+    """Alert that an inquiry has not been responded to within the timeout window."""
+    tenant = inquiry.get('tenant') or 'Unknown prospect'
+    date = inquiry.get('date', '')
+    subject = inquiry.get('subject', '')
+    days = hours_old // 24
+    age_str = f'{days}d {hours_old % 24}h' if days else f'{hours_old}h'
+    msg = (
+        f'<b>Uptown Edenton — no response yet</b>\n'
+        f'Inquiry from <b>{escape(tenant)}</b> ({age_str} ago, {escape(date)})\n'
+        f'Subject: {escape(subject)}'
+    )
+    send_message(msg, service=telegram_service)
+
+
+def write_uptown_inquiries(items: list) -> None:
+    """Write Uptown Edenton inquiries to Memory/Properties/Uptown Edenton Inquiries.md."""
+    if not items:
+        return
+    from toolbox.services.email_extractor.writers import append_to_memory
+    for item in items:
+        date = item.get('date', '')
+        subject = item.get('subject', '')
+        tenant = item.get('tenant', '')
+        platform = item.get('platform', 'Direct')
+        sender = item.get('sender', '')
+        unit_interest = item.get('unit_interest', '')
+        move_in = item.get('move_in', '')
+        questions = item.get('questions', [])
+        contact_phone = item.get('contact_phone', '')
+        notes = item.get('notes', '')
+
+        lines = [f'## {date} — {subject}']
+        lines.append(f'**From:** {sender} ({platform})')
+        if tenant:
+            lines.append(f'**Tenant:** {tenant}')
+        if contact_phone:
+            lines.append(f'**Phone:** {contact_phone}')
+        if unit_interest:
+            lines.append(f'**Interested in:** {unit_interest}')
+        if move_in:
+            lines.append(f'**Move-in:** {move_in}')
+        if questions:
+            lines.append('**Questions:**')
+            for q in questions:
+                lines.append(f'- {q}')
+        if notes:
+            lines.append(f'*{notes}*')
+        lines.append('**Response:** Pending')
+        lines.append('---')
+        append_to_memory('Properties', 'Uptown Edenton Inquiries.md', '\n'.join(lines))
+        logger.info(f'Uptown inquiry logged: {tenant or sender} — {subject}')
+
+
 def send_run_summary(results: dict, errors: int, mailbox_email: str, telegram_service: str) -> None:
     """Send end-of-run Telegram summary."""
     total = sum(len(v) for v in results.values())
