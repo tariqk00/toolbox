@@ -46,10 +46,24 @@
       "DeltaAirLines@t.delta.com": "Delta",
       "reservations@nationalcar.com": "National Car Rental",
       "noreply@resy.com": "Resy",
-      "noreply@fulfillment.amexgbt.com": "AmEx Global Business Travel"
+      "noreply@fulfillment.amexgbt.com": "AmEx Global Business Travel",
+      "united@united.com": "United",
+      "noreply@aa.com": "American Airlines",
+      "southwest@luv.southwest.com": "Southwest",
+      "jetblue@info.jetblue.com": "JetBlue",
+      "noreply@alaskaair.com": "Alaska Airlines",
+      "noreply@amtrak.com": "Amtrak",
+      "automated@airbnb.com": "Airbnb",
+      "noreply@vrbo.com": "Vrbo",
+      "noreply@expedia.com": "Expedia",
+      "noreply@hotels.com": "Hotels.com",
+      "noreply@booking.com": "Booking.com"
     },
     "sender_domains": {
-      "vacationclub.com": "Marriott Vacation Club"
+      "vacationclub.com": "Marriott Vacation Club",
+      "marriott.com": "Marriott",
+      "hilton.com": "Hilton",
+      "hyatt.com": "Hyatt"
     }
   }
 }

@@ -128,22 +128,28 @@ def _extract_confirmation(subject: str, plain: str) -> str:
 
 def _extract_trip_type(vendor: str, subject: str) -> str:
     lower = subject.lower()
-    if vendor in ('Delta', 'AmEx Global Business Travel'):
+    if vendor in ('Delta', 'United', 'American Airlines', 'Southwest', 'JetBlue',
+                  'Alaska Airlines', 'Spirit', 'Frontier', 'AmEx Global Business Travel'):
         return 'Flight'
-    if vendor == 'National Car Rental':
+    if vendor in ('National Car Rental', 'Enterprise', 'Hertz', 'Avis', 'Budget', 'Alamo'):
         return 'Car Rental'
-    if vendor == 'Resy':
+    if vendor in ('Resy', 'OpenTable'):
         return 'Dining'
-    if vendor == 'Marriott Vacation Club':
+    if vendor in ('Marriott Vacation Club', 'Marriott', 'Hilton', 'Hyatt', 'IHG',
+                  'Airbnb', 'Vrbo', 'Hotels.com', 'Booking.com', 'Expedia'):
         return 'Hotel'
-    if any(w in lower for w in ('flight', 'check in', 'boarding', 'airline')):
+    if vendor == 'Amtrak':
+        return 'Train'
+    if any(w in lower for w in ('flight', 'check in', 'boarding', 'airline', 'departs', 'e-ticket')):
         return 'Flight'
-    if any(w in lower for w in ('hotel', 'resort', 'check-in')):
+    if any(w in lower for w in ('hotel', 'resort', 'check-in', 'check in', 'inn', 'suite')):
         return 'Hotel'
     if 'car rental' in lower or 'car reservation' in lower:
         return 'Car Rental'
-    if 'restaurant' in lower or 'dining' in lower:
+    if 'restaurant' in lower or 'dining' in lower or 'reservation at' in lower:
         return 'Dining'
+    if 'train' in lower or 'amtrak' in lower:
+        return 'Train'
     return 'Travel'
 
 

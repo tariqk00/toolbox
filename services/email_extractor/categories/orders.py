@@ -31,7 +31,7 @@ logger = logging.getLogger('EmailExtractor.Orders')
 ORDER_KEYWORDS = (
     'order', 'shipped', 'delivered', 'delivery', 'in transit', 'dispatched',
     'arrived', 'installed', 'confirmed', 'placed', 'cancel', 'tracking',
-    'pillpack', 'shipment',
+    'pillpack', 'shipment', 'return', 'refund', 'exchange',
 )
 
 EXTRACT_PROMPT = """\
