@@ -143,8 +143,8 @@ def process(email: dict, known_senders: dict, raw_senders: dict = None) -> bool:
     append_to_memory('Digests', filename, content)
     summary_lines = [f'{source_name}: {len(articles)} articles']
     for art in articles[:3]:
-        title = art.get('title', '').strip()
-        link = art.get('link', '').strip()
+        title = (art.get('title') or '').strip()
+        link = art.get('link') or ''
         if not title:
             continue
         line = f'  → {title}'
