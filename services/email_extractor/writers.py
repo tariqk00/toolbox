@@ -6,6 +6,7 @@ Appends to existing files (download → append → re-upload).
 import io
 import logging
 import os
+import re
 import sys
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -65,6 +66,39 @@ def _get_file_in_folder(service, folder_id: str, filename: str) -> str | None:
     results = service.files().list(q=query, fields='files(id)').execute()
     files = results.get('files', [])
     return files[0]['id'] if files else None
+
+
+def get_memory_content(category: str | None, filename: str) -> str:
+    """
+    Download and return the current text content of a Memory file.
+    Returns '' if the file doesn't exist yet.
+    """
+    service = get_drive_service()
+    folder_path = f'{MEMORY_ROOT}/{category}' if category else MEMORY_ROOT
+    folder_id = _resolve_path(service, folder_path)
+    file_id = _get_file_in_folder(service, folder_id, filename)
+    if not file_id:
+        return ''
+    existing_bytes = service.files().get_media(fileId=file_id).execute()
+    return existing_bytes.decode('utf-8') if isinstance(existing_bytes, bytes) else existing_bytes
+
+
+def block_exists(content: str, date: str, *identifiers: str) -> bool:
+    """
+    Return True if `content` already contains a markdown block (separated by
+    '---') whose header starts with '## {date}' and that contains every
+    non-empty identifier string.
+
+    Used as a content-based dedup safety net before appending a new entry.
+    """
+    if not content or f'## {date}' not in content:
+        return False
+    for block in re.split(r'\n---\s*\n?', content):
+        if f'## {date}' not in block:
+            continue
+        if all(ident in block for ident in identifiers if ident):
+            return True
+    return False
 
 
 def update_in_memory(category: str, filename: str, old_text: str, new_text: str) -> bool:

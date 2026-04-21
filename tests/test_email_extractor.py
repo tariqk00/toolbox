@@ -241,5 +241,155 @@ class TestUpdateInMemory(unittest.TestCase):
         self.assertEqual(content.count('foo'), 1)  # second foo still present
 
 
+class TestBlockExists(unittest.TestCase):
+
+    def test_match_with_confirmation(self):
+        from toolbox.services.email_extractor.writers import block_exists
+        content = (
+            '## 2026-04-15 — Flight\n**Vendor:** Delta\n**Confirmation:** HXXKJD\n---\n'
+            '## 2026-04-20 — Hotel\n**Vendor:** Marriott\n---\n'
+        )
+        self.assertTrue(block_exists(content, '2026-04-15', 'HXXKJD'))
+
+    def test_no_match_different_date(self):
+        from toolbox.services.email_extractor.writers import block_exists
+        content = '## 2026-04-15 — Flight\n**Confirmation:** HXXKJD\n---\n'
+        self.assertFalse(block_exists(content, '2026-04-20', 'HXXKJD'))
+
+    def test_no_match_missing_identifier(self):
+        from toolbox.services.email_extractor.writers import block_exists
+        content = '## 2026-04-15 — Flight\n**Vendor:** Delta\n---\n'
+        self.assertFalse(block_exists(content, '2026-04-15', 'HXXKJD'))
+
+    def test_match_multiple_identifiers(self):
+        from toolbox.services.email_extractor.writers import block_exists
+        content = '## 2026-04-15 — Flight\n**Vendor:** Delta\n---\n'
+        self.assertTrue(block_exists(content, '2026-04-15', 'Delta', 'Flight'))
+
+    def test_empty_content_returns_false(self):
+        from toolbox.services.email_extractor.writers import block_exists
+        self.assertFalse(block_exists('', '2026-04-15', 'Delta'))
+
+    def test_empty_identifier_ignored(self):
+        """Empty identifiers are skipped — only date match required."""
+        from toolbox.services.email_extractor.writers import block_exists
+        content = '## 2026-04-15 — Flight\n**Vendor:** Delta\n---\n'
+        self.assertTrue(block_exists(content, '2026-04-15', ''))
+
+    def test_second_block_matches(self):
+        """Match can be in any block, not just the first."""
+        from toolbox.services.email_extractor.writers import block_exists
+        content = (
+            '## 2026-04-10 — Hotel\n**Vendor:** Marriott\n---\n'
+            '## 2026-04-15 — Flight\n**Vendor:** Delta\n**Confirmation:** HXXKJD\n---\n'
+        )
+        self.assertTrue(block_exists(content, '2026-04-15', 'HXXKJD'))
+        self.assertFalse(block_exists(content, '2026-04-10', 'HXXKJD'))
+
+
+class TestTripsDedup(unittest.TestCase):
+
+    def _run_trip(self, email, state=None, existing_content=''):
+        from toolbox.services.email_extractor.categories import trips
+        from toolbox.services.email_extractor import writers
+
+        if state is None:
+            state = {}
+
+        appended = []
+
+        def fake_append(category, filename, content):
+            appended.append(content)
+
+        with patch.object(writers, 'get_drive_service'), \
+             patch.object(trips, 'append_to_memory', fake_append), \
+             patch.object(trips, 'update_in_memory', return_value=True), \
+             patch.object(trips, 'get_memory_content', return_value=existing_content):
+            result = trips.process(email, state)
+
+        return result, appended, state
+
+    def _make_email(self, vendor, subject, plain='', date='2026-04-15'):
+        return {'vendor': vendor, 'subject': subject, 'plain': plain, 'date': date,
+                'html': None, 'id': f'msg_{vendor}_{date}'}
+
+    def test_first_email_creates_entry(self):
+        email = self._make_email('Delta', 'Your flight confirmation HXXKJD', plain='')
+        result, appended, state = self._run_trip(email)
+        self.assertIsNotNone(result)
+        self.assertEqual(len(appended), 1)
+        self.assertIn('HXXKJD', appended[0])
+
+    def test_same_confirmation_second_email_no_new_append(self):
+        """Same confirmation on a second run (state already set) → no new entry."""
+        email = self._make_email('Delta', 'Your flight confirmation HXXKJD')
+        state = {'trip_confirmations': {
+            'HXXKJD': {
+                'vendor': 'Delta', 'status': 'Confirmed',
+                'status_line': '**Status:** [Confirmed] 2026-04-15',
+                'date': '2026-04-15', 'destination': '',
+            }
+        }}
+        result, appended, _ = self._run_trip(email, state=state)
+        self.assertEqual(len(appended), 0, "Should not append when status unchanged")
+
+    def test_no_confirmation_uses_fallback_key(self):
+        """Without a confirmation number the state key is vendor:type:YYYY-MM."""
+        email = self._make_email('Delta', 'Time to check in for your flight')
+        _, _, state = self._run_trip(email)
+        # State should have an entry keyed by vendor:type:YYYY-MM
+        keys = list(state.get('trip_confirmations', {}).keys())
+        self.assertEqual(len(keys), 1)
+        self.assertIn('Delta:Flight:2026-04', keys[0])
+
+    def test_content_based_dedup_skips_duplicate(self):
+        """If block already in file and state was reset, no new append."""
+        existing = (
+            '## 2026-04-15 — Flight\n'
+            '**Vendor:** Delta\n'
+            '**Status:** [Confirmed] 2026-04-15\n'
+            '**Confirmation:** HXXKJD\n---\n'
+        )
+        email = self._make_email('Delta', 'Your flight confirmation HXXKJD')
+        result, appended, _ = self._run_trip(email, existing_content=existing)
+        self.assertEqual(len(appended), 0, "Content-based dedup should skip duplicate")
+        self.assertIsNone(result)
+
+    def test_travel_date_extracted_for_flight(self):
+        """Departure date from email body is written as Travel date field."""
+        plain = 'Departs May 15, 2026 at 07:30 from JFK'
+        email = self._make_email('Delta', 'Flight confirmation HXXKJD', plain=plain)
+        _, appended, _ = self._run_trip(email)
+        self.assertTrue(any('Travel date' in a for a in appended),
+                        "Expected Travel date field in entry")
+
+
+class TestCarrierExtraction(unittest.TestCase):
+
+    def test_fedex_detected(self):
+        from toolbox.services.email_extractor.categories.orders import _extract_carrier
+        self.assertEqual(_extract_carrier('Your FedEx package is on its way'), 'FedEx')
+
+    def test_ups_detected(self):
+        from toolbox.services.email_extractor.categories.orders import _extract_carrier
+        self.assertEqual(_extract_carrier('Shipped via UPS Ground'), 'UPS')
+
+    def test_usps_detected(self):
+        from toolbox.services.email_extractor.categories.orders import _extract_carrier
+        self.assertEqual(_extract_carrier('Delivered by USPS'), 'USPS')
+
+    def test_dhl_detected(self):
+        from toolbox.services.email_extractor.categories.orders import _extract_carrier
+        self.assertEqual(_extract_carrier('DHL Express shipment'), 'DHL')
+
+    def test_amazon_logistics_detected(self):
+        from toolbox.services.email_extractor.categories.orders import _extract_carrier
+        self.assertEqual(_extract_carrier('amazon logistics is delivering your package'), 'Amazon')
+
+    def test_unknown_returns_empty(self):
+        from toolbox.services.email_extractor.categories.orders import _extract_carrier
+        self.assertEqual(_extract_carrier('Your package has shipped'), '')
+
+
 if __name__ == '__main__':
     unittest.main()

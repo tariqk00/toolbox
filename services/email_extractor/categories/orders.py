@@ -156,6 +156,24 @@ def _item_key(name: str) -> str:
     return re.sub(r'\s+', '_', name[:30].lower().strip())
 
 
+def _extract_carrier(body: str) -> str:
+    """Detect carrier name from shipping email body."""
+    lower = body[:3000].lower()
+    if 'fedex' in lower or 'federal express' in lower:
+        return 'FedEx'
+    if 'united parcel' in lower or re.search(r'\bups\b', lower):
+        return 'UPS'
+    if 'usps' in lower or 'postal service' in lower or 'post office' in lower:
+        return 'USPS'
+    if 'dhl' in lower:
+        return 'DHL'
+    if 'amazon logistics' in lower or 'amazon delivery' in lower or 'amazon.com/gp/css/trackIt' in body[:3000]:
+        return 'Amazon'
+    if 'ontrac' in lower:
+        return 'OnTrac'
+    return ''
+
+
 def _order_url(vendor: str, order_num: str) -> str:
     """Return a direct order URL for vendors that support it, else empty string."""
     if vendor == 'Amazon' and order_num:
@@ -275,6 +293,19 @@ def process(email: dict, state: dict) -> str | None:
             # Old-format state entry with no items dict — fall back to append
             append_to_memory('Orders', filename, f'↳ {date}: **{status}**')
 
+        # For Shipped updates: append carrier + tracking note
+        if status == 'Shipped':
+            carrier = _extract_carrier(body)
+            ship_extract = _extract_items_llm(vendor, subject, body)
+            new_tracking = ship_extract.get('tracking', '')
+            if carrier or new_tracking:
+                shipped_note = f'↳ {date}: **Shipped**'
+                if carrier:
+                    shipped_note += f' | Carrier: {carrier}'
+                if new_tracking:
+                    shipped_note += f' | Tracking: {new_tracking}'
+                append_to_memory('Orders', filename, shipped_note)
+
         prev['status'] = status
         summary = f'{vendor} #{order_num} → {status}'
         url = _order_url(vendor, order_num)
@@ -288,13 +319,17 @@ def process(email: dict, state: dict) -> str | None:
     items = extracted.get('items', [])
     total = extracted.get('total', '')
     tracking = extracted.get('tracking', '')
+    carrier = _extract_carrier(body) if status in ('Shipped', 'Out for Delivery') else ''
 
     lines = [f'## {date} — Order #{order_num or "N/A"} [{status}]']
     lines.append(f'**Vendor:** {vendor}')
     if total:
         lines.append(f'**Total:** {total}')
-    if tracking:
-        lines.append(f'**Tracking:** {tracking}')
+    if tracking or carrier:
+        shipping_line = f'**Tracking:** {tracking}' if tracking else '**Tracking:**'
+        if carrier:
+            shipping_line += f' | Carrier: {carrier}'
+        lines.append(shipping_line)
     lines.append('')
     for item in items:
         name = item.get('name', '').strip()

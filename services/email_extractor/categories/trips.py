@@ -6,7 +6,7 @@ Subsequent emails: update status+date in-place via update_in_memory.
 """
 import re
 import logging
-from ..writers import append_to_memory, update_in_memory
+from ..writers import append_to_memory, update_in_memory, get_memory_content, block_exists
 
 logger = logging.getLogger('EmailExtractor.Trips')
 
@@ -100,6 +100,50 @@ def _trip_url(vendor: str, confirmation: str) -> str:
     return ''
 
 
+def _extract_travel_date(trip_type: str, plain: str) -> str:
+    """
+    Extract the actual travel date (departure, pickup, check-in) from email body.
+    Returns ISO date string (YYYY-MM-DD) or '' if not found.
+    """
+    text = plain[:3000]
+
+    if trip_type == 'Flight':
+        # "Departs May 15" / "departing April 26" / "departure: Apr 26"
+        patterns = [
+            r'[Dd]epart(?:s|ing|ure)[:\s]+(?:[A-Za-z]+,?\s+)?([A-Z][a-z]+ \d{1,2},? \d{4})',
+            r'[Dd]epart(?:s|ing|ure)[:\s]+(?:[A-Za-z]+,?\s+)?([A-Z][a-z]+ \d{1,2})',
+            r'([A-Z][a-z]+ \d{1,2},? \d{4})',  # any full date as fallback
+        ]
+    elif trip_type == 'Car Rental':
+        patterns = [
+            r'[Pp]ick(?:\s*|-)?up[:\s]+(?:[A-Za-z]+,?\s+)?([A-Z][a-z]+ \d{1,2},? \d{4})',
+            r'[Pp]ick(?:\s*|-)?up[:\s]+(?:[A-Za-z]+,?\s+)?([A-Z][a-z]+ \d{1,2})',
+        ]
+    elif trip_type == 'Hotel':
+        patterns = [
+            r'[Cc]heck[- ]in[:\s]+(?:[A-Za-z]+,?\s+)?([A-Z][a-z]+ \d{1,2},? \d{4})',
+            r'[Aa]rriv(?:al|ing)[:\s]+(?:[A-Za-z]+,?\s+)?([A-Z][a-z]+ \d{1,2},? \d{4})',
+        ]
+    else:
+        return ''
+
+    for pattern in patterns:
+        m = re.search(pattern, text)
+        if m:
+            raw = m.group(1).strip().rstrip(',')
+            # Try to parse to ISO format
+            for fmt in ('%B %d %Y', '%B %d, %Y', '%b %d %Y', '%b %d, %Y', '%B %d', '%b %d'):
+                try:
+                    from datetime import datetime
+                    dt = datetime.strptime(raw, fmt)
+                    if dt.year == 1900:
+                        dt = dt.replace(year=datetime.now().year)
+                    return dt.strftime('%Y-%m-%d')
+                except ValueError:
+                    continue
+    return ''
+
+
 def _extract_status(subject: str) -> str | None:
     lower = subject.lower()
     if 'cancel' in lower:
@@ -132,8 +176,12 @@ def process(email: dict, state: dict) -> str | None:
 
     known_trips = state.setdefault('trip_confirmations', {})
 
-    if confirmation and confirmation in known_trips:
-        prev = known_trips[confirmation]
+    # Stable state key: use confirmation number when available; fall back to
+    # vendor+type+month so entries without a confirmation still dedup correctly.
+    state_key = confirmation if confirmation else f'{vendor}:{trip_type}:{date[:7]}'
+
+    if state_key in known_trips:
+        prev = known_trips[state_key]
         if status == prev.get('status'):
             return None
 
@@ -154,12 +202,29 @@ def process(email: dict, state: dict) -> str | None:
         logger.info(f'Travel.md: status update {summary}')
         return summary
 
+    # Content-based safety net: if state was reset, check the file directly
+    # so we never write a duplicate block.
+    existing_content = get_memory_content(None, 'Travel.md')
+    dedup_ids = (confirmation,) if confirmation else (vendor, trip_type)
+    if block_exists(existing_content, date, *dedup_ids):
+        logger.debug(f'Travel.md: skipping duplicate block ({state_key} {date})')
+        # Rebuild state entry from file content so future status updates work
+        status_line = f'**Status:** [{status}] {date}'
+        known_trips[state_key] = {
+            'vendor': vendor, 'status': status, 'status_line': status_line,
+            'date': date, 'destination': destination,
+        }
+        return None
+
     # First time — full entry
+    travel_date = _extract_travel_date(trip_type, plain)
     status_line = f'**Status:** [{status}] {date}'
     header = f'{trip_type} — {destination}' if destination else trip_type
     lines = [f'## {date} — {header}']
     lines.append(f'**Vendor:** {vendor}')
     lines.append(status_line)
+    if travel_date:
+        lines.append(f'**Travel date:** {travel_date}')
     if dates:
         lines.append(f'**Dates:** {dates}')
     if confirmation:
@@ -168,15 +233,16 @@ def process(email: dict, state: dict) -> str | None:
 
     append_to_memory(None, 'Travel.md', '\n'.join(lines))
 
-    if confirmation:
-        known_trips[confirmation] = {
-            'vendor': vendor, 'status': status, 'status_line': status_line,
-            'date': date, 'destination': destination,
-        }
+    known_trips[state_key] = {
+        'vendor': vendor, 'status': status, 'status_line': status_line,
+        'date': date, 'destination': destination,
+    }
 
     summary = f'{trip_type}: {destination} ({vendor})' if destination else f'{trip_type}: {vendor}'
     summary += f' [{status}]'
-    if dates:
+    if travel_date:
+        summary += f' — departs {travel_date}'
+    elif dates:
         summary += f' — {dates[:40]}'
     url = _trip_url(vendor, confirmation)
     if url:
