@@ -144,6 +144,9 @@ def _extract_status(subject: str) -> str:
     if any(w in lower for w in ('confirmed', 'received your order', 'we got your order',
                                  'is confirmed', 'order confirmed', 'thank you for your order')):
         return 'Confirmed'
+    if any(w in lower for w in ('refund', 'refunded', 'credit issued', 'return approved',
+                                 'return received', 'returned')):
+        return 'Refunded'
     if 'cancel' in lower:
         return 'Cancelled'
     if 'placed' in lower or 'successfully placed' in lower:
@@ -277,6 +280,7 @@ def process(email: dict, state: dict) -> str | None:
         if status == prev_status:
             return None
 
+        # Update per-item status lines
         items = prev.get('items', {})
         updated = []
         for item in items.values():
@@ -291,24 +295,48 @@ def process(email: dict, state: dict) -> str | None:
             updated.append(item)
 
         if not updated and not items:
-            # Old-format state entry with no items dict — fall back to append
             append_to_memory('Orders', filename, f'↳ {date}: **{status}**')
 
-        # For Shipped updates: append carrier + tracking note
+        # Update lifecycle header fields in-place (placeholder → real value)
+        carrier = ''
+        new_tracking = ''
+
         if status == 'Shipped':
             carrier = _extract_carrier(body)
             ship_extract = _extract_items_llm(vendor, subject, body)
             new_tracking = ship_extract.get('tracking', '')
-            if carrier or new_tracking:
-                shipped_note = f'↳ {date}: **Shipped**'
-                if carrier:
-                    shipped_note += f' | Carrier: {carrier}'
-                if new_tracking:
-                    shipped_note += f' | Tracking: {new_tracking}'
-                append_to_memory('Orders', filename, shipped_note)
+            new_shipped = f'**Shipped:** {date}'
+            if carrier:
+                new_shipped += f' | Carrier: {carrier}'
+            if new_tracking:
+                new_shipped += f' | Tracking: {new_tracking}'
+            old_shipped = prev.get('shipped_line', '**Shipped:** —')
+            if not update_in_memory('Orders', filename, old_shipped, new_shipped):
+                # No placeholder (old entry) — append a note instead
+                append_to_memory('Orders', filename, f'↳ {new_shipped}')
+            prev['shipped_line'] = new_shipped
+
+        elif status == 'Delivered':
+            new_delivered = f'**Delivered:** {date}'
+            old_delivered = prev.get('delivered_line', '**Delivered:** —')
+            if not update_in_memory('Orders', filename, old_delivered, new_delivered):
+                append_to_memory('Orders', filename, f'↳ {new_delivered}')
+            prev['delivered_line'] = new_delivered
+
+        elif status == 'Refunded':
+            append_to_memory('Orders', filename, f'**Refunded:** {date}')
 
         prev['status'] = status
-        summary = f'{vendor} #{order_num} → {status}'
+
+        # Telegram summary
+        summary = f'{vendor} #{order_num}\n{prev_status} → {status}'
+        if status == 'Shipped' and (carrier or new_tracking):
+            parts = []
+            if carrier:
+                parts.append(f'Carrier: {carrier}')
+            if new_tracking:
+                parts.append(f'Tracking: {new_tracking}')
+            summary += ' | ' + ' | '.join(parts)
         url = _order_url(vendor, order_num)
         if url:
             summary += f'\n{url}'
@@ -322,15 +350,26 @@ def process(email: dict, state: dict) -> str | None:
     tracking = extracted.get('tracking', '')
     carrier = _extract_carrier(body) if status in ('Shipped', 'Out for Delivery') else ''
 
+    # Build lifecycle placeholder lines — updated in-place as order progresses
+    shipped_placeholder = '**Shipped:** —'
+    delivered_placeholder = '**Delivered:** —'
+    if status == 'Shipped':
+        shipped_line = f'**Shipped:** {date}'
+        if carrier:
+            shipped_line += f' | Carrier: {carrier}'
+        if tracking:
+            shipped_line += f' | Tracking: {tracking}'
+        shipped_placeholder = shipped_line
+    elif status == 'Delivered':
+        delivered_placeholder = f'**Delivered:** {date}'
+
     lines = [f'## {date} — Order #{order_num or "N/A"} [{status}]']
     lines.append(f'**Vendor:** {vendor}')
+    lines.append(f'**Status:** [{status}]')
+    lines.append(shipped_placeholder)
+    lines.append(delivered_placeholder)
     if total:
         lines.append(f'**Total:** {total}')
-    if tracking or carrier:
-        shipping_line = f'**Tracking:** {tracking}' if tracking else '**Tracking:**'
-        if carrier:
-            shipping_line += f' | Carrier: {carrier}'
-        lines.append(shipping_line)
     lines.append('')
     for item in items:
         name = item.get('name', '').strip()
@@ -358,6 +397,8 @@ def process(email: dict, state: dict) -> str | None:
         }
         known_orders[order_num] = {
             'vendor': vendor, 'date': date, 'status': status, 'items': item_dict,
+            'shipped_line': shipped_placeholder,
+            'delivered_line': delivered_placeholder,
         }
 
     n = len(items)
