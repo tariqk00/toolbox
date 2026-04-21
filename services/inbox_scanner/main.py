@@ -34,9 +34,6 @@ GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 CONFIG_DIR = os.path.join(BASE_DIR, 'config', 'inbox_scanner')
 EXTRACTOR_CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'email_extractor_config.json')
 
-# Rate limit between LLM calls
-GEMINI_DELAY_SECONDS = 7
-
 # Uptown inquiry response timeout — alert if no reply within this many hours
 UPTOWN_RESPONSE_TIMEOUT_HOURS = 48
 
@@ -296,10 +293,6 @@ def run(mailbox_id: str = 'primary') -> None:
 
         # Cache miss: fetch full email, classify, store
         try:
-            # Rate-limit LLM calls
-            if classified > 0:
-                time.sleep(GEMINI_DELAY_SECONDS)
-
             full = get_full_email(service, msg_id)
             html = full.get('html', '')
             plain = full.get('plain', '')
