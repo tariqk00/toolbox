@@ -72,9 +72,26 @@ def _upload(service, file_id: str, content: str, dry_run: bool) -> None:
 # ── Block parsing ────────────────────────────────────────────────────────────
 
 def _split_blocks(content: str) -> list[str]:
-    """Split content into blocks by '---' separator. Preserves trailing ---."""
+    """Split content into blocks by '---' separator.
+
+    Strips orphaned leading '↳ ...' lines from each block — these were appended
+    by old orders.py after a separator, and land before the next block's '##' header,
+    breaking key extraction.
+    """
     blocks = re.split(r'\n---\n?', content)
-    return [b.strip() for b in blocks if b.strip() and b.strip() != '---']
+    result = []
+    for b in blocks:
+        b = b.strip()
+        if not b or b == '---':
+            continue
+        # Drop any ↳ lines orphaned at the start of a block
+        lines = b.splitlines()
+        while lines and lines[0].startswith('↳'):
+            lines.pop(0)
+        b = '\n'.join(lines).strip()
+        if b:
+            result.append(b)
+    return result
 
 
 def _rejoin(blocks: list[str]) -> str:
