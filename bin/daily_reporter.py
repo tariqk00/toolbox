@@ -70,9 +70,10 @@ def main():
                 vendor = f['name'].replace('.md', '')
                 amt_m = re.search(r'\*\*Amount:\*\*\s*(.+)', b)
                 type_m = re.search(r'\*\*Type:\*\*\s*\[(.+?)\]', b)
-                amt = amt_m.group(1) if amt_m else 'Unknown'
-                typ = type_m.group(1) if type_m else 'Unknown'
-                receipts.append(f"• {vendor} — {amt} {typ}")
+                amt = (amt_m.group(1).strip() if amt_m else '').strip()
+                typ = (type_m.group(1).strip() if type_m else '').strip()
+                label = f"{amt} {typ}".strip() if amt else typ or 'Payment'
+                receipts.append(f"• {vendor} — {label}")
         if receipts:
             money_sections.append("**Receipts**\n" + "\n".join(receipts))
             
