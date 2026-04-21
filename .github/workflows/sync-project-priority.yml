@@ -1,0 +1,83 @@
+name: Sync issue priority label → GitHub Project
+
+on:
+  issues:
+    types: [labeled, unlabeled, opened, closed, reopened]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+          script: |
+            const PROJECT_NUMBER = 1;
+            const OWNER = 'tariqk00';
+            const PRIORITY_FIELD = 'PVTSSF_lAHOAI5Oic4BT3JmzhBHkZg';
+            const STATUS_FIELD = 'PVTSSF_lAHOAI5Oic4BT3JmzhBDHqA';
+
+            const PRIORITY_OPTIONS = {
+              'now':      'eac37475',
+              'next':     '9a541802',
+              'later':    '7137d55a',
+              'deferred': '2bdc4bae',
+            };
+            const STATUS_OPTIONS = {
+              'open':   'f75ad846',  // Todo
+              'closed': '98236657',  // Done
+            };
+
+            const issue = context.payload.issue;
+            const issueNodeId = issue.node_id;
+
+            // 1. Ensure issue is in the project (add if missing)
+            const addResult = await github.graphql(`
+              mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                  item { id }
+                }
+              }
+            `, {
+              projectId: 'PVT_kwHOAI5Oic4BT3Jm',
+              contentId: issueNodeId,
+            });
+
+            const itemId = addResult.addProjectV2ItemById.item.id;
+
+            // 2. Set Priority from labels
+            const labels = issue.labels.map(l => l.name.toLowerCase());
+            const priority = ['now', 'next', 'later', 'deferred'].find(p => labels.includes(p));
+            if (priority) {
+              await github.graphql(`
+                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: $value
+                  }) { projectV2Item { id } }
+                }
+              `, {
+                projectId: 'PVT_kwHOAI5Oic4BT3Jm',
+                itemId,
+                fieldId: PRIORITY_FIELD,
+                value: { singleSelectOptionId: PRIORITY_OPTIONS[priority] },
+              });
+            }
+
+            // 3. Set Status from issue state
+            const statusOptionId = issue.state === 'closed'
+              ? STATUS_OPTIONS['closed']
+              : STATUS_OPTIONS['open'];
+            await github.graphql(`
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: $value
+                }) { projectV2Item { id } }
+              }
+            `, {
+              projectId: 'PVT_kwHOAI5Oic4BT3Jm',
+              itemId,
+              fieldId: STATUS_FIELD,
+              value: { singleSelectOptionId: statusOptionId },
+            });
+
+            console.log(`Synced #${issue.number}: priority=${priority || 'unchanged'}, status=${issue.state}`);
