@@ -8,6 +8,7 @@ Dedup key: vendor:amount (only upgrades from Reminder to a concrete type).
 import re
 import logging
 from ..writers import append_to_memory, update_in_memory
+from ..enrichment import enrich_receipt
 
 logger = logging.getLogger('EmailExtractor.Receipts')
 
@@ -127,5 +128,6 @@ def process(email: dict, state: dict) -> str | None:
     summary = f'{vendor}: {amount} [{receipt_type}]' if amount else f'{vendor}: [{receipt_type}]'
     if vendor == 'Uber' and (rider := _extract_uber_rider(subject, plain)):
         summary += f' — {rider}'
-    logger.info(f'Receipts/{filename}: {summary}')
+    summary = enrich_receipt(summary, vendor, amount, receipt_type)
+    logger.info(f'Receipts/{filename}: {summary.splitlines()[0]}')
     return summary

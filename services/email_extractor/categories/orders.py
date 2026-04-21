@@ -22,6 +22,7 @@ if os.path.dirname(BASE_DIR) not in sys.path:
     sys.path.insert(0, os.path.dirname(BASE_DIR))
 
 from ..writers import append_to_memory, update_in_memory
+from ..enrichment import enrich_order
 from ..scanner import html_to_text
 
 logger = logging.getLogger('EmailExtractor.Orders')
@@ -368,5 +369,6 @@ def process(email: dict, state: dict) -> str | None:
     url = _order_url(vendor, order_num)
     if url:
         summary += f'\n{url}'
+    summary = enrich_order(summary, vendor, order_num, n, total, status)
     logger.info(f'Orders/{filename}: new order — {label}: {n} items [{status}]')
     return summary

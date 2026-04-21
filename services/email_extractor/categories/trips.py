@@ -7,6 +7,7 @@ Subsequent emails: update status+date in-place via update_in_memory.
 import re
 import logging
 from ..writers import append_to_memory, update_in_memory, get_memory_content, block_exists
+from ..enrichment import enrich_trip
 
 logger = logging.getLogger('EmailExtractor.Trips')
 
@@ -247,5 +248,6 @@ def process(email: dict, state: dict) -> str | None:
     url = _trip_url(vendor, confirmation)
     if url:
         summary += f'\n{url}'
-    logger.info(f'Travel.md: {summary}')
+    summary = enrich_trip(summary, trip_type, vendor, destination, status, travel_date)
+    logger.info(f'Travel.md: {summary.splitlines()[0]}')
     return summary
