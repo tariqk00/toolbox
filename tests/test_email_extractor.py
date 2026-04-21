@@ -356,12 +356,12 @@ class TestTripsDedup(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_travel_date_extracted_for_flight(self):
-        """Departure date from email body is written as Travel date field."""
+        """Departure date from LLM is written as Departure field in itinerary block."""
         plain = 'Departs May 15, 2026 at 07:30 from JFK'
         email = self._make_email('Delta', 'Flight confirmation HXXKJD', plain=plain)
         _, appended, _ = self._run_trip(email)
-        self.assertTrue(any('Travel date' in a for a in appended),
-                        "Expected Travel date field in entry")
+        self.assertTrue(any('Outbound' in a or 'Departure' in a for a in appended),
+                        "Expected Outbound/Departure field in itinerary block")
 
 
 class TestCarrierExtraction(unittest.TestCase):
