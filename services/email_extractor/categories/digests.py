@@ -43,9 +43,16 @@ def _call_llm(text: str) -> list[dict]:
     try:
         raw = re.sub(r'^```(?:json)?\s*', '', raw)
         raw = re.sub(r'\s*```$', '', raw)
-        return json.loads(raw)
+        parsed = json.loads(raw)
+        # Groq sometimes wraps the array in an object — unwrap it
+        if isinstance(parsed, dict):
+            for v in parsed.values():
+                if isinstance(v, list):
+                    parsed = v
+                    break
+        return parsed if isinstance(parsed, list) else []
     except Exception as e:
-        logger.error(f'Gemini extraction failed: {e}')
+        logger.error(f'Digest extraction failed: {e}')
         return []
 
 
