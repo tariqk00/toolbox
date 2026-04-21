@@ -82,7 +82,22 @@ def update_home_index(today: date, money_lines: list[str], reading_lines: list[s
     money_rows = ''
     money_total = 0.0
     for line in money_lines:
-        # Format: "• Vendor — [$X.XX] [Type]" or "• Vendor — Type"
+        # Markdown link format: • [text](url) rest
+        ml = _re.match(r'• \[(.+?)\]\((.+?)\)\s*(.*)', line)
+        if ml:
+            link_text, url, rest = ml.group(1), ml.group(2), ml.group(3).strip()
+            parts = link_text.rsplit(' — ', 1)
+            display = parts[0] if len(parts) > 1 else link_text
+            detail = parts[1] if len(parts) > 1 else rest.strip('[]') if rest else ''
+            chip = f' <span class="chip dim">{detail.lower()}</span>' if detail else ''
+            money_rows += (
+                f'<div class="lifedoc-row">\n'
+                f'  <span class="time">—</span>\n'
+                f'  <span class="label"><a href="{url}" target="_blank">{display}</a>{chip}</span>\n'
+                f'</div>\n'
+            )
+            continue
+        # Dollar amount: • Vendor — $X.XX Type
         m = _re.match(r'• (.+?) — \$?([\d.]+) (.+)', line)
         if m:
             vendor, amt_s, typ = m.group(1), m.group(2), m.group(3)
@@ -94,16 +109,17 @@ def update_home_index(today: date, money_lines: list[str], reading_lines: list[s
                 f'  <span class="amount">${float(amt_s):.2f}</span>\n'
                 f'</div>\n'
             )
-        else:
-            m2 = _re.match(r'• (.+?) — (.+)', line)
-            if m2:
-                vendor, typ = m2.group(1), m2.group(2)
-                money_rows += (
-                    f'<div class="lifedoc-row">\n'
-                    f'  <span class="time">—</span>\n'
-                    f'  <span class="label">{vendor} <span class="chip dim">{typ.lower()}</span></span>\n'
-                    f'</div>\n'
-                )
+            continue
+        # Fallback: • Vendor — Type
+        m2 = _re.match(r'• (.+?) — (.+)', line)
+        if m2:
+            vendor, typ = m2.group(1), m2.group(2)
+            money_rows += (
+                f'<div class="lifedoc-row">\n'
+                f'  <span class="time">—</span>\n'
+                f'  <span class="label">{vendor} <span class="chip dim">{typ.lower()}</span></span>\n'
+                f'</div>\n'
+            )
 
     money_chip = f'<span class="chip neutral">${money_total:.2f} last log</span>' if money_total else '<span class="chip dim">no data</span>'
     money_section = f'<div class="lifedoc-section"><span>Money</span>{money_chip}</div>\n\n{money_rows}'
@@ -239,15 +255,21 @@ def main():
             blocks = parse_blocks_for_date(content, yesterday)
             for b in blocks:
                 vendor_m = re.search(r'\*\*Vendor:\*\*\s*(.+)', b)
+                url_m = re.search(r'\*\*URL:\*\*\s*(\S+)', b)
                 header = b.split('\n')[0]
                 order_m = re.search(r'Order #(\S+)', header)
                 status_m = re.search(r'\*\*Status:\*\*\s*\[(.+?)\]', b)
-                
+
                 vendor = vendor_m.group(1) if vendor_m else 'Unknown Vendor'
                 order = order_m.group(1) if order_m else 'Unknown'
                 status = status_m.group(1) if status_m else 'Unknown'
-                
-                orders.append(f"• {vendor} — Order #{order} [{status}]")
+                url = url_m.group(1) if url_m else ''
+
+                label = f"{vendor} — Order #{order}"
+                if url:
+                    orders.append(f"• [{label}]({url}) [{status}]")
+                else:
+                    orders.append(f"• {label} [{status}]")
         if orders:
             money_sections.append("**Orders**\n" + "\n".join(orders))
             
@@ -268,10 +290,16 @@ def main():
                 parts = header.split('—')
                 typ_dest = ' — '.join(p.strip() for p in parts[1:]) if len(parts) > 1 else 'Unknown Trip'
                 vendor_m = re.search(r'\*\*Vendor:\*\*\s*(.+)', b)
+                url_m = re.search(r'\*\*URL:\*\*\s*(\S+)', b)
                 status_m = re.search(r'\*\*Status:\*\*\s*\[(.+?)\]', b)
                 vendor = vendor_m.group(1) if vendor_m else 'Unknown Vendor'
+                url = url_m.group(1) if url_m else ''
                 status = status_m.group(1) if status_m else 'Unknown'
-                sections['Travel'].append(f"• {vendor} — {typ_dest} [{status}]")
+                label = f"{vendor} — {typ_dest}"
+                if url:
+                    sections['Travel'].append(f"• [{label}]({url}) [{status}]")
+                else:
+                    sections['Travel'].append(f"• {label} [{status}]")
                 
     # Data source 4: Inbox
     inbox_folder_id = DRIVE_TREE.get('path_to_id', {}).get('01 - Second Brain/Inbox')

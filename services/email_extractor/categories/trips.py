@@ -260,6 +260,9 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
         lines.append(f'**Vendor:** {vendor}')
         if confirmation:
             lines.append(f'**Confirmation:** {confirmation}')
+            url = _trip_url(vendor, confirmation)
+            if url:
+                lines.append(f'**URL:** {url}')
         lines.append(status_line)
         lines.append('')
         lines.append('### Outbound')
@@ -291,6 +294,9 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
         lines.append(f'**Vendor:** {vendor}')
         if confirmation:
             lines.append(f'**Confirmation:** {confirmation}')
+            url = _trip_url(vendor, confirmation)
+            if url:
+                lines.append(f'**URL:** {url}')
         lines.append(status_line)
         lines.append('')
         lines.append(f'**Check-in:** {checkin}')
@@ -315,6 +321,9 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
         lines.append(f'**Vendor:** {vendor}')
         if confirmation:
             lines.append(f'**Confirmation:** {confirmation}')
+            url = _trip_url(vendor, confirmation)
+            if url:
+                lines.append(f'**URL:** {url}')
         lines.append(status_line)
         lines.append('')
         pickup_str = f'{pickup_date} {pickup_time}'.strip() if pickup_time else pickup_date
@@ -339,6 +348,9 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
         lines.append(f'**Vendor:** {vendor}')
         if confirmation:
             lines.append(f'**Confirmation:** {confirmation}')
+            url = _trip_url(vendor, confirmation)
+            if url:
+                lines.append(f'**URL:** {url}')
         lines.append(status_line)
         lines.append('')
         date_str = f'{res_date} at {res_time}' if res_time else res_date
@@ -353,6 +365,9 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
         lines.append(f'**Vendor:** {vendor}')
         if confirmation:
             lines.append(f'**Confirmation:** {confirmation}')
+            url = _trip_url(vendor, confirmation)
+            if url:
+                lines.append(f'**URL:** {url}')
         lines.append(status_line)
 
     lines.append('---')

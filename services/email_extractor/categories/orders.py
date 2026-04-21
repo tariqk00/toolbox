@@ -356,6 +356,9 @@ def process(email: dict, state: dict) -> str | None:
 
     lines = [f'## {date} — Order #{order_num or "N/A"} [{status}]']
     lines.append(f'**Vendor:** {vendor}')
+    url = _order_url(vendor, order_num)
+    if url:
+        lines.append(f'**URL:** {url}')
     lines.append(f'**Status:** [{status}]')
     lines.append(shipped_placeholder)
     lines.append(delivered_placeholder)
