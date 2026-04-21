@@ -124,9 +124,9 @@ def process(email: dict, known_senders: dict, raw_senders: dict = None) -> bool:
 
     lines = [f'## {date} — {subject}', '']
     for art in articles:
-        title = art.get('title', '').strip()
-        link = art.get('link', '')
-        summary = art.get('summary', '').strip()
+        title = (art.get('title') or '').strip()
+        link = art.get('link') or ''
+        summary = (art.get('summary') or '').strip()
         if not title:
             continue
         if link:
