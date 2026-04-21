@@ -106,7 +106,7 @@ def build_sessions():
             
             # Extract what worked (first bullet under ## What WORKED)
             what_worked = "No data"
-            worked_section = re.search(r'## What WORKED\n(.*?)(?=##|\Z)', content, re.DOTALL)
+            worked_section = re.search(r'## What WORKED[^\n]*\n(.*?)(?=##|\Z)', content, re.DOTALL)
             if worked_section:
                 bullet_match = re.search(r'^[-*]\s+(.+)', worked_section.group(1).strip(), re.MULTILINE)
                 if bullet_match:
@@ -167,9 +167,9 @@ def build_health():
                 if not line.strip(): continue
                 try:
                     data = json.loads(line)
-                    date_str = data.get('timestamp', '')[:10]
+                    date_str = data.get('date', data.get('timestamp', '')[:10])
                     if date_str >= cutoff_date:
-                        daily_stats[date_str]['tokens'] += data.get('total_tokens', 0)
+                        daily_stats[date_str]['tokens'] += data.get('tokens_used', data.get('total_tokens', 0))
                         daily_stats[date_str]['cost'] += data.get('cost_usd_est', 0.0)
                         total_cost += data.get('cost_usd_est', 0.0)
                 except Exception:
