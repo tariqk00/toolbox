@@ -74,23 +74,45 @@ def _call_llm(text: str, today: str, year: str) -> dict | None:
         return None
 
 
+def _existing_task_titles(service, list_id: str) -> set:
+    """Return normalised titles of all open tasks in the list."""
+    try:
+        result = service.tasks().list(
+            tasklist=list_id, showCompleted=False, maxResults=100,
+        ).execute()
+        titles = set()
+        for t in result.get('items', []):
+            raw = t.get('title', '')
+            # Strip effort prefix e.g. "(15 min) Do thing" → "do thing"
+            raw = re.sub(r'^\(\d+ min\)\s*', '', raw, flags=re.IGNORECASE)
+            titles.add(raw.strip().lower())
+        return titles
+    except Exception as e:
+        logger.warning(f'Could not fetch existing tasks for dedup: {e}')
+        return set()
+
+
 def _push_to_tasks(tasks: list) -> int:
-    """Create tasks in Google Tasks. Returns count created."""
+    """Create tasks in Google Tasks, skipping any whose title already exists open."""
     try:
         from toolbox.lib.tasks import get_tasks_service, get_or_create_list, create_task
         service = get_tasks_service()
         list_id = get_or_create_list(service, TASKS_LIST_NAME)
+        existing = _existing_task_titles(service, list_id)
         created = 0
         for t in tasks:
             title = t.get('text', '').strip()
             if not title:
                 continue
+            if title.lower() in existing:
+                logger.debug(f'Skipping duplicate task: {title[:60]}')
+                continue
             effort = t.get('effort')
-            if effort:
-                title = f'({effort}) {title}'
+            full_title = f'({effort}) {title}' if effort else title
             notes = t.get('context', '').strip() if t.get('context') else None
             due = t.get('due_date') or None
-            create_task(service, list_id, title, due=due, notes=notes)
+            create_task(service, list_id, full_title, due=due, notes=notes)
+            existing.add(title.lower())  # prevent dupes within the same batch
             created += 1
         return created
     except Exception as e:
