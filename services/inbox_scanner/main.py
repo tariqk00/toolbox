@@ -288,7 +288,9 @@ def run(mailbox_id: str = 'primary') -> None:
                 if result:
                     results[category].append(result)
                     if category == 'action_required' and cached.get('priority') == 'high':
-                        actions.send_immediate_alert(result, telegram_service)
+                        if not cached.get('_alerted'):
+                            actions.send_immediate_alert(result, telegram_service)
+                            cached['_alerted'] = True
             continue
 
         # Cache miss: fetch full email, classify, store
@@ -318,6 +320,7 @@ def run(mailbox_id: str = 'primary') -> None:
                     results[category].append(result)
                     if category == 'action_required' and classification.get('priority') == 'high':
                         actions.send_immediate_alert(result, telegram_service)
+                        classification['_alerted'] = True
                     # Uptown: send Telegram alert immediately on new inquiry
                     if mailbox_id == 'uptown' and category == 'inquiry':
                         actions.send_uptown_inquiry_alert(result, telegram_service)
