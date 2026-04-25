@@ -66,6 +66,26 @@ class TestNewOrderFormat(unittest.TestCase):
         self.assertNotIn('**Shipped:** —', appended[0])
         self.assertIn('**Shipped:** 2026-04-11', appended[0])
 
+    def test_new_shipped_order_writes_shipping_fields(self):
+        email = _make_email(
+            'Amazon',
+            'Your order #112-3456789 has shipped',
+            plain='Shipped via UPS Ground. Tracking number 1Z999AA10123456784. Arriving by Apr 30, 2026.',
+            date='2026-04-25',
+        )
+        result, appended, _, state = _run_process(email, extract_result=EMPTY_EXTRACT)
+        block = appended[0]
+        self.assertIn('**Carrier:** UPS', block)
+        self.assertIn('**Tracking:** 1Z999AA10123456784', block)
+        self.assertIn('**Estimated Delivery:** 2026-04-30', block)
+        self.assertIn('Carrier: UPS', result)
+        self.assertIn('Tracking: 1Z999AA10123456784', result)
+        self.assertIn('ETA: 2026-04-30', result)
+        order = state['order_numbers']['112-3456789']
+        self.assertEqual(order['carrier'], 'UPS')
+        self.assertEqual(order['tracking'], '1Z999AA10123456784')
+        self.assertEqual(order['estimated_delivery'], '2026-04-30')
+
     def test_state_stores_placeholder_lines(self):
         email = _make_email('Amazon', 'Your order has been confirmed', date='2026-04-10')
         email['subject'] = 'Your order #112-3456789 has been confirmed'
@@ -119,6 +139,18 @@ class TestStatusTransitions(unittest.TestCase):
         shipped_val = updated.get('**Shipped:** —', '')
         self.assertIn('1Z999AA1', shipped_val)
 
+    def test_shipped_update_includes_eta(self):
+        state = self._make_state_with_order()
+        email = _make_email(
+            'Amazon',
+            'Your order #112-3456789 has shipped',
+            plain='Delivery expected by Apr 30, 2026',
+            date='2026-04-25',
+        )
+        _, _, updated, _ = _run_process(email, state=state, extract_result=EMPTY_EXTRACT)
+        shipped_val = updated.get('**Shipped:** —', '')
+        self.assertIn('ETA: 2026-04-30', shipped_val)
+
     def test_confirmed_to_delivered_updates_delivered_placeholder(self):
         state = self._make_state_with_order(status='Shipped')
         state['order_numbers']['112-3456789']['shipped_line'] = '**Shipped:** 2026-04-11'
@@ -164,6 +196,23 @@ class TestRefundStatus(unittest.TestCase):
                             date='2026-04-15')
         _, appended, _, _ = _run_process(email, state=state)
         self.assertTrue(any('Refunded' in a for a in appended))
+
+
+class TestShippingDetailExtraction(unittest.TestCase):
+
+    def test_tracking_number_labeled(self):
+        from toolbox.services.email_extractor.categories.orders import _extract_tracking
+        self.assertEqual(
+            _extract_tracking('Tracking number: 1Z999AA10123456784'),
+            '1Z999AA10123456784',
+        )
+
+    def test_estimated_delivery_normalized(self):
+        from toolbox.services.email_extractor.categories.orders import _extract_delivery_date
+        self.assertEqual(
+            _extract_delivery_date('Your package is arriving by Apr 30, 2026', '2026-04-25'),
+            '2026-04-30',
+        )
 
 
 if __name__ == '__main__':

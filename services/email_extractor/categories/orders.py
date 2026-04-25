@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import sys
+from datetime import datetime
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,7 +42,9 @@ Return ONLY valid JSON in this exact format:
 {{
   "items": [{{"name": "...", "qty": "1", "price": "$X.XX"}}],
   "total": "$X.XX",
-  "tracking": ""
+  "carrier": "",
+  "tracking": "",
+  "estimated_delivery": ""
 }}
 
 Rules:
@@ -49,7 +52,9 @@ Rules:
 - qty: quantity as a string, default "1"
 - price: per-item price with $ sign, or "" if not shown
 - total: the amount actually charged (after tax/shipping), with $ sign, or "" if not found
+- carrier: UPS, FedEx, USPS, DHL, Amazon, OnTrac, or "" if not found
 - tracking: UPS/FedEx/USPS tracking number if present, or ""
+- estimated_delivery: delivery ETA/date as YYYY-MM-DD if present, or ""
 - Use "" for missing fields, not null
 - Return only JSON, no explanation
 
@@ -178,6 +183,81 @@ def _extract_carrier(body: str) -> str:
     return ''
 
 
+def _normalize_delivery_date(raw: str, email_date: str) -> str:
+    raw = raw.strip().strip(',.')
+    raw = re.sub(r'\s+', ' ', raw)
+    formats = [
+        '%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y',
+        '%B %d, %Y', '%b %d, %Y',
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(raw, fmt).strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+    year = email_date[:4]
+    for fmt in ('%B %d', '%b %d'):
+        try:
+            return datetime.strptime(f'{raw} {year}', f'{fmt} %Y').strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+    return raw
+
+
+def _extract_delivery_date(body: str, email_date: str) -> str:
+    date_pattern = (
+        r'(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|'
+        r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:,\s+\d{4})?)'
+    )
+    patterns = [
+        rf'(?:arriving|arrives|arrival|delivery|delivered|estimated delivery|eta)'
+        rf'[^.\n]{{0,50}}(?:on|by)?\s*{date_pattern}',
+        rf'{date_pattern}[^.\n]{{0,50}}(?:delivery|arriving|arrives|delivered)',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, body[:4000], re.IGNORECASE)
+        if m:
+            return _normalize_delivery_date(m.group(1), email_date)
+    return ''
+
+
+def _extract_tracking(body: str) -> str:
+    text = body[:5000]
+    labeled = re.search(
+        r'(?:tracking|tracking number|track(?:ing)? id|shipment id)[^A-Z0-9]{0,20}'
+        r'([A-Z0-9][A-Z0-9 -]{7,34}[A-Z0-9])',
+        text,
+        re.IGNORECASE,
+    )
+    if labeled:
+        value = re.sub(r'[\s-]+', '', labeled.group(1)).strip()
+        return re.sub(r'(?i)^number', '', value)
+
+    carrier_patterns = [
+        r'\b(1Z[0-9A-Z]{16})\b',                 # UPS
+        r'\b(\d{12,22})\b',                      # FedEx
+        r'\b(9[234]\d{20,32})\b',                # USPS
+    ]
+    for pattern in carrier_patterns:
+        m = re.search(pattern, text)
+        if m:
+            return m.group(1)
+    return ''
+
+
+def _shipping_details(extracted: dict, body: str, email_date: str) -> dict:
+    return {
+        'carrier': extracted.get('carrier') or _extract_carrier(body),
+        'tracking': extracted.get('tracking') or _extract_tracking(body),
+        'estimated_delivery': (
+            extracted.get('estimated_delivery')
+            or extracted.get('delivery_date')
+            or extracted.get('eta')
+            or _extract_delivery_date(body, email_date)
+        ),
+    }
+
+
 def _order_url(vendor: str, order_num: str) -> str:
     """Return a direct order URL for vendors that support it, else empty string."""
     if vendor == 'Amazon' and order_num:
@@ -190,7 +270,7 @@ def _order_url(vendor: str, order_num: str) -> str:
 def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
     """
     Ask Gemini to extract items, total, and tracking from an order email.
-    Returns {items: [{name, qty, price}], total, tracking}.
+    Returns {items: [{name, qty, price}], total, carrier, tracking, estimated_delivery}.
     Falls back to empty dict on failure.
     """
     from toolbox.lib.llm import call_json
@@ -293,14 +373,18 @@ def process(email: dict, state: dict) -> str | None:
         new_tracking = ''
 
         if status == 'Shipped':
-            carrier = _extract_carrier(body)
             ship_extract = _extract_items_llm(vendor, subject, body)
-            new_tracking = ship_extract.get('tracking', '')
+            shipping = _shipping_details(ship_extract, body, date)
+            carrier = shipping['carrier']
+            new_tracking = shipping['tracking']
+            eta = shipping['estimated_delivery']
             new_shipped = f'**Shipped:** {date}'
             if carrier:
                 new_shipped += f' | Carrier: {carrier}'
             if new_tracking:
                 new_shipped += f' | Tracking: {new_tracking}'
+            if eta:
+                new_shipped += f' | ETA: {eta}'
             old_shipped = prev.get('shipped_line', '**Shipped:** —')
             if not update_in_memory('Orders', filename, old_shipped, new_shipped):
                 # No placeholder (old entry) — append a note instead
@@ -321,12 +405,14 @@ def process(email: dict, state: dict) -> str | None:
 
         # Telegram summary
         summary = f'{vendor} #{order_num}\n{prev_status} → {status}'
-        if status == 'Shipped' and (carrier or new_tracking):
+        if status == 'Shipped' and (carrier or new_tracking or eta):
             parts = []
             if carrier:
                 parts.append(f'Carrier: {carrier}')
             if new_tracking:
                 parts.append(f'Tracking: {new_tracking}')
+            if eta:
+                parts.append(f'ETA: {eta}')
             summary += ' | ' + ' | '.join(parts)
         url = _order_url(vendor, order_num)
         if url:
@@ -338,8 +424,10 @@ def process(email: dict, state: dict) -> str | None:
     extracted = _extract_items_llm(vendor, subject, body)
     items = extracted.get('items', [])
     total = extracted.get('total', '')
-    tracking = extracted.get('tracking', '')
-    carrier = _extract_carrier(body) if status in ('Shipped', 'Out for Delivery') else ''
+    shipping = _shipping_details(extracted, body, date)
+    tracking = shipping['tracking']
+    carrier = shipping['carrier'] if status in ('Shipped', 'Out for Delivery', 'Delivered') else ''
+    eta = shipping['estimated_delivery']
 
     # Build lifecycle placeholder lines — updated in-place as order progresses
     shipped_placeholder = '**Shipped:** —'
@@ -350,9 +438,11 @@ def process(email: dict, state: dict) -> str | None:
             shipped_line += f' | Carrier: {carrier}'
         if tracking:
             shipped_line += f' | Tracking: {tracking}'
+        if eta:
+            shipped_line += f' | ETA: {eta}'
         shipped_placeholder = shipped_line
     elif status == 'Delivered':
-        delivered_placeholder = f'**Delivered:** {date}'
+        delivered_placeholder = f'**Delivered:** {eta or date}'
 
     lines = [f'## {date} — Order #{order_num or "N/A"} [{status}]']
     lines.append(f'**Vendor:** {vendor}')
@@ -362,6 +452,12 @@ def process(email: dict, state: dict) -> str | None:
     lines.append(f'**Status:** [{status}]')
     lines.append(shipped_placeholder)
     lines.append(delivered_placeholder)
+    if carrier:
+        lines.append(f'**Carrier:** {carrier}')
+    if tracking:
+        lines.append(f'**Tracking:** {tracking}')
+    if eta:
+        lines.append(f'**Estimated Delivery:** {eta}')
     if total:
         lines.append(f'**Total:** {total}')
     lines.append('')
@@ -393,6 +489,9 @@ def process(email: dict, state: dict) -> str | None:
             'vendor': vendor, 'date': date, 'status': status, 'items': item_dict,
             'shipped_line': shipped_placeholder,
             'delivered_line': delivered_placeholder,
+            'carrier': carrier,
+            'tracking': tracking,
+            'estimated_delivery': eta,
         }
 
     n = len(items)
@@ -400,6 +499,12 @@ def process(email: dict, state: dict) -> str | None:
     summary = f'{label}: {n} item{"s" if n != 1 else ""}'
     if total:
         summary += f' — {total}'
+    if carrier:
+        summary += f' | Carrier: {carrier}'
+    if tracking:
+        summary += f' | Tracking: {tracking}'
+    if eta:
+        summary += f' | ETA: {eta}'
     summary += f' [{status}]'
     url = _order_url(vendor, order_num)
     if url:
