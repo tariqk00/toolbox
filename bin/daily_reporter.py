@@ -384,7 +384,7 @@ def main():
     print("Building site and pushing to Git...")
     try:
         subprocess.run([str(MKDOCS), 'build', '--quiet'], cwd=LIFE_DOCS_REPO, check=True)
-        subprocess.run(['git', 'add', 'docs/life/'], cwd=LIFE_DOCS_REPO, check=True)
+        subprocess.run(['git', 'add', 'docs/life/', 'docs/index.md'], cwd=LIFE_DOCS_REPO, check=True)
         subprocess.run(['git', 'commit', '-m', f"daily: {yesterday}"], cwd=LIFE_DOCS_REPO, check=False)
         subprocess.run(['git', 'push'], cwd=LIFE_DOCS_REPO, check=True)
         print("Success.")
