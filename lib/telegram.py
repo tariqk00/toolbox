@@ -6,8 +6,11 @@ Config: config/telegram_config.json (gitignored)
 import json
 import logging
 import os
+import re
+import time
 import urllib.request
 import urllib.error
+from pathlib import Path
 
 logger = logging.getLogger("DriveSorter.Telegram")
 
@@ -36,6 +39,7 @@ def escape(text: str) -> str:
 
 
 CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'telegram_config.json')
+DEDUP_WINDOW_SECONDS = 30 * 60
 
 _config_cache = None
 
@@ -53,6 +57,69 @@ def _load_config():
     except Exception as e:
         logger.error(f"Failed to load Telegram config: {e}")
         return None
+
+
+def _dedup_state_path() -> Path:
+    override = os.getenv('TELEGRAM_DEDUP_STATE')
+    if override:
+        return Path(override)
+    return Path.home() / '.cache' / 'toolbox' / 'telegram_dedup.json'
+
+
+def _normalise_for_dedup(text: str) -> str:
+    text = re.sub(r'\d{4}-\d{2}-\d{2}[T ][0-9:.,+-]+', '<timestamp>', text)
+    text = re.sub(r'\bpid\s*\d+\b', 'pid <n>', text, flags=re.IGNORECASE)
+    text = re.sub(r'\[[0-9]{3,}\]', '[pid]', text)
+    text = re.sub(r'\b[0-9a-f]{8,}\b', '<id>', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip().lower()
+
+
+def _dedup_key(text: str, service: str | None) -> str:
+    import hashlib
+    payload = f'{service or ""}|{_normalise_for_dedup(text)}'
+    return hashlib.sha1(payload.encode()).hexdigest()
+
+
+def _load_dedup_state(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
+def _save_dedup_state(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + '.tmp')
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
+    tmp.replace(path)
+
+
+def _should_send(text: str, service: str | None, window_seconds: int | None = None) -> bool:
+    if os.getenv('TELEGRAM_DEDUP', '').lower() == 'off':
+        return True
+    if window_seconds is None:
+        window_seconds = int(os.getenv('TELEGRAM_DEDUP_WINDOW_SECONDS', DEDUP_WINDOW_SECONDS))
+    if window_seconds <= 0:
+        return True
+
+    now = time.time()
+    path = _dedup_state_path()
+    state = _load_dedup_state(path)
+    key = _dedup_key(text, service)
+    last_seen = float(state.get(key, 0) or 0)
+    if last_seen and now - last_seen < window_seconds:
+        logger.info("Suppressing duplicate Telegram alert for service=%s", service or "default")
+        return False
+
+    cutoff = now - (window_seconds * 4)
+    state = {k: v for k, v in state.items() if float(v or 0) >= cutoff}
+    state[key] = now
+    try:
+        _save_dedup_state(path, state)
+    except Exception as e:
+        logger.warning("Telegram dedup state update failed: %s", e)
+    return True
 
 
 def send_message(text: str, service: str = None, parse_mode: str = 'HTML') -> bool:
@@ -73,6 +140,9 @@ def send_message(text: str, service: str = None, parse_mode: str = 'HTML') -> bo
 
     if service:
         text = f"[{service}] {text}"
+
+    if not _should_send(text, service):
+        return True
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {"chat_id": chat_id, "text": text}
