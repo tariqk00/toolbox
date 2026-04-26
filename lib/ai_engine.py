@@ -337,8 +337,11 @@ def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, co
         logger.info(f"  [Rule] Detected Generic Plaud Export: {filename}")
         base_name = os.path.splitext(filename)[0]
         folder = "01 - Second Brain/Plaud/Transcripts" if filename.lower().endswith('transcript.txt') else "01 - Second Brain/Plaud"
+        # Extract date if present (MM-DD), else use today
+        match = re.search(r'(\d{2})-(\d{2})', filename)
+        doc_date = f"{datetime.now().year}-{match.group(1)}-{match.group(2)}" if match else datetime.now().strftime("%Y-%m-%d")
         return {
-            "doc_date": "2026-01-01",
+            "doc_date": doc_date,
             "entity": "Plaud_Export",
             "folder_path": folder,
             "summary": base_name,
