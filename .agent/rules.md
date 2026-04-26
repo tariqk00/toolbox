@@ -3,7 +3,7 @@
 > **Standard Update**: See `docs/ARCHITECTURE.md` for the new modular architecture standards (Fitness Automation Pattern).
 
 ## Context
-This repository houses the application logic: Python scripts, n8n workflows, and AI tool integrations.
+This repository houses the application logic: Python scripts and AI tool integrations.
 
 ### Documentation Entry Point
 Always refer to the master [INDEX.md](file:///home/tariqk/repos/personal/setup/docs/INDEX.md) for global system context.
@@ -29,5 +29,4 @@ Always refer to the master [INDEX.md](file:///home/tariqk/repos/personal/setup/d
 ### 4. Directory Structure
 - `bin/`: Executable CLI tools (entry points).
 - `lib/`: Shared modules and classes.
-- `n8n/`: Workflow JSONs (Version Controlled).
 - `services/`: Long-running daemons.
