@@ -81,7 +81,7 @@ def save_state(mailbox_id: str, state: dict) -> None:
 def get_gmail_service(config: dict):
     auth = GoogleAuth(base_dir=config['token_base_dir'])
     creds = auth.get_credentials(
-        token_filename=config.get('token_filename', 'token.json'),
+        token_filename=config.get('token_filename', 'token_gmail_uptown.json'),
         credentials_filename=config.get('credentials_path', os.path.join(BASE_DIR, 'config', 'credentials.json')),
         scopes=GMAIL_SCOPES,
     )

@@ -92,7 +92,7 @@ def get_search_window(state):
 
 def get_gmail_service():
     auth = GoogleAuth(base_dir=str(TOOLBOX_ROOT))
-    creds = auth.get_credentials(token_filename="token.json", scopes=SCOPES)
+    creds = auth.get_credentials(token_filename="token_gmail_plaud.json", scopes=SCOPES)
     from googleapiclient.discovery import build
     return build("gmail", "v1", credentials=creds)
 

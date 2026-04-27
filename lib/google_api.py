@@ -44,7 +44,7 @@ class GoogleAuth:
                         level="ERROR")
                     raise
 
-    def ensure_valid_token(self, token_filename='token_full_drive.json', scopes=None):
+    def ensure_valid_token(self, token_filename='token_drive_sorter.json', scopes=None):
         """Pre-flight check: returns True if token is valid or refreshable, False otherwise."""
         from toolbox.lib.log_manager import log
 
@@ -67,7 +67,7 @@ class GoogleAuth:
             log("AUTH_CHECK", "FAILURE", f"Token validation failed: {e}", level="ERROR")
         return False
 
-    def get_credentials(self, token_filename='token_full_drive.json', credentials_filename='config/credentials.json', scopes=None):
+    def get_credentials(self, token_filename='token_drive_sorter.json', credentials_filename='config/credentials.json', scopes=None):
         from toolbox.lib.log_manager import log
 
         if scopes is None:

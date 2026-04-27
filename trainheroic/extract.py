@@ -103,7 +103,7 @@ def get_drive_service():
 
     auth = GoogleAuth(base_dir=str(TOOLBOX_ROOT))
     creds = auth.get_credentials(
-        token_filename="token_full_drive.json",
+        token_filename="token_drive_sorter.json",
         credentials_filename="config/credentials.json",
     )
     return auth.get_service("drive", "v3", creds)

@@ -31,7 +31,7 @@ GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 def get_gmail_service():
     auth = GoogleAuth(base_dir=PLAUD_DIR)
     creds = auth.get_credentials(
-        token_filename='token.json',
+        token_filename='token_gmail_plaud.json',
         credentials_filename='config/credentials.json',
         scopes=GMAIL_SCOPES
     )
