@@ -18,6 +18,7 @@ if os.path.dirname(BASE_DIR) not in sys.path:
 
 from ..scanner import html_to_text
 from ..writers import append_to_memory
+from toolbox.lib.task_utils import create_unique_tasks
 
 logger = logging.getLogger('EmailExtractor.GoogleBrief')
 
@@ -74,47 +75,24 @@ def _call_llm(text: str, today: str, year: str) -> dict | None:
         return None
 
 
-def _existing_task_titles(service, list_id: str) -> set:
-    """Return normalised titles of all open tasks in the list."""
-    try:
-        result = service.tasks().list(
-            tasklist=list_id, showCompleted=False, maxResults=100,
-        ).execute()
-        titles = set()
-        for t in result.get('items', []):
-            raw = t.get('title', '')
-            # Strip effort prefix e.g. "(15 min) Do thing" → "do thing"
-            raw = re.sub(r'^\(\d+ min\)\s*', '', raw, flags=re.IGNORECASE)
-            titles.add(raw.strip().lower())
-        return titles
-    except Exception as e:
-        logger.warning(f'Could not fetch existing tasks for dedup: {e}')
-        return set()
-
-
 def _push_to_tasks(tasks: list) -> int:
     """Create tasks in Google Tasks, skipping any whose title already exists open."""
     try:
-        from toolbox.lib.tasks import get_tasks_service, get_or_create_list, create_task
+        from toolbox.lib.tasks import get_tasks_service, get_or_create_list
         service = get_tasks_service()
         list_id = get_or_create_list(service, TASKS_LIST_NAME)
-        existing = _existing_task_titles(service, list_id)
-        created = 0
-        for t in tasks:
-            title = t.get('text', '').strip()
-            if not title:
-                continue
-            if title.lower() in existing:
-                logger.debug(f'Skipping duplicate task: {title[:60]}')
-                continue
-            effort = t.get('effort')
-            full_title = f'({effort}) {title}' if effort else title
-            notes = t.get('context', '').strip() if t.get('context') else None
-            due = t.get('due_date') or None
-            create_task(service, list_id, full_title, due=due, notes=notes)
-            existing.add(title.lower())  # prevent dupes within the same batch
-            created += 1
-        return created
+        return create_unique_tasks(
+            service,
+            list_id,
+            tasks,
+            title_fn=lambda t: (
+                f'({t.get("effort")}) {t.get("text", "").strip()}'
+                if t.get('effort') else t.get('text', '').strip()
+            ),
+            key_fn=lambda t: t.get('text', '').strip(),
+            due_fn=lambda t: t.get('due_date') or None,
+            notes_fn=lambda t: t.get('context', '').strip() if t.get('context') else None,
+        )
     except Exception as e:
         logger.error(f'Google Tasks push failed: {e}')
         return 0

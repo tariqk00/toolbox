@@ -26,6 +26,7 @@ TOOLBOX_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLBOX_ROOT.parent))
 
 from toolbox.lib.google_api import GoogleAuth
+from toolbox.lib.meeting_utils import dedupe_meeting_emails
 
 CONFIG_DIR = TOOLBOX_ROOT / "config"
 STATE_FILE = CONFIG_DIR / "gmail_ingest_state.json"
@@ -312,6 +313,10 @@ def main():
                 logger.warning(f"  Skipped {msg['id']}: {e}")
 
         emails_by_category[category] = emails
+
+    # De-duplicate meeting-like items that arrive from multiple streams.
+    meeting_state = state.setdefault("meeting_dedupe", {})
+    emails_by_category = dedupe_meeting_emails(emails_by_category, meeting_state)
 
     # Write output
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

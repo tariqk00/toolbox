@@ -13,6 +13,7 @@ if BASE_DIR not in sys.path:
 
 from googleapiclient.http import MediaIoBaseUpload
 from toolbox.lib.drive_utils import get_drive_service
+from toolbox.lib.task_utils import dedupe_action_items
 from toolbox.lib.telegram import send_message, escape, monit_link
 
 logger = logging.getLogger('InboxScanner.Actions')
@@ -83,6 +84,9 @@ def append_to_inbox(filename: str, content: str) -> None:
 def write_action_required(items: list) -> None:
     """Write action required items to Drive log."""
     from datetime import date
+    items = dedupe_action_items(items)
+    if not items:
+        return
     today = date.today().isoformat()
     lines = [f'## {today} — {len(items)} action required\n']
     for item in items:
