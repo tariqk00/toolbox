@@ -17,8 +17,8 @@ if BASE_DIR not in sys.path:
 if os.path.dirname(BASE_DIR) not in sys.path:
     sys.path.insert(0, os.path.dirname(BASE_DIR))
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(message)s')
-logger = logging.getLogger('EmailExtractor')
+from toolbox.lib.log_manager import LogManager, log
+logger = LogManager.get_instance("email-extractor").logger
 
 from toolbox.lib.telegram import send_message, escape, monit_link
 from .scanner import (
@@ -176,6 +176,12 @@ def run():
             lines.append(f'  {monit_link("Check Monit")} · <code>journalctl --user -u email-extractor -n 50</code>')
         msg = '\n'.join(lines)
 
+    log("RUN_COMPLETE", "SUCCESS" if errors == 0 else "WARNING", "Email extractor run finished", data={
+        "total": total,
+        "errors": errors,
+        "counts": {cat: len(items) for cat, items in summaries.items()}
+    }, app_name="email-extractor")
+    
     logger.info(msg)
     send_message(msg, service='email-extractor · takhan')
 

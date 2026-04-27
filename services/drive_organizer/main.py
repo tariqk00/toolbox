@@ -54,6 +54,13 @@ class RunStats:
 
     def get_summary(self):
         duration = int(time.time() - self.start_time)
+        log("RUN_COMPLETE", "SUCCESS", f"Drive organizer run finished in {duration}s", data={
+            "processed": self.processed,
+            "moved": self.moved,
+            "renamed": self.renamed,
+            "errors": self.errors,
+            "duration_s": duration
+        }, app_name="ai-sorter")
         return f"Run completed in {duration}s. Processed: {self.processed}, Moved: {self.moved}, Renamed: {self.renamed}, Errors: {self.errors}."
 
     def get_notification(self):
@@ -97,17 +104,9 @@ class RunStats:
         return "\n".join(parts)
 
 stats = RunStats()
-logger = logging.getLogger("DriveSorter")
-logger.setLevel(logging.INFO)
 
-# Console & File Handlers
-ch = logging.StreamHandler()
-ch.setFormatter(logging.Formatter('%(message)s'))
-logger.addHandler(ch)
-
-fh = RotatingFileHandler(LOG_FILE, maxBytes=1*1024*1024, backupCount=5)
-fh.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
-logger.addHandler(fh)
+from toolbox.lib.log_manager import LogManager, log
+logger = LogManager.get_instance("ai-sorter").logger
 
 def log_to_sheet(timestamp, file_id, original_name, new_name, target_folder_id, target_folder_name, run_type):
     """Logs to Google Sheet."""

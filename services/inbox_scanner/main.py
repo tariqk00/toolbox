@@ -19,8 +19,8 @@ if BASE_DIR not in sys.path:
 if os.path.dirname(BASE_DIR) not in sys.path:
     sys.path.insert(0, os.path.dirname(BASE_DIR))
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(message)s')
-logger = logging.getLogger('InboxScanner')
+from toolbox.lib.log_manager import LogManager, log
+logger = LogManager.get_instance("inbox-scanner").logger
 
 from toolbox.lib.google_api import GoogleAuth
 from toolbox.services.email_extractor.scanner import get_full_email, html_to_text
@@ -373,6 +373,15 @@ def run(mailbox_id: str = 'primary') -> None:
     save_state(mailbox_id, state)
 
     # Telegram summary
+    log("RUN_COMPLETE", "SUCCESS", f"Inbox scanner [{mailbox_id}] run finished", data={
+        "mailbox": mailbox_id,
+        "classified": classified,
+        "actions": len(results.get('action_required', [])),
+        "inquiries": len(results.get('inquiry', [])),
+        "errors": errors,
+        "skipped_known": skipped_known,
+        "skipped_seen": skipped_seen
+    }, app_name="inbox-scanner")
     actions.send_run_summary(results, errors, mailbox_email, telegram_service)
 
 
