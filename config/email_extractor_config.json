@@ -22,6 +22,11 @@
       "no-reply@notifications.whoop.com": "WHOOP"
     }
   },
+  "plaud": {
+    "senders": {
+      "takhan+plaud@gmail.com": "Plaud"
+    }
+  },
   "receipts": {
     "senders": {
       "noreply@patient-message.com": "Allied Physicians Group",

@@ -25,7 +25,7 @@ from .scanner import (
     get_gmail_service, load_config, load_state, save_state,
     fetch_category_emails,
 )
-from .categories import orders, receipts, trips, digests, sweep, google_brief
+from .categories import orders, receipts, trips, digests, sweep, google_brief, plaud
 
 
 def run():
@@ -41,7 +41,7 @@ def run():
 
     service = get_gmail_service()
 
-    summaries = {'orders': [], 'receipts': [], 'trips': [], 'digests': [], 'google_brief': [], 'sweep': []}
+    summaries = {'orders': [], 'receipts': [], 'trips': [], 'digests': [], 'google_brief': [], 'sweep': [], 'plaud': []}
     errors = 0
     error_details = []
     known_digest_senders = config.get('digests', {}).get('known_senders', {})
@@ -121,6 +121,20 @@ def run():
             errors += 1
             error_details.append(f'google_brief/{email["subject"][:40]}: {type(e).__name__}')
 
+    # --- Plaud ---
+    logger.info('Fetching Plaud emails...')
+    plaud_emails = fetch_category_emails(service, 'plaud', config,
+                                         after_date=after_date, first_run=first_run)
+    for email in plaud_emails:
+        try:
+            result = plaud.process(email, state)
+            if result:
+                summaries['plaud'].append(result)
+        except Exception as e:
+            logger.error(f'Plaud processing error ({email["subject"][:50]}): {e}')
+            errors += 1
+            error_details.append(f'plaud/{email["subject"][:40]}: {type(e).__name__}')
+
     # --- Weekly sweep ---
     logger.info('Running sweep (weekly)...')
     try:
@@ -145,6 +159,7 @@ def run():
         category_labels = {
             'orders': 'Orders', 'receipts': 'Receipts', 'trips': 'Trips',
             'digests': 'Digests', 'google_brief': 'Google CC', 'sweep': 'Sweep',
+            'plaud': 'Plaud',
         }
         lines = [f'<b>Email extractor: {total} items</b>']
         for category, items in summaries.items():
