@@ -57,7 +57,11 @@ class TestImageResize(unittest.TestCase):
 
     def _make_jpeg(self, width=2000, height=2000):
         """Create a real minimal JPEG in memory at the given size."""
-        from PIL import Image as PILImage
+        try:
+            from PIL import Image as PILImage
+        except ImportError:
+            self.skipTest("Pillow not installed, skipping test.")
+            
         img = PILImage.new('RGB', (width, height), color=(128, 64, 32))
         buf = io.BytesIO()
         img.save(buf, format='JPEG', quality=90)
