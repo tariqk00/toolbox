@@ -11,10 +11,15 @@ import time
 import urllib.request
 import urllib.error
 from pathlib import Path
+from dotenv import load_dotenv
 
 logger = logging.getLogger("DriveSorter.Telegram")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_DIR = os.path.join(BASE_DIR, 'config')
+
+# Load centralized secrets
+load_dotenv(os.path.join(CONFIG_DIR, 'secrets.env'))
 
 MONIT_URL = 'http://172.30.0.169:2812'
 
@@ -38,7 +43,7 @@ def escape(text: str) -> str:
     return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
-CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'telegram_config.json')
+CONFIG_PATH = os.path.join(CONFIG_DIR, 'telegram_config.json')
 DEDUP_WINDOW_SECONDS = 30 * 60
 
 _config_cache = None
@@ -47,16 +52,23 @@ def _load_config():
     global _config_cache
     if _config_cache is not None:
         return _config_cache
-    try:
-        with open(CONFIG_PATH) as f:
-            _config_cache = json.load(f)
+
+    # Try environment first (secrets.env)
+    env_token = os.getenv('TELEGRAM_BOT_TOKEN')
+    env_chat = os.getenv('TELEGRAM_CHAT_ID')
+    if env_token and env_chat:
+        _config_cache = {'bot_token': env_token, 'chat_id': env_chat}
         return _config_cache
-    except FileNotFoundError:
-        logger.warning(f"Telegram config not found at {CONFIG_PATH}. Notifications disabled.")
-        return None
+
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH) as f:
+                _config_cache = json.load(f)
+            return _config_cache
     except Exception as e:
         logger.error(f"Failed to load Telegram config: {e}")
-        return None
+
+    return None
 
 
 def _dedup_state_path() -> Path:
