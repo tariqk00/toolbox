@@ -12,97 +12,34 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from googleapiclient.http import MediaIoBaseUpload
-from toolbox.lib.drive_utils import get_drive_service
-from toolbox.lib.task_utils import dedupe_action_items
+from toolbox.lib.drive_utils import get_drive_service, append_to_file
+from toolbox.lib.task_utils import dedupe_action_items, add_task
 from toolbox.lib.telegram import send_message, escape, monit_link
 
 logger = logging.getLogger('InboxScanner.Actions')
 
 INBOX_ROOT = '01 - Second Brain/Inbox'
 
-_folder_cache: dict[str, str] = {}
-
-
-def _find_or_create_folder(service, name: str, parent_id: str) -> str:
-    cache_key = f'{parent_id}/{name}'
-    if cache_key in _folder_cache:
-        return _folder_cache[cache_key]
-    query = (
-        f"'{parent_id}' in parents and name = '{name}' "
-        f"and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-    )
-    results = service.files().list(q=query, fields='files(id)').execute()
-    files = results.get('files', [])
-    if files:
-        fid = files[0]['id']
-    else:
-        meta = {
-            'name': name,
-            'mimeType': 'application/vnd.google-apps.folder',
-            'parents': [parent_id],
-        }
-        fid = service.files().create(body=meta, fields='id').execute()['id']
-        logger.info(f'Created folder: {name} under {parent_id}')
-    _folder_cache[cache_key] = fid
-    return fid
-
-
-def _resolve_path(service, path: str) -> str:
-    parts = path.strip('/').split('/')
-    parent_id = 'root'
-    for part in parts:
-        parent_id = _find_or_create_folder(service, part, parent_id)
-    return parent_id
-
-
-def _get_file_in_folder(service, folder_id: str, filename: str) -> str | None:
-    query = f"'{folder_id}' in parents and name = '{filename}' and trashed = false"
-    results = service.files().list(q=query, fields='files(id)').execute()
-    files = results.get('files', [])
-    return files[0]['id'] if files else None
-
-
-def append_to_inbox(filename: str, content: str) -> None:
-    """Append content to 01 - Second Brain/Inbox/{filename}."""
-    service = get_drive_service()
-    folder_id = _resolve_path(service, INBOX_ROOT)
-    file_id = _get_file_in_folder(service, folder_id, filename)
-    if file_id:
-        existing_bytes = service.files().get_media(fileId=file_id).execute()
-        existing = existing_bytes.decode('utf-8') if isinstance(existing_bytes, bytes) else existing_bytes
-        full_content = existing.rstrip('\n') + '\n\n' + content
-        media = MediaIoBaseUpload(io.BytesIO(full_content.encode()), mimetype='text/markdown')
-        service.files().update(fileId=file_id, media_body=media).execute()
-        logger.info(f'Updated Inbox/{filename}')
-    else:
-        media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='text/markdown')
-        meta = {'name': filename, 'parents': [folder_id]}
-        service.files().create(body=meta, media_body=media, fields='id').execute()
-        logger.info(f'Created Inbox/{filename}')
-
 
 def write_action_required(items: list) -> None:
-    """Write action required items to Drive log."""
-    from datetime import date
+    """Write action required items to Drive log and Google Tasks with dedup."""
     items = dedupe_action_items(items)
-    if not items:
-        return
-    today = date.today().isoformat()
-    lines = [f'## {today} — {len(items)} action required\n']
     for item in items:
-        priority_flag = ' [HIGH]' if item.get('priority') == 'high' else ''
-        lines.append(f'### {item["subject"]}{priority_flag}')
-        lines.append(f'**From:** {item["sender"]}  ')
-        lines.append(f'**Date:** {item["date"]}  ')
-        lines.append(f'**Why:** {item["reason"]}')
-        lines.append('')
-    lines.append('---')
-    append_to_inbox('Action Required.md', '\n'.join(lines))
+        add_task(
+            subject=item["subject"],
+            sender=item["sender"],
+            reason=item["reason"],
+            priority=item.get("priority", "medium"),
+            date_str=item.get("date"),
+            sync_to_google_tasks=True
+        )
 
 
 def write_inquiries(items: list) -> None:
     """Write inquiry items to Drive log."""
     from datetime import date
+    if not items:
+        return
     today = date.today().isoformat()
     lines = [f'## {today} — {len(items)} inquiries\n']
     for item in items:
@@ -112,7 +49,7 @@ def write_inquiries(items: list) -> None:
         lines.append(f'**Why:** {item["reason"]}')
         lines.append('')
     lines.append('---')
-    append_to_inbox('Inquiries.md', '\n'.join(lines))
+    append_to_file(INBOX_ROOT, 'Inquiries.md', '\n'.join(lines))
 
 
 def send_immediate_alert(item: dict, telegram_service: str) -> None:

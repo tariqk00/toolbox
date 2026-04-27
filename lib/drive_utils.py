@@ -6,7 +6,7 @@ import os
 import io
 import json
 import logging
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from toolbox.lib.google_api import GoogleAuth
 
 logger = logging.getLogger("DriveSorter.Drive")
@@ -127,6 +127,55 @@ def download_file_content(service, file_id, mime_type):
     while done is False:
         status, done = downloader.next_chunk()
     return fh.getvalue()
+
+def _find_or_create_folder(service, name: str, parent_id: str) -> str:
+    query = (
+        f"'{parent_id}' in parents and name = '{name}' "
+        f"and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+    )
+    results = service.files().list(q=query, fields='files(id)').execute()
+    files = results.get('files', [])
+    if files:
+        return files[0]['id']
+
+    meta = {
+        'name': name,
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [parent_id],
+    }
+    return service.files().create(body=meta, fields='id').execute()['id']
+
+def _resolve_path(service, path: str) -> str:
+    parts = path.strip('/').split('/')
+    parent_id = 'root'
+    for part in parts:
+        parent_id = _find_or_create_folder(service, part, parent_id)
+    return parent_id
+
+def _get_file_in_folder(service, folder_id: str, filename: str) -> str | None:
+    query = f"'{folder_id}' in parents and name = '{filename}' and trashed = false"
+    results = service.files().list(q=query, fields='files(id)').execute()
+    files = results.get('files', [])
+    return files[0]['id'] if files else None
+
+def append_to_file(path: str, filename: str, content: str) -> None:
+    """Append content to a file in Drive, creating it if needed."""
+    service = get_drive_service()
+    folder_id = _resolve_path(service, path)
+    file_id = _get_file_in_folder(service, folder_id, filename)
+
+    if file_id:
+        existing_bytes = download_file_content(service, file_id, 'text/plain')
+        existing = existing_bytes.decode('utf-8')
+        full_content = existing.rstrip('\n') + '\n\n' + content
+        media = MediaIoBaseUpload(io.BytesIO(full_content.encode()), mimetype='text/markdown')
+        service.files().update(fileId=file_id, media_body=media).execute()
+        logger.info(f'Updated Drive: {path}/{filename}')
+    else:
+        media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='text/markdown')
+        meta = {'name': filename, 'parents': [folder_id]}
+        service.files().create(body=meta, media_body=media, fields='id').execute()
+        logger.info(f'Created Drive: {path}/{filename}')
 
 def move_file(service, file_id, target_folder_id, processed_name):
     try:

@@ -88,14 +88,32 @@ def dedupe_action_items(items: Iterable[dict]) -> list[dict]:
     return output
 
 
-def _get_action_required_content() -> str:
-    """Compatibility hook for future Drive-backed Action Required reads."""
-    return ""
+def get_action_required_content() -> str:
+    """Read the current Action Required.md content from Drive."""
+    from toolbox.lib.drive_utils import get_drive_service, _resolve_path, _get_file_in_folder, download_file_content
+    try:
+        service = get_drive_service()
+        folder_id = _resolve_path(service, "01 - Second Brain/Inbox")
+        file_id = _get_file_in_folder(service, folder_id, "Action Required.md")
+        if not file_id:
+            return ""
+        content_bytes = download_file_content(service, file_id, "text/plain")
+        return content_bytes.decode("utf-8")
+    except Exception as e:
+        logger.warning("Could not read Action Required.md for dedup: %s", e)
+        return ""
 
 
-def is_duplicate_task(subject: str, body_snippet: str = "", existing_content: str = "") -> bool:
+def is_duplicate_task(subject: str, reason: str = "", existing_content: str = "") -> bool:
     """Check if a task with a similar subject already exists in markdown content."""
-    return f"### {subject}" in existing_content
+    # Check for exact heading match
+    if f"### {subject}" in existing_content:
+        return True
+    # Check for normalized subject match in the text
+    norm_subject = normalize_task_title(subject)
+    if norm_subject in normalize_task_title(existing_content):
+        return True
+    return False
 
 
 def add_task(
@@ -104,15 +122,43 @@ def add_task(
     reason: str,
     priority: str = "medium",
     date_str: str | None = None,
+    sync_to_google_tasks: bool = False,
 ) -> bool:
-    """Compatibility helper for Action Required task creation."""
+    """
+    Centralized task adder.
+    Writes to Drive (Action Required.md) and optionally Google Tasks.
+    """
+    from toolbox.lib.drive_utils import append_to_file
+
     if not date_str:
         date_str = date.today().isoformat()
 
-    existing = _get_action_required_content()
+    existing = get_action_required_content()
     if is_duplicate_task(subject, reason, existing):
         logger.info("Skipping duplicate task: %s", subject)
         return False
+
+    # 1. Write to Drive
+    priority_flag = " [HIGH]" if priority == "high" else ""
+    lines = [
+        f"### {subject}{priority_flag}",
+        f"**From:** {sender}  ",
+        f"**Date:** {date_str}  ",
+        f"**Why:** {reason}",
+        "",
+        "---",
+    ]
+    append_to_file("01 - Second Brain/Inbox", "Action Required.md", "\n".join(lines))
+
+    # 2. Optional Google Tasks Sync (only for high priority by default if requested)
+    if sync_to_google_tasks or priority == "high":
+        try:
+            from toolbox.lib.tasks import get_tasks_service, get_or_create_list, create_task
+            service = get_tasks_service()
+            list_id = get_or_create_list(service, "Inbox")
+            create_task(service, list_id, subject, due=date_str, notes=f"From: {sender}\nWhy: {reason}")
+        except Exception as e:
+            logger.error("Failed to sync task to Google Tasks: %s", e)
 
     logger.info("Added new task: %s", subject)
     return True
