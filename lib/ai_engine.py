@@ -13,6 +13,7 @@ import requests
 from datetime import datetime
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
 from toolbox.lib import telegram
 
 try:
@@ -29,6 +30,10 @@ logger = logging.getLogger("DriveSorter.AI")
 # Root is toolbox/
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_DIR = os.path.join(BASE_DIR, 'config')
+
+# Load centralized secrets
+load_dotenv(os.path.join(CONFIG_DIR, 'secrets.env'))
+
 SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_secret')
 CACHE_PATH = os.path.join(CONFIG_DIR, 'gemini_cache.json')
 
