@@ -48,7 +48,8 @@ def main():
     tokens_to_check = [
         "token_gmail_plaud.json",
         "token_drive_sorter.json",
-        "token_gmail_uptown.json"
+        "token_gmail_uptown.json",
+        "token_tasks.json"
     ]
     
     metadata_path = os.path.join(CONFIG_DIR, "token_metadata.json")
