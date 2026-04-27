@@ -14,6 +14,7 @@ jobs:
           script: |
             const PROJECT_NUMBER = 1;
             const OWNER = 'tariqk00';
+            const PROJECT_ID = 'PVT_kwHOAI5Oic4BT3Jm';
             const PRIORITY_FIELD = 'PVTSSF_lAHOAI5Oic4BT3JmzhBHkZg';
             const STATUS_FIELD = 'PVTSSF_lAHOAI5Oic4BT3JmzhBDHqA';
 
@@ -32,18 +33,41 @@ jobs:
             const issueNodeId = issue.node_id;
 
             // 1. Ensure issue is in the project (add if missing)
-            const addResult = await github.graphql(`
-              mutation($projectId: ID!, $contentId: ID!) {
-                addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
-                  item { id }
+            let itemId;
+            try {
+              const addResult = await github.graphql(`
+                mutation($projectId: ID!, $contentId: ID!) {
+                  addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                    item { id }
+                  }
                 }
+              `, {
+                projectId: PROJECT_ID,
+                contentId: issueNodeId,
+              });
+              itemId = addResult.addProjectV2ItemById.item.id;
+            } catch (error) {
+              const alreadyExists = error.errors?.some(e => e.message.includes('Content already exists in this project'));
+              if (alreadyExists) {
+                console.log('Issue already in project, fetching existing item ID...');
+                const queryResult = await github.graphql(`
+                  query($contentId: ID!) {
+                    node(id: $contentId) {
+                      ... on Issue {
+                        projectItems(first: 10) {
+                          nodes {
+                            id
+                            project { id }
+                          }
+                        }
+                      }
+                    }
+                  }
+                `, { contentId: issueNodeId });
+                itemId = queryResult.node.projectItems.nodes.find(n => n.project.id === PROJECT_ID)?.id;
               }
-            `, {
-              projectId: 'PVT_kwHOAI5Oic4BT3Jm',
-              contentId: issueNodeId,
-            });
-
-            const itemId = addResult.addProjectV2ItemById.item.id;
+              if (!itemId) throw error;
+            }
 
             // 2. Set Priority from labels
             const labels = issue.labels.map(l => l.name.toLowerCase());
@@ -56,7 +80,7 @@ jobs:
                   }) { projectV2Item { id } }
                 }
               `, {
-                projectId: 'PVT_kwHOAI5Oic4BT3Jm',
+                projectId: PROJECT_ID,
                 itemId,
                 fieldId: PRIORITY_FIELD,
                 value: { singleSelectOptionId: PRIORITY_OPTIONS[priority] },
@@ -74,7 +98,7 @@ jobs:
                 }) { projectV2Item { id } }
               }
             `, {
-              projectId: 'PVT_kwHOAI5Oic4BT3Jm',
+              projectId: PROJECT_ID,
               itemId,
               fieldId: STATUS_FIELD,
               value: { singleSelectOptionId: statusOptionId },
