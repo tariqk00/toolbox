@@ -13,8 +13,9 @@ from google.auth.transport.requests import Request
 # Ensure toolbox imports work
 current_dir = os.path.dirname(os.path.abspath(__file__))
 repo_root = os.path.dirname(current_dir)
-if repo_root not in sys.path:
-    sys.path.append(repo_root)
+parent_dir = os.path.dirname(repo_root)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
 from toolbox.lib.telegram import send_message
 from toolbox.lib.log_manager import log
@@ -47,7 +48,7 @@ def main():
     log("TOKEN_MONITOR", "START", "Checking token validity")
     tokens_to_check = [
         "token_gmail_plaud.json",
-        "token_drive_sorter.json",
+        "token_full_drive.json",
         "token_gmail_uptown.json",
         "token_tasks.json"
     ]
