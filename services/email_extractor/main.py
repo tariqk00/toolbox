@@ -127,7 +127,7 @@ def run():
                                          after_date=after_date, first_run=first_run)
     for email in plaud_emails:
         try:
-            result = plaud.process(email, state)
+            result = plaud.process(email, state, service=service)
             if result:
                 summaries['plaud'].append(result)
         except Exception as e:

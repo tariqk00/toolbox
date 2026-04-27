@@ -182,11 +182,30 @@ def _extract_body(payload: dict):
     return plain, html
 
 
+def _extract_attachments(payload: dict):
+    """Recursively extract attachments from a message payload."""
+    attachments = []
+    parts = payload.get('parts', [])
+    for part in parts:
+        if part.get('filename'):
+            attachments.append({
+                'filename': part['filename'],
+                'mimeType': part['mimeType'],
+                'partId': part['partId'],
+                'size': part['body'].get('size', 0),
+                'attachmentId': part['body'].get('attachmentId')
+            })
+        elif part.get('parts'):
+            attachments.extend(_extract_attachments(part))
+    return attachments
+
+
 def get_full_email(service, message_id: str) -> dict:
     """Fetch and parse a full email message."""
     msg = service.users().messages().get(userId='me', id=message_id).execute()
     headers = {h['name']: h['value'] for h in msg['payload']['headers']}
     plain, html = _extract_body(msg['payload'])
+    attachments = _extract_attachments(msg['payload'])
 
     date_str = headers.get('Date', '')
     try:
@@ -203,8 +222,18 @@ def get_full_email(service, message_id: str) -> dict:
         'date': date_dt.strftime('%Y-%m-%d'),
         'plain': plain,
         'html': html,
+        'attachments': attachments,
         'label_ids': msg.get('labelIds', []),
     }
+
+
+def get_attachment(service, message_id: str, attachment_id: str):
+    """Fetch the raw bytes of an attachment."""
+    result = service.users().messages().attachments().get(
+        userId='me', messageId=message_id, id=attachment_id
+    ).execute()
+    data = result.get('data', '')
+    return base64.urlsafe_b64decode(data + '==')
 
 
 def _sender_email(from_header: str) -> str:
