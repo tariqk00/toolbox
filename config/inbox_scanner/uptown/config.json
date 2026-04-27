@@ -1,8 +1,8 @@
 {
   "mailbox_id": "uptown",
   "email": "operations@uptownedenton.com",
-  "token_base_dir": "~/github/tariqk00/toolbox",
-  "token_filename": "token_uptown.json",
+  "token_base_dir": "~/github/tariqk00/toolbox/config",
+  "token_filename": "token_gmail_uptown.json",
   "credentials_path": "~/github/tariqk00/toolbox/config/credentials.json",
   "telegram_service": "inbox-scanner · uptown",
   "categories": ["inquiry"],
