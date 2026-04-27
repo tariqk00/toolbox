@@ -27,6 +27,7 @@ for p in (BASE_DIR, REPO_ROOT):
         sys.path.insert(0, p)
 
 from toolbox.lib.drive_utils import get_drive_service
+from toolbox.lib.telegram import send_message, escape
 from googleapiclient.http import MediaIoBaseUpload
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
@@ -271,16 +272,30 @@ def main():
 
     print()
     print('=== Dedup summary ===')
+    
+    html_lines = ["<b>🧹 Memory Dedup Complete</b>"]
+    files_modified = 0
+    
     for filename, removed in sorted(all_results.items()):
         if removed:
-            print(f'  {filename}: {removed} duplicate(s) removed'
-                  + (' (dry-run)' if args.dry_run else ''))
+            msg = f'{filename}: {removed} duplicate(s) removed'
+            print(f'  {msg}' + (' (dry-run)' if args.dry_run else ''))
+            html_lines.append(f"• <i>{escape(filename)}</i>: {removed} removed")
+            files_modified += 1
+            
     if total_removed == 0:
         print('  No duplicates found.')
     else:
-        print(f'\n  Total: {total_removed} block(s) removed across {len([v for v in all_results.values() if v])} file(s)')
+        print(f'\n  Total: {total_removed} block(s) removed across {files_modified} file(s)')
+        html_lines.append(f"\n<b>Total:</b> {total_removed} blocks across {files_modified} files")
+        
     if args.dry_run:
         print('  [dry-run: no files were modified]')
+        
+    # Send rich telegram message (spam deduped by skipping if 0 removed)
+    if total_removed > 0 and not args.dry_run:
+        html_body = "\n".join(html_lines)
+        send_message(html_body, service="memory-dedup")
 
 
 if __name__ == '__main__':

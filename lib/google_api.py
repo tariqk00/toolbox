@@ -74,10 +74,8 @@ class GoogleAuth:
             scopes = ['https://www.googleapis.com/auth/drive']
 
         token_path = os.path.join(self.base_dir, 'config', token_filename)
-        creds_path = os.path.join(self.base_dir, credentials_filename)
-
-        if not os.path.exists(creds_path):
-            creds_path = os.path.join(self.base_dir, 'config/credentials.json')
+        # FORCE centralized credentials
+        creds_path = os.path.join(self.base_dir, 'config', 'credentials.json')
 
         creds = None
         if os.path.exists(token_path):

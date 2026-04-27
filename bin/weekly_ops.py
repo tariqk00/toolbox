@@ -198,6 +198,14 @@ def main():
         service="drive-tree-refresh"
     )
 
+    logger.info("=== Running Memory Deduplication ===")
+    import subprocess
+    try:
+        subprocess.run([sys.executable, os.path.join(current_dir, 'dedup_memory.py')], check=True)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to run dedup_memory.py: {e}")
+        send_message(f"<b>Error:</b> dedup_memory.py failed with exit code {e.returncode}", service="weekly-ops")
+
     # Print top-level summary
     top_level = sorted(k for k in path_to_id if '/' not in k)
     logger.info(f"\nTop-level folders ({len(top_level)}):")

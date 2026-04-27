@@ -10,3 +10,4 @@ python-pptx
 Pillow
 PyYAML
 python-dotenv
+pandas
