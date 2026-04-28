@@ -11,41 +11,20 @@ import subprocess
 from datetime import date, timedelta, datetime
 from pathlib import Path
 
-# Setup paths
-TOOLBOX_ROOT = Path(__file__).resolve().parent.parent
-LIFE_DOCS_REPO = Path.home() / 'github' / 'tariqk00' / 'life-docs'
-LIFE_DOCS_DIR = LIFE_DOCS_REPO / 'docs' / 'life'
-MKDOCS = TOOLBOX_ROOT / 'google-drive' / 'venv' / 'bin' / 'mkdocs'
-
 # Fix sys.path for toolbox modules
-sys.path.insert(0, str(TOOLBOX_ROOT.parent))
-from toolbox.lib.drive_utils import get_drive_service, DRIVE_TREE
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT.parent))
 
-def parse_blocks_for_date(content: str, date_str: str) -> list[str]:
-    """Return all ## blocks whose header starts with the given date."""
-    blocks = content.split('\n---')
-    return [b.strip() for b in blocks if b.strip().startswith(f'## {date_str}')]
+from toolbox.lib.drive_utils import get_drive_service
+from toolbox.lib.reporter_utils import (
+    LIFE_DOCS_REPO, rebuild_site, get_memory_blocks,
+    build_stat_card, build_row
+)
 
-def list_files_in_folder(service, folder_id: str) -> list[dict]:
-    query = f"'{folder_id}' in parents and trashed = false"
-    try:
-        results = service.files().list(q=query, fields='files(id, name)').execute()
-        return results.get('files', [])
-    except Exception as e:
-        print(f"Error listing files in {folder_id}: {e}")
-        return []
-
-def download_file(service, file_id: str) -> str:
-    try:
-        content = service.files().get_media(fileId=file_id).execute()
-        return content.decode('utf-8') if isinstance(content, bytes) else content
-    except Exception as e:
-        print(f"Error downloading {file_id}: {e}")
-        return ""
+LIFE_DOCS_DIR = LIFE_DOCS_REPO / 'docs' / 'life'
 
 HAWAII_DEPART = date(2026, 4, 22)
 HAWAII_RETURN = date(2026, 5, 4)
-
 
 def _trip_stat_html(today: date) -> str:
     if today < HAWAII_DEPART:
@@ -69,7 +48,7 @@ def update_home_index(today: date, money_lines: list[str], reading_lines: list[s
     log_files = sorted((LIFE_DOCS_REPO / 'docs' / 'life').glob('????-??-??.md'))
     if not log_files:
         return
-    log_date_str = log_files[-1].stem  # e.g. "2026-04-19"
+    log_date_str = log_files[-1].stem
 
     # ── Subtitle ─────────────────────────────────────────────────────────────
     day_fmt = today.strftime('%a %-d %b')
@@ -89,13 +68,7 @@ def update_home_index(today: date, money_lines: list[str], reading_lines: list[s
             parts = link_text.rsplit(' — ', 1)
             display = parts[0] if len(parts) > 1 else link_text
             detail = parts[1] if len(parts) > 1 else rest.strip('[]') if rest else ''
-            chip = f' <span class="chip dim">{detail.lower()}</span>' if detail else ''
-            money_rows += (
-                f'<div class="lifedoc-row">\n'
-                f'  <span class="time">—</span>\n'
-                f'  <span class="label"><a href="{url}" target="_blank">{display}</a>{chip}</span>\n'
-                f'</div>\n'
-            )
+            money_rows += build_row(display, url=url, detail=detail) + '\n'
             continue
         # Dollar amount: • Vendor — $X.XX Type
         m = _re.match(r'• (.+?) — \$?([\d.]+) (.+)', line)
@@ -114,12 +87,7 @@ def update_home_index(today: date, money_lines: list[str], reading_lines: list[s
         m2 = _re.match(r'• (.+?) — (.+)', line)
         if m2:
             vendor, typ = m2.group(1), m2.group(2)
-            money_rows += (
-                f'<div class="lifedoc-row">\n'
-                f'  <span class="time">—</span>\n'
-                f'  <span class="label">{vendor} <span class="chip dim">{typ.lower()}</span></span>\n'
-                f'</div>\n'
-            )
+            money_rows += build_row(vendor, detail=typ) + '\n'
 
     money_chip = f'<span class="chip neutral">${money_total:.2f} last log</span>' if money_total else '<span class="chip dim">no data</span>'
     money_section = f'<div class="lifedoc-section"><span>Money</span>{money_chip}</div>\n\n{money_rows}'
@@ -148,180 +116,100 @@ def update_home_index(today: date, money_lines: list[str], reading_lines: list[s
         '<div class="bar ok" style="height: 100%"></div>' if d in logged else '<div class="bar"></div>'
         for d in last7
     )
+    spark_html = (
+        f'<div class="lifedoc-spark">\n'
+        f'  <div class="bars">{spark_bars}</div>\n'
+        f'  <div class="label">{n_logged}/7 days logged</div>\n'
+        f'</div>'
+    )
 
-    # ── Trip stat ─────────────────────────────────────────────────────────────
+    # ── Stat cards ────────────────────────────────────────────────────────────
     trip_stat = _trip_stat_html(today)
-
-    # ── Assemble hero card ────────────────────────────────────────────────────
-    no_money = '<p style="color:var(--text-dim);font-size:12px">No receipts logged.</p>' if not money_rows else ''
-    no_read = '<p style="color:var(--text-dim);font-size:12px">No reading logged.</p>' if not reading_rows else ''
-
-    new_hero = f'''\
-<div class="lifedoc-card hero" markdown>
-
-<div class="card-header">
-  <span class="card-title">Today\'s Log</span>
-  <a class="card-link" href="life/{log_date_str}.md">open full log →</a>
-</div>
-
-<div class="lifedoc-sections">
-
-<div class="lifedoc-section-block">
-
-{money_section}{no_money}
-</div>
-
-<div class="lifedoc-section-block">
-
-{reading_section}{no_read}
-</div>
-
-<!-- Future sections drop in here as additional .lifedoc-section-block divs -->
-
-</div>
-
-<div class="lifedoc-stat-row">
-  <div class="lifedoc-stat">
-    <span class="num">0</span>
-    <span class="sub">Inbox · 0 to action</span>
-  </div>
-{trip_stat}
-  <div class="lifedoc-stat">
-    <div class="spark" title="Days with logs · last 7">
-      {spark_bars}
-    </div>
-    <span class="sub">{n_logged} of 7 days logged</span>
-  </div>
-</div>
-
-</div>'''
-
-    content = index_path.read_text()
-    content = _re.sub(
-        r'<!-- BEGIN_DYNAMIC_HEADER -->.*?<!-- END_DYNAMIC_HEADER -->',
-        f'<!-- BEGIN_DYNAMIC_HEADER -->\n{subtitle}\n<!-- END_DYNAMIC_HEADER -->',
-        content, flags=_re.DOTALL,
+    stats_html = (
+        f'<div class="lifedoc-stats">\n'
+        f'{trip_stat}'
+        f'  <div class="lifedoc-stat">\n'
+        f'    <span class="num">0</span>\n'
+        f'    <span class="sub">active tasks 📝</span>\n'
+        f'  </div>\n'
+        f'</div>'
     )
-    content = _re.sub(
-        r'<!-- BEGIN_HERO -->.*?<!-- END_HERO -->',
-        f'<!-- BEGIN_HERO -->\n{new_hero}\n<!-- END_HERO -->',
-        content, flags=_re.DOTALL,
+
+    # ── Final Assemble ────────────────────────────────────────────────────────
+    new_content = (
+        f'# Life Dashboard\n\n'
+        f'{subtitle}\n\n'
+        f'<div class="lifedoc-hero">\n'
+        f'  {spark_html}\n'
+        f'  {stats_html}\n'
+        f'</div>\n\n'
+        f'{money_section}\n'
+        f'{reading_section}\n'
     )
-    index_path.write_text(content)
-    print(f'Updated docs/index.md → {log_date_str}, {n_logged}/7 days logged')
+
+    full_text = index_path.read_text()
+    # Replace everything from # Life Dashboard until the next section if it exists, or till end
+    # Actually, the index has content after the hero. Let's use a delimiter or regex.
+    pattern = r'# Life Dashboard.*?(?=\n##|\Z)'
+    updated = _re.sub(pattern, new_content.strip(), full_text, flags=_re.DOTALL)
+    index_path.write_text(updated)
 
 
 def main():
     yesterday_date = date.today() - timedelta(days=1)
     yesterday = yesterday_date.isoformat()
+    
+    print(f"Generating report for {yesterday}...")
     service = get_drive_service()
     
     sections = {
-        'Inbox': [],
         'Money': [],
+        'Reading': [],
         'Travel': [],
-        'Reading': []
+        'Inbox': [],
     }
     
-    # Data source 1 & 2: Receipts and Orders
-    money_sections = []
-    
-    # Receipts
-    receipts_folder_id = DRIVE_TREE.get('path_to_id', {}).get('01 - Second Brain/Memory/Receipts')
-    if receipts_folder_id:
-        receipts = []
-        files = list_files_in_folder(service, receipts_folder_id)
-        for f in files:
-            content = download_file(service, f['id'])
-            blocks = parse_blocks_for_date(content, yesterday)
-            for b in blocks:
-                vendor = f['name'].replace('.md', '')
-                amt_m = re.search(r'\*\*Amount:\*\*\s*(.+)', b)
-                type_m = re.search(r'\*\*Type:\*\*\s*\[(.+?)\]', b)
-                amt = (amt_m.group(1).strip() if amt_m else '').strip()
-                typ = (type_m.group(1).strip() if type_m else '').strip()
-                label = f"{amt} {typ}".strip() if amt else typ or 'Payment'
-                receipts.append(f"• {vendor} — {label}")
-        if receipts:
-            money_sections.append("**Receipts**\n" + "\n".join(receipts))
+    # Use reporter_utils to fetch memory blocks
+    # 1. Money (Orders + Receipts)
+    for category in ['Orders', 'Receipts']:
+        blocks = get_memory_blocks(service, f'{category}/Amazon.md', yesterday)
+        blocks += get_memory_blocks(service, f'{category}/General.md', yesterday)
+        for b in blocks:
+            # Extract bullet points
+            lines = [l.strip() for l in b.split('\n') if l.strip().startswith('•')]
+            sections['Money'].extend(lines)
             
-    # Orders
-    orders_folder_id = DRIVE_TREE.get('path_to_id', {}).get('01 - Second Brain/Memory/Orders')
-    if orders_folder_id:
-        orders = []
-        files = list_files_in_folder(service, orders_folder_id)
-        for f in files:
-            content = download_file(service, f['id'])
-            blocks = parse_blocks_for_date(content, yesterday)
-            for b in blocks:
-                vendor_m = re.search(r'\*\*Vendor:\*\*\s*(.+)', b)
-                url_m = re.search(r'\*\*URL:\*\*\s*(\S+)', b)
-                header = b.split('\n')[0]
-                order_m = re.search(r'Order #(\S+)', header)
-                status_m = re.search(r'\*\*Status:\*\*\s*\[(.+?)\]', b)
-
-                vendor = vendor_m.group(1) if vendor_m else 'Unknown Vendor'
-                order = order_m.group(1) if order_m else 'Unknown'
-                status = status_m.group(1) if status_m else 'Unknown'
-                url = url_m.group(1) if url_m else ''
-
-                label = f"{vendor} — Order #{order}"
-                if url:
-                    orders.append(f"• [{label}]({url}) [{status}]")
-                else:
-                    orders.append(f"• {label} [{status}]")
-        if orders:
-            money_sections.append("**Orders**\n" + "\n".join(orders))
-            
-    if money_sections:
-        sections['Money'] = "\n\n".join(money_sections).split('\n')
-        
-    # Data source 3: Travel
-    memory_folder_id = DRIVE_TREE.get('path_to_id', {}).get('01 - Second Brain/Memory')
-    if memory_folder_id:
-        files = list_files_in_folder(service, memory_folder_id)
-        travel_file = next((f for f in files if f['name'] == 'Travel.md'), None)
-        if travel_file:
-            content = download_file(service, travel_file['id'])
-            blocks = parse_blocks_for_date(content, yesterday)
-            for b in blocks:
-                header = b.split('\n')[0]
-                # Format: ## YYYY-MM-DD — Type — Destination
-                parts = header.split('—')
-                typ_dest = ' — '.join(p.strip() for p in parts[1:]) if len(parts) > 1 else 'Unknown Trip'
-                vendor_m = re.search(r'\*\*Vendor:\*\*\s*(.+)', b)
-                url_m = re.search(r'\*\*URL:\*\*\s*(\S+)', b)
-                status_m = re.search(r'\*\*Status:\*\*\s*\[(.+?)\]', b)
-                vendor = vendor_m.group(1) if vendor_m else 'Unknown Vendor'
-                url = url_m.group(1) if url_m else ''
-                status = status_m.group(1) if status_m else 'Unknown'
-                label = f"{vendor} — {typ_dest}"
-                if url:
+    # 2. Travel
+    travel_blocks = get_memory_blocks(service, 'Travel.md', yesterday)
+    for b in travel_blocks:
+        for line in b.split('\n'):
+            line = line.strip()
+            if line.startswith('•'):
+                # Format: • [label](url) [status]
+                m = re.match(r'• \[(.+?)\]\((.+?)\) \[(.+?)\]', line)
+                if m:
+                    label, url, status = m.groups()
                     sections['Travel'].append(f"• [{label}]({url}) [{status}]")
                 else:
-                    sections['Travel'].append(f"• {label} [{status}]")
+                    sections['Travel'].append(line)
                 
-    # Data source 4: Inbox
-    inbox_folder_id = DRIVE_TREE.get('path_to_id', {}).get('01 - Second Brain/Inbox')
-    if inbox_folder_id:
-        files = list_files_in_folder(service, inbox_folder_id)
-        action_file = next((f for f in files if f['name'] == 'Action Required.md'), None)
-        if action_file:
-            content = download_file(service, action_file['id'])
-            # extract lines starting with • [ or - [
-            items = []
-            for line in content.split('\n'):
-                line = line.strip()
-                if line.startswith('• [') or line.startswith('- ['):
-                    items.append(line)
-            sections['Inbox'] = items[:10]
-            
-    # Data source 5: Readwise
-    last_digest = TOOLBOX_ROOT / 'config' / 'readwise_last_digest.json'
+    # 3. Inbox (Action Required)
+    inbox_blocks = get_memory_blocks(service, 'Inbox/Action Required.md', yesterday)
+    for b in inbox_blocks:
+        # Extract headings as items
+        for line in b.split('\n'):
+            line = line.strip()
+            if line.startswith('### '):
+                subject = line.replace('### ', '').strip()
+                sections['Inbox'].append(f"• {subject}")
+    
+    # 4. Readwise (local config)
+    last_digest = REPO_ROOT / 'config' / 'readwise_last_digest.json'
     if last_digest.exists():
         try:
             data = json.loads(last_digest.read_text())
-            if data.get('date') == date.today().isoformat():
+            # Readwise digest might have arrived 'yesterday'
+            if data.get('date') == yesterday:
                 for a in data.get('articles', []):
                     title = a.get('title', 'Unknown')
                     author = a.get('author', 'Unknown')
@@ -351,16 +239,14 @@ def main():
     md_path = LIFE_DOCS_DIR / f"{yesterday}.md"
     md_path.write_text("\n".join(out_lines))
     
-    # Update index
+    # Update life/index.md (The list of all logs)
     index_path = LIFE_DOCS_DIR / 'index.md'
     if index_path.exists():
         lines = index_path.read_text().split('\n')
         link = f"- [{yesterday}]({yesterday}.md) — {yesterday_date.strftime('%a %d %b')}"
         if link not in lines:
-            # Find first existing entry, or insert after the header line
             insert_idx = next((i for i, l in enumerate(lines) if l.startswith('- [')), None)
             if insert_idx is None:
-                # First run: no entries yet — find header and insert after it
                 header_idx = next((i for i, l in enumerate(lines) if l.startswith('# ')), 0)
                 insert_idx = header_idx + 1
             lines.insert(insert_idx, link)
@@ -373,7 +259,7 @@ def main():
                 lines = lines[:list_start + 30] + lines[list_end:]
             index_path.write_text("\n".join(lines))
                 
-    # Update home page index.md dynamic sections
+    # Update main index.md (The Dashboard)
     update_home_index(
         today=date.today(),
         money_lines=[l for l in sections.get('Money', []) if l.startswith('•')],
@@ -382,16 +268,15 @@ def main():
 
     # Build and Push
     print("Building site and pushing to Git...")
-    try:
-        subprocess.run([str(MKDOCS), 'build', '--quiet'], cwd=LIFE_DOCS_REPO, check=True)
-        subprocess.run(['git', 'add', 'docs/life/', 'docs/index.md'], cwd=LIFE_DOCS_REPO, check=True)
-        subprocess.run(['git', 'commit', '-m', f"daily: {yesterday}"], cwd=LIFE_DOCS_REPO, check=False)
-        subprocess.run(['git', 'push'], cwd=LIFE_DOCS_REPO, check=True)
-        print("Success.")
-    except subprocess.CalledProcessError as e:
-        print(f"Git/Build operation failed: {e}")
+    if rebuild_site():
+        try:
+            subprocess.run(['git', 'add', 'docs/life/', 'docs/index.md'], cwd=LIFE_DOCS_REPO, check=True)
+            subprocess.run(['git', 'commit', '-m', f"daily: {yesterday}"], cwd=LIFE_DOCS_REPO, check=False)
+            subprocess.run(['git', 'push'], cwd=LIFE_DOCS_REPO, check=True)
+            print("Success.")
+        except subprocess.CalledProcessError as e:
+            print(f"Git operation failed: {e}")
 
 if __name__ == '__main__':
-    # Pull before generating to avoid dirty-tree conflict on rebase
     subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)
     main()
