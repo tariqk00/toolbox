@@ -9,6 +9,8 @@ from unittest.mock import patch, MagicMock
 GOOD_EXTRACT = {'items': [{'name': 'Anker Cable', 'qty': '1', 'price': '$15.99'}],
                 'total': '$15.99', 'tracking': '1Z999AA1'}
 EMPTY_EXTRACT = {'items': [], 'total': '', 'tracking': ''}
+MULTI_QTY_EXTRACT = {'items': [{'name': 'Anker Cable', 'qty': '2', 'price': '$15.99'}],
+                     'total': '$31.98', 'tracking': ''}
 
 
 def _make_email(vendor, subject, plain='', date='2026-04-10'):
@@ -59,6 +61,11 @@ class TestNewOrderFormat(unittest.TestCase):
         _, appended, _, _ = _run_process(email)
         self.assertIn('**Status:** [Confirmed]', appended[0])
 
+    def test_new_order_has_explicit_order_number_field(self):
+        email = _make_email('Amazon', 'Your order #112-3456789 has been confirmed', date='2026-04-10')
+        _, appended, _, _ = _run_process(email)
+        self.assertIn('**Order Number:** 112-3456789', appended[0])
+
     def test_new_shipped_order_fills_shipped_placeholder(self):
         """If first email is a Shipped notification, placeholder is pre-filled."""
         email = _make_email('Amazon', 'Your order has shipped', date='2026-04-11')
@@ -86,6 +93,88 @@ class TestNewOrderFormat(unittest.TestCase):
         self.assertEqual(order['tracking'], '1Z999AA10123456784')
         self.assertEqual(order['estimated_delivery'], '2026-04-30')
 
+    def test_new_order_falls_back_to_body_items_and_total(self):
+        email = _make_email(
+            'Costco',
+            'Your Costco order C123456789 has shipped',
+            plain=(
+                'Order total: $49.98\n'
+                '2 × Fairlife Protein Shake $24.99\n'
+                'Tracking number 1Z999AA10123456784\n'
+            ),
+            date='2026-04-25',
+        )
+        _, appended, _, state = _run_process(email, extract_result=EMPTY_EXTRACT)
+        block = appended[0]
+        self.assertIn('**Order Number:** C123456789', block)
+        self.assertIn('**URL:** https://www.costco.com/OrderStatusView', block)
+        self.assertIn('**Total:** $49.98', block)
+        self.assertIn('- Fairlife Protein Shake ×2 — $24.99 [Shipped] 2026-04-25', block)
+        order = state['order_numbers']['C123456789']
+        self.assertEqual(order['items']['fairlife_protein_shake']['qty'], '2')
+
+    def test_order_fallback_uses_generic_vendor_url(self):
+        email = _make_email(
+            'lululemon',
+            'Your order ABC123456 has been confirmed',
+            plain='Order total $128.00\nAlign Leggings $128.00',
+            date='2026-04-25',
+        )
+        _, appended, _, _ = _run_process(email, extract_result=EMPTY_EXTRACT)
+        self.assertIn('**URL:** https://shop.lululemon.com/account/orders', appended[0])
+
+    def test_amazon_confirmation_fallback_extracts_name_only_items(self):
+        email = _make_email(
+            'Amazon',
+            'Your order #113-8944472-9723422 has been confirmed',
+            plain=(
+                'Items in this shipment\n'
+                'Nature Made Advanced Multivitamin Gummies for Adults\n'
+                'Qty: 1\n'
+                'Lavazza Super Crema Whole Bean Coffee\n'
+                'Qty: 1\n'
+                'Order total: $39.87\n'
+            ),
+            date='2026-04-25',
+        )
+        _, appended, _, _ = _run_process(email, extract_result=EMPTY_EXTRACT)
+        block = appended[0]
+        self.assertIn('**Total:** $39.87', block)
+        self.assertIn('- Nature Made Advanced Multivitamin Gummies for Adults [Confirmed] 2026-04-25', block)
+        self.assertIn('- Lavazza Super Crema Whole Bean Coffee [Confirmed] 2026-04-25', block)
+
+    def test_costco_confirmation_fallback_extracts_name_only_items(self):
+        email = _make_email(
+            'Costco',
+            'Your Costco order C123456789 has been confirmed',
+            plain=(
+                'Item Description\n'
+                'Fairlife Protein Shake\n'
+                'Quantity: 2\n'
+                'Order total: $49.98\n'
+            ),
+            date='2026-04-25',
+        )
+        _, appended, _, _ = _run_process(email, extract_result=EMPTY_EXTRACT)
+        self.assertIn('- Fairlife Protein Shake ×2 [Confirmed] 2026-04-25', appended[0])
+
+    def test_lululemon_confirmation_fallback_extracts_name_only_items(self):
+        email = _make_email(
+            'lululemon',
+            'Your order c177512979471524 has been confirmed',
+            plain=(
+                'Your gear\n'
+                'Align Leggings 25\"\n'
+                'Quantity: 1\n'
+                'Order total: $128.00\n'
+            ),
+            date='2026-04-25',
+        )
+        _, appended, _, _ = _run_process(email, extract_result=EMPTY_EXTRACT)
+        block = appended[0]
+        self.assertIn('**Total:** $128.00', block)
+        self.assertIn('- Align Leggings 25" [Confirmed] 2026-04-25', block)
+
     def test_state_stores_placeholder_lines(self):
         email = _make_email('Amazon', 'Your order has been confirmed', date='2026-04-10')
         email['subject'] = 'Your order #112-3456789 has been confirmed'
@@ -96,6 +185,18 @@ class TestNewOrderFormat(unittest.TestCase):
         self.assertEqual(order['shipped_line'], '**Shipped:** —')
         self.assertIn('delivered_line', order)
         self.assertEqual(order['delivered_line'], '**Delivered:** —')
+
+    def test_amazon_pharmacy_state_stores_exact_status_line(self):
+        email = _make_email(
+            'Amazon Pharmacy',
+            'Your PillPack order has shipped',
+            plain='Arriving by Apr 25. PillPack order (7 meds).',
+            date='2026-04-20',
+        )
+        _, appended, _, state = _run_process(email, extract_result=EMPTY_EXTRACT)
+        self.assertIn('**Status:** [Shipped] 2026-04-20', appended[0])
+        order = state['order_numbers']['pillpack:2026-04']
+        self.assertEqual(order['status_line'], '**Status:** [Shipped] 2026-04-20')
 
 
 class TestStatusTransitions(unittest.TestCase):
@@ -151,6 +252,33 @@ class TestStatusTransitions(unittest.TestCase):
         shipped_val = updated.get('**Shipped:** —', '')
         self.assertIn('ETA: 2026-04-30', shipped_val)
 
+    def test_status_update_preserves_item_quantity(self):
+        state = {
+            'order_numbers': {
+                '112-3456789': {
+                    'vendor': 'Amazon',
+                    'date': '2026-04-10',
+                    'status': 'Confirmed',
+                    'items': {
+                        'anker_cable': {
+                            'name': 'Anker Cable',
+                            'qty': '2',
+                            'price': '$15.99',
+                            'status': 'Confirmed',
+                            'date': '2026-04-10',
+                        },
+                    },
+                    'shipped_line': '**Shipped:** —',
+                    'delivered_line': '**Delivered:** —',
+                }
+            }
+        }
+        email = _make_email('Amazon', 'Your order #112-3456789 has shipped', date='2026-04-11')
+        _, _, updated, _ = _run_process(email, state=state, extract_result=MULTI_QTY_EXTRACT)
+        old_line = '- Anker Cable ×2 — $15.99 [Confirmed] 2026-04-10'
+        self.assertIn(old_line, updated)
+        self.assertEqual(updated[old_line], '- Anker Cable ×2 — $15.99 [Shipped] 2026-04-11')
+
     def test_confirmed_to_delivered_updates_delivered_placeholder(self):
         state = self._make_state_with_order(status='Shipped')
         state['order_numbers']['112-3456789']['shipped_line'] = '**Shipped:** 2026-04-11'
@@ -172,6 +300,35 @@ class TestStatusTransitions(unittest.TestCase):
         result, appended, updated, _ = _run_process(email, state=state)
         self.assertIsNone(result)
         self.assertEqual(len(appended), 0)
+
+    def test_amazon_pharmacy_status_update_uses_exact_prior_line(self):
+        state = {
+            'order_numbers': {
+                'pillpack:2026-04': {
+                    'vendor': 'Amazon Pharmacy',
+                    'status': 'Processing',
+                    'date': '2026-04-20',
+                    'product': 'PillPack medications',
+                    'status_line': '**Status:** [Processing] 2026-04-20',
+                }
+            }
+        }
+        email = _make_email(
+            'Amazon Pharmacy',
+            'Your PillPack order has shipped',
+            plain='Arriving by Apr 25.',
+            date='2026-04-21',
+        )
+        _, _, updated, state = _run_process(email, state=state, extract_result=EMPTY_EXTRACT)
+        self.assertIn('**Status:** [Processing] 2026-04-20', updated)
+        self.assertEqual(
+            updated['**Status:** [Processing] 2026-04-20'],
+            '**Status:** [Shipped] 2026-04-21',
+        )
+        self.assertEqual(
+            state['order_numbers']['pillpack:2026-04']['status_line'],
+            '**Status:** [Shipped] 2026-04-21',
+        )
 
 
 class TestRefundStatus(unittest.TestCase):

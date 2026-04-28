@@ -102,6 +102,7 @@ def _extract_order_number(vendor: str, subject: str, body: str) -> str:
     patterns = [
         r'[Oo]rder\s*[#Nn]o?\.?\s*([A-Z0-9\-]{6,})',
         r'[Oo]rder\s+[Nn]umber\s+(\d{8,})',
+        r'[Oo]rder\s+([A-Z][A-Z0-9\-]{5,})',
         r'[Oo]rder\s+[Nn]umber\s+is\s+([A-Z][A-Z0-9]{4,})',
         r'order=([A-Z][A-Z0-9]{4,})',
         r'\[([a-z][0-9]{15,})\]',
@@ -163,6 +164,14 @@ def _extract_status(subject: str) -> str:
 
 def _item_key(name: str) -> str:
     return re.sub(r'\s+', '_', name[:30].lower().strip())
+
+
+def _format_item_line(name: str, qty: str, price: str, status: str, date: str) -> str:
+    qty = (qty or '1').strip()
+    qty_suffix = f' ×{qty}' if qty != '1' else ''
+    price = (price or '').strip()
+    price_part = f' — {price}' if price else ''
+    return f'- {name}{qty_suffix}{price_part} [{status}] {date}'
 
 
 def _extract_carrier(body: str) -> str:
@@ -262,7 +271,179 @@ def _order_url(vendor: str, order_num: str) -> str:
     """Return a direct order URL for vendors that support it, else empty string."""
     if vendor == 'Amazon' and order_num:
         return f'https://www.amazon.com/gp/your-account/order-details?orderID={order_num}'
+    if vendor == 'Costco':
+        return 'https://www.costco.com/OrderStatusView'
+    if vendor == 'Target':
+        return 'https://www.target.com/orders'
+    if vendor == 'Best Buy':
+        return 'https://www.bestbuy.com/identity/global/signin'
+    if vendor == 'Walmart':
+        return 'https://www.walmart.com/orders'
+    if vendor == 'lululemon':
+        return 'https://shop.lululemon.com/account/orders'
+    if vendor == 'WHOOP':
+        return 'https://shop.whoop.com/account/'
     return ''
+
+
+def _extract_total_fallback(subject: str, body: str) -> str:
+    text = f'{subject}\n{body[:5000]}'
+    patterns = [
+        r'(?:order total|grand total|total charged|amount charged|payment total|total)'
+        r'[^$\n]{0,40}\$\s*([\d,]+\.\d{2})',
+        r'\$\s*([\d,]+\.\d{2})[^.\n]{0,40}(?:total|charged|payment)',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text, re.IGNORECASE)
+        if m:
+            return f'${m.group(1)}'
+    return ''
+
+
+def _looks_like_product_line(line: str) -> bool:
+    lower = line.lower().strip()
+    if len(lower) < 4:
+        return False
+    reject_tokens = (
+        'order #', 'tracking', 'subtotal', 'total', 'tax', 'shipping', 'delivery',
+        'arriving', 'returns', 'return', 'payment', 'visa', 'mastercard', 'discover',
+        'account ending', 'gift card', 'billing address', 'shipping address',
+    )
+    if any(token in lower for token in reject_tokens):
+        return False
+    return '$' in line
+
+
+def _looks_like_section_header(line: str) -> bool:
+    lower = line.lower().strip(' :')
+    return lower in {
+        'items ordered',
+        'items in this shipment',
+        'shipment details',
+        'order summary',
+        'item details',
+        'item description',
+        'your gear',
+        'order details',
+    }
+
+
+def _looks_like_name_only_product_line(line: str) -> bool:
+    lower = line.lower().strip()
+    if len(lower) < 4 or '$' in line:
+        return False
+    reject_tokens = (
+        'order #', 'tracking', 'subtotal', 'total', 'tax', 'shipping', 'delivery',
+        'arriving', 'returns', 'return', 'payment', 'visa', 'mastercard', 'discover',
+        'account ending', 'gift card', 'billing address', 'shipping address',
+        'order status', 'track your package', 'carrier', 'estimated delivery',
+        'quantity', 'qty', 'size', 'color', 'price', 'item description',
+    )
+    if any(token in lower for token in reject_tokens):
+        return False
+    if re.fullmatch(r'[A-Z0-9\- ]{3,}', line.strip()):
+        return False
+    words = re.findall(r'[A-Za-z0-9]+', line)
+    return len(words) >= 2
+
+
+def _extract_qty_nearby(lines: list[str], start_idx: int) -> str:
+    for offset in range(1, 3):
+        idx = start_idx + offset
+        if idx >= len(lines):
+            break
+        candidate = re.sub(r'\s+', ' ', lines[idx]).strip(' •\t')
+        if not candidate:
+            continue
+        match = re.search(r'\b(?:qty|quantity)[: ]+(\d+)\b', candidate, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        match = re.search(r'^(\d+)\s*(?:x|×)\b', candidate, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return '1'
+
+
+def _extract_items_fallback(body: str) -> list[dict]:
+    items: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    lines = body.splitlines()
+    for raw_line in lines:
+        line = re.sub(r'\s+', ' ', raw_line).strip(' •\t')
+        if not _looks_like_product_line(line):
+            continue
+
+        qty = '1'
+        qty_match = re.search(r'^(?:qty[: ]*)?(\d+)\s*[x×]\s+(.+)$', line, re.IGNORECASE)
+        if qty_match:
+            qty = qty_match.group(1)
+            line = qty_match.group(2).strip()
+
+        price_match = re.search(r'\$\s*([\d,]+\.\d{2})\b', line)
+        if not price_match:
+            continue
+        price = f'${price_match.group(1)}'
+
+        name = line[:price_match.start()].strip(' -:\u2022')
+        if not name:
+            after_price = line[price_match.end():].strip(' -:\u2022')
+            if after_price:
+                name = after_price
+        if not name or len(name) < 2:
+            continue
+
+        leading_qty = re.search(r'\bqty[: ]*(\d+)\b', name, re.IGNORECASE)
+        if leading_qty:
+            qty = leading_qty.group(1)
+            name = re.sub(r'\bqty[: ]*\d+\b', '', name, flags=re.IGNORECASE).strip(' -:')
+
+        key = (name.lower(), qty, price)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({'name': name, 'qty': qty, 'price': price})
+        if len(items) >= 8:
+            break
+
+    if items:
+        return items
+
+    in_item_section = False
+    for idx, raw_line in enumerate(lines):
+        line = re.sub(r'\s+', ' ', raw_line).strip(' •\t')
+        if not line:
+            if in_item_section:
+                in_item_section = False
+            continue
+        if _looks_like_section_header(line):
+            in_item_section = True
+            continue
+        if not in_item_section:
+            continue
+        if not _looks_like_name_only_product_line(line):
+            continue
+
+        qty = _extract_qty_nearby(lines, idx)
+        key = (line.lower(), qty, '')
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({'name': line, 'qty': qty, 'price': ''})
+        if len(items) >= 8:
+            break
+
+    return items
+
+
+def _merge_extracted_order_data(subject: str, body: str, extracted: dict) -> dict:
+    merged = dict(extracted or {})
+    items = list(merged.get('items') or [])
+    if not items:
+        items = _extract_items_fallback(body)
+    total = merged.get('total') or _extract_total_fallback(subject, body)
+    merged['items'] = items
+    merged['total'] = total
+    return merged
 
 
 # ── Gemini extraction ────────────────────────────────────────────────────────
@@ -308,24 +489,27 @@ def process(email: dict, state: dict) -> str | None:
             prev_status = prev.get('status', '')
             if status == prev_status:
                 return None
-            old_line = f'**Status:** [{prev_status}]'
+            old_line = prev.get('status_line') or f'**Status:** [{prev_status}] {prev.get("date", "")}'.rstrip()
             new_line = f'**Status:** [{status}] {date}'
             if not update_in_memory('Orders', filename, old_line, new_line):
-                update_in_memory('Orders', filename,
-                                 f'**Status:** {prev_status}', new_line)
+                fallback_old_line = f'**Status:** [{prev_status}]'
+                update_in_memory('Orders', filename, fallback_old_line, new_line)
             prev['status'] = status
+            prev['date'] = date
+            prev['status_line'] = new_line
             summary = f'Amazon Pharmacy → {status}'
             logger.info(f'Orders/{filename}: status update {summary}')
             return summary
 
-        extracted = _extract_items_llm(vendor, subject, body)
+        extracted = _merge_extracted_order_data(subject, body, _extract_items_llm(vendor, subject, body))
         items = extracted.get('items', [])
         total = extracted.get('total', '')
         product = items[0]['name'] if items else 'PillPack medications'
+        status_line = f'**Status:** [{status}] {date}'
 
         lines = [f'## {date} — PillPack {order_key.split(":", 1)[1]} [{status}]']
         lines.append(f'**Vendor:** Amazon Pharmacy')
-        lines.append(f'**Status:** [{status}] {date}')
+        lines.append(status_line)
         if product:
             lines.append(f'**Medications:** {product}')
         if total:
@@ -335,6 +519,7 @@ def process(email: dict, state: dict) -> str | None:
         append_to_memory('Orders', filename, '\n'.join(lines))
         known_orders[order_key] = {
             'vendor': vendor, 'status': status, 'date': date, 'product': product,
+            'status_line': status_line,
         }
         summary = f'Amazon Pharmacy: {product} [{status}]'
         if total:
@@ -358,8 +543,20 @@ def process(email: dict, state: dict) -> str | None:
             item_status = item.get('status', '')
             if status == item_status:
                 continue
-            old_line = f'- {item["name"]} — {item["price"]} [{item_status}] {item.get("date", "")}'.rstrip()
-            new_line = f'- {item["name"]} — {item["price"]} [{status}] {date}'
+            old_line = _format_item_line(
+                item['name'],
+                item.get('qty', '1'),
+                item.get('price', ''),
+                item_status,
+                item.get('date', ''),
+            )
+            new_line = _format_item_line(
+                item['name'],
+                item.get('qty', '1'),
+                item.get('price', ''),
+                status,
+                date,
+            )
             update_in_memory('Orders', filename, old_line, new_line)
             item['status'] = status
             item['date'] = date
@@ -373,7 +570,7 @@ def process(email: dict, state: dict) -> str | None:
         new_tracking = ''
 
         if status == 'Shipped':
-            ship_extract = _extract_items_llm(vendor, subject, body)
+            ship_extract = _merge_extracted_order_data(subject, body, _extract_items_llm(vendor, subject, body))
             shipping = _shipping_details(ship_extract, body, date)
             carrier = shipping['carrier']
             new_tracking = shipping['tracking']
@@ -421,7 +618,7 @@ def process(email: dict, state: dict) -> str | None:
         return summary
 
     # New order — call LLM for item extraction
-    extracted = _extract_items_llm(vendor, subject, body)
+    extracted = _merge_extracted_order_data(subject, body, _extract_items_llm(vendor, subject, body))
     items = extracted.get('items', [])
     total = extracted.get('total', '')
     shipping = _shipping_details(extracted, body, date)
@@ -446,6 +643,7 @@ def process(email: dict, state: dict) -> str | None:
 
     lines = [f'## {date} — Order #{order_num or "N/A"} [{status}]']
     lines.append(f'**Vendor:** {vendor}')
+    lines.append(f'**Order Number:** {order_num or "N/A"}')
     url = _order_url(vendor, order_num)
     if url:
         lines.append(f'**URL:** {url}')
@@ -465,9 +663,7 @@ def process(email: dict, state: dict) -> str | None:
         name = item.get('name', '').strip()
         price = item.get('price', '').strip()
         qty = item.get('qty', '1').strip()
-        qty_suffix = f' \u00d7{qty}' if qty and qty != '1' else ''
-        price_part = f' — {price}' if price else ''
-        lines.append(f'- {name}{qty_suffix}{price_part} [{status}] {date}')
+        lines.append(_format_item_line(name, qty, price, status, date))
     if not items:
         lines.append('*(items not extracted)*')
     lines.append('---')
@@ -478,6 +674,7 @@ def process(email: dict, state: dict) -> str | None:
         item_dict = {
             _item_key(i.get('name', '')): {
                 'name': i.get('name', ''),
+                'qty': i.get('qty', '1'),
                 'price': i.get('price', ''),
                 'status': status,
                 'date': date,
