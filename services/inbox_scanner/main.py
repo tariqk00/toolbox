@@ -29,6 +29,7 @@ from toolbox.services.inbox_scanner.categories.action_required import ActionRequ
 from toolbox.services.inbox_scanner.categories.inquiry import InquiryProcessor
 from toolbox.services.inbox_scanner.categories.uptown_inquiry import UptownInquiryProcessor
 from toolbox.services.inbox_scanner import actions
+from toolbox.services.inbox_scanner.uptown_response_kb import sync_response_kb
 
 GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 CONFIG_DIR = os.path.join(BASE_DIR, 'config', 'inbox_scanner')
@@ -197,6 +198,13 @@ def run(mailbox_id: str = 'primary') -> None:
     # Uptown: check existing open inquiries for replies before processing new messages
     if mailbox_id == 'uptown':
         _check_uptown_responses(service, state, telegram_service)
+        try:
+            synced = sync_response_kb(service, state)
+            actions.sync_uptown_inquiry_index(state.get('uptown_response_kb_synced_entries', []))
+            if synced:
+                logger.info(f'Uptown response KB synced: {synced} thread(s)')
+        except Exception as e:
+            logger.warning(f'Uptown response KB sync failed: {e}')
 
     try:
         with open(EXTRACTOR_CONFIG_PATH) as f:

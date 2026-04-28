@@ -83,6 +83,33 @@ def get_memory_content(category: str | None, filename: str) -> str:
     return existing_bytes.decode('utf-8') if isinstance(existing_bytes, bytes) else existing_bytes
 
 
+def list_memory_files(category: str | None) -> dict[str, str]:
+    """Return {filename: file_id} for all files in a memory folder."""
+    service = get_drive_service()
+    folder_path = f'{MEMORY_ROOT}/{category}' if category else MEMORY_ROOT
+    folder_id = _resolve_path(service, folder_path)
+    query = f"'{folder_id}' in parents and trashed = false"
+    results = service.files().list(q=query, fields='files(id, name)').execute()
+    return {f['name']: f['id'] for f in results.get('files', [])}
+
+
+def set_memory_content(category: str | None, filename: str, content: str) -> None:
+    """Create or replace the full contents of a Memory file."""
+    service = get_drive_service()
+    folder_path = f'{MEMORY_ROOT}/{category}' if category else MEMORY_ROOT
+    folder_id = _resolve_path(service, folder_path)
+    file_id = _get_file_in_folder(service, folder_id, filename)
+    media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='text/markdown')
+
+    if file_id:
+        service.files().update(fileId=file_id, media_body=media).execute()
+        logger.info(f'Set {category or "Memory"}/{filename}')
+    else:
+        meta = {'name': filename, 'parents': [folder_id]}
+        service.files().create(body=meta, media_body=media, fields='id').execute()
+        logger.info(f'Created {category or "Memory"}/{filename}')
+
+
 def block_exists(content: str, date: str, *identifiers: str) -> bool:
     """
     Return True if `content` already contains a markdown block (separated by

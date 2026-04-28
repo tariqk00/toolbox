@@ -13,17 +13,18 @@ if BASE_DIR not in sys.path:
 
 from googleapiclient.http import MediaIoBaseUpload
 from toolbox.lib.drive_utils import get_drive_service, append_to_file
-from toolbox.lib.task_utils import dedupe_action_items, add_task
+from toolbox.lib.task_utils import add_task
 from toolbox.lib.telegram import send_message, escape, monit_link
 
 logger = logging.getLogger('InboxScanner.Actions')
 
 INBOX_ROOT = '01 - Second Brain/Inbox'
+UPTOWN_INQUIRY_CATEGORY = 'Properties'
+UPTOWN_INQUIRY_FILENAME = 'Uptown Edenton Inquiries.md'
 
 
 def write_action_required(items: list) -> None:
     """Write action required items to Drive log and Google Tasks with dedup."""
-    items = dedupe_action_items(items)
     for item in items:
         add_task(
             subject=item["subject"],
@@ -201,39 +202,144 @@ def write_uptown_inquiries(items: list) -> None:
     """Write Uptown Edenton inquiries to Memory/Properties/Uptown Edenton Inquiries.md."""
     if not items:
         return
-    from toolbox.services.email_extractor.writers import append_to_memory
+    from toolbox.services.email_extractor.writers import get_memory_content, set_memory_content
+    content = get_memory_content(UPTOWN_INQUIRY_CATEGORY, UPTOWN_INQUIRY_FILENAME)
     for item in items:
-        date = item.get('date', '')
-        subject = item.get('subject', '')
-        tenant = item.get('tenant', '')
-        platform = item.get('platform', 'Direct')
-        sender = item.get('sender', '')
-        unit_interest = item.get('unit_interest', '')
-        move_in = item.get('move_in', '')
-        questions = item.get('questions', [])
-        contact_phone = item.get('contact_phone', '')
-        notes = item.get('notes', '')
+        content = upsert_uptown_inquiry_entry(content, item)
+        logger.info(f'Uptown inquiry logged: {item.get("tenant") or item.get("sender","")} — {item.get("subject","")}')
+    set_memory_content(UPTOWN_INQUIRY_CATEGORY, UPTOWN_INQUIRY_FILENAME, content)
 
-        lines = [f'## {date} — {subject}']
-        lines.append(f'**From:** {sender} ({platform})')
-        if tenant:
-            lines.append(f'**Tenant:** {tenant}')
-        if contact_phone:
-            lines.append(f'**Phone:** {contact_phone}')
-        if unit_interest:
-            lines.append(f'**Interested in:** {unit_interest}')
-        if move_in:
-            lines.append(f'**Move-in:** {move_in}')
-        if questions:
-            lines.append('**Questions:**')
-            for q in questions:
-                lines.append(f'- {q}')
-        if notes:
-            lines.append(f'*{notes}*')
-        lines.append('**Response:** Pending')
-        lines.append('---')
-        append_to_memory('Properties', 'Uptown Edenton Inquiries.md', '\n'.join(lines))
-        logger.info(f'Uptown inquiry logged: {tenant or sender} — {subject}')
+
+def _render_uptown_inquiry_block(item: dict, kb_filename: str = '', response_status: str = 'Pending') -> str:
+    date = item.get('date', '')
+    subject = item.get('subject', '')
+    tenant = item.get('tenant', '')
+    platform = item.get('platform', 'Direct')
+    sender = item.get('sender', '')
+    unit_interest = item.get('unit_interest', '')
+    move_in = item.get('move_in', '')
+    questions = item.get('questions', [])
+    contact_phone = item.get('contact_phone', '')
+    notes = item.get('notes', '')
+    thread_id = item.get('thread_id', '')
+
+    lines = [f'## {date} — {subject}']
+    lines.append(f'**From:** {sender} ({platform})')
+    if tenant:
+        lines.append(f'**Tenant:** {tenant}')
+    if contact_phone:
+        lines.append(f'**Phone:** {contact_phone}')
+    if unit_interest:
+        lines.append(f'**Interested in:** {unit_interest}')
+    if move_in:
+        lines.append(f'**Move-in:** {move_in}')
+    if questions:
+        lines.append('**Questions:**')
+        for q in questions:
+            lines.append(f'- {q}')
+    if notes:
+        lines.append(f'*{notes}*')
+    if thread_id:
+        lines.append(f'**Thread ID:** {thread_id}')
+    lines.append(f'**KB File:** {kb_filename or "Pending"}')
+    lines.append(f'**Response:** {response_status}')
+    lines.append('---')
+    return '\n'.join(lines)
+
+
+def _split_blocks(content: str) -> list[str]:
+    return [block.strip() for block in content.split('---') if block.strip()]
+
+
+def _join_blocks(blocks: list[str]) -> str:
+    if not blocks:
+        return ''
+    return '\n\n---\n\n'.join(blocks).strip() + '\n'
+
+
+def _block_thread_id(block: str) -> str:
+    import re
+    match = re.search(r'^\*\*Thread ID:\*\*\s*(.+)$', block, re.MULTILINE)
+    return match.group(1).strip() if match else ''
+
+
+def _block_header(block: str) -> tuple[str, str]:
+    import re
+    match = re.search(r'^##\s+(\S+)\s+—\s+(.+)$', block, re.MULTILINE)
+    if not match:
+        return '', ''
+    return match.group(1).strip(), match.group(2).strip()
+
+
+def upsert_uptown_inquiry_entry(content: str, item: dict) -> str:
+    blocks = _split_blocks(content)
+    thread_id = item.get('thread_id', '')
+    replacement = _render_uptown_inquiry_block(item)
+    for idx, block in enumerate(blocks):
+        if thread_id and _block_thread_id(block) == thread_id:
+            blocks[idx] = replacement
+            return _join_blocks(blocks)
+    blocks.append(replacement)
+    return _join_blocks(blocks)
+
+
+def sync_uptown_inquiry_index(kb_entries: list[dict]) -> None:
+    """Update Uptown inquiry index with KB filename links and responded status."""
+    from toolbox.services.email_extractor.writers import get_memory_content, set_memory_content
+    import re
+
+    content = get_memory_content(UPTOWN_INQUIRY_CATEGORY, UPTOWN_INQUIRY_FILENAME)
+    blocks = _split_blocks(content)
+    changed = False
+    seen_threads = {_block_thread_id(block) for block in blocks if _block_thread_id(block)}
+
+    for idx, block in enumerate(blocks):
+        thread_id = _block_thread_id(block)
+        if not thread_id:
+            continue
+        match = next((entry for entry in kb_entries if entry.get('thread_id') == thread_id), None)
+        if not match:
+            continue
+        updated = block
+        kb_file = match.get('_kb_filename', '')
+        if kb_file:
+            if re.search(r'^\*\*KB File:\*\* .+$', updated, re.MULTILINE):
+                updated = re.sub(r'^\*\*KB File:\*\* .+$', f'**KB File:** {kb_file}', updated, flags=re.MULTILINE)
+            else:
+                updated += f'\n**KB File:** {kb_file}'
+        if re.search(r'^\*\*Response:\*\* .+$', updated, re.MULTILINE):
+            updated = re.sub(r'^\*\*Response:\*\* .+$', '**Response:** Responded', updated, flags=re.MULTILINE)
+        else:
+            updated += '\n**Response:** Responded'
+        if updated != block:
+            blocks[idx] = updated
+            changed = True
+
+    for entry in kb_entries:
+        thread_id = entry.get('thread_id', '')
+        if not thread_id or thread_id in seen_threads:
+            continue
+        entry_date = entry.get('date', '')
+        entry_subject = entry.get('subject', '')
+        already_present = any(
+            _block_header(block) == (entry_date, entry_subject)
+            for block in blocks
+        )
+        if already_present:
+            continue
+        blocks.append(_render_uptown_inquiry_block({
+            'date': entry.get('date', ''),
+            'subject': entry.get('subject', ''),
+            'tenant': entry.get('lead_name', ''),
+            'platform': entry.get('source', 'Direct'),
+            'sender': entry.get('lead_name', ''),
+            'notes': 'Linked from Uptown response KB',
+            'thread_id': entry.get('thread_id', ''),
+        }, kb_filename=entry.get('_kb_filename', ''), response_status='Responded'))
+        changed = True
+
+    if changed:
+        set_memory_content(UPTOWN_INQUIRY_CATEGORY, UPTOWN_INQUIRY_FILENAME, _join_blocks(blocks))
 
 
 def send_run_summary(results: dict, errors: int, mailbox_email: str, telegram_service: str) -> None:

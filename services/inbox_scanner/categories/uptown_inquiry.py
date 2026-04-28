@@ -56,6 +56,9 @@ Guidelines:
 - Do NOT invent specific pricing, unit availability, or amenity details
 - Sign off as: Christina | Uptown Edenton
 
+Reference examples from prior real responses:
+{examples}
+
 Prospect name: {name}
 Their questions: {questions}
 Original message:
@@ -87,6 +90,7 @@ class UptownInquiryProcessor(CategoryProcessor):
 
     def process(self, email: dict, classification: dict) -> dict | None:
         from toolbox.lib.llm import call, call_json
+        from toolbox.services.inbox_scanner.uptown_response_kb import build_prompt_examples
 
         body = _get_plain_body(email)
         if not body:
@@ -119,7 +123,15 @@ class UptownInquiryProcessor(CategoryProcessor):
         # Generate shadow response
         shadow = ''
         try:
+            examples = build_prompt_examples({
+                'platform': platform,
+                'subject': subject,
+                'unit_interest': unit_interest,
+                'questions': questions,
+                'body': body[:1500],
+            })
             shadow = call(SHADOW_RESPONSE_PROMPT.format(
+                examples=examples or 'No closely matching examples available.',
                 name=tenant or 'there',
                 questions=', '.join(questions) if questions else 'none specified',
                 body=body[:3000],

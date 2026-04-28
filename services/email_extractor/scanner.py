@@ -200,9 +200,8 @@ def _extract_attachments(payload: dict):
     return attachments
 
 
-def get_full_email(service, message_id: str) -> dict:
-    """Fetch and parse a full email message."""
-    msg = service.users().messages().get(userId='me', id=message_id).execute()
+def parse_gmail_message(msg: dict) -> dict:
+    """Parse a raw Gmail message resource into the shared email dict shape."""
     headers = {h['name']: h['value'] for h in msg['payload']['headers']}
     plain, html = _extract_body(msg['payload'])
     attachments = _extract_attachments(msg['payload'])
@@ -214,9 +213,12 @@ def get_full_email(service, message_id: str) -> dict:
         date_dt = datetime.now(timezone.utc)
 
     return {
-        'id': message_id,
+        'id': msg.get('id', ''),
+        'thread_id': msg.get('threadId', ''),
         'subject': headers.get('Subject', ''),
         'from': headers.get('From', ''),
+        'to': headers.get('To', ''),
+        'cc': headers.get('Cc', ''),
         'date_str': date_str,
         'date_dt': date_dt,
         'date': date_dt.strftime('%Y-%m-%d'),
@@ -234,6 +236,12 @@ def get_attachment(service, message_id: str, attachment_id: str):
     ).execute()
     data = result.get('data', '')
     return base64.urlsafe_b64decode(data + '==')
+
+
+def get_full_email(service, message_id: str) -> dict:
+    """Fetch and parse a full email message."""
+    msg = service.users().messages().get(userId='me', id=message_id).execute()
+    return parse_gmail_message(msg)
 
 
 def _sender_email(from_header: str) -> str:
