@@ -256,12 +256,6 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
     if not service:
         service = get_drive_service()
     
-    # Init Logger to file
-    if not dry_run:
-        fh = RotatingFileHandler(LOG_FILE, maxBytes=10*1024*1024, backupCount=5)
-        fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        logger.addHandler(fh)
-    
     print(f"Scanning folder {folder_name} ({folder_id})...")
     
     results = service.files().list(

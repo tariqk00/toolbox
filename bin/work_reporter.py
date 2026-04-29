@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT.parent))
 
 from toolbox.lib.reporter_utils import (
-    LIFE_DOCS_REPO, rebuild_site, ReportSection
+    LIFE_DOCS_REPO, rebuild_site, ReportSection, logger
 )
 
 WORK_DOCS_DIR = LIFE_DOCS_REPO / 'docs' / 'work'
@@ -34,7 +34,7 @@ def build_backlog():
             )
             issues = json.loads(res.stdout)
         except Exception as e:
-            print(f"Failed to fetch issues for {repo}: {e}")
+            logger.error(f"Failed to fetch issues for {repo}: {e}")
             continue
             
         for issue in issues:
@@ -132,27 +132,27 @@ def build_health():
 def main():
     WORK_DOCS_DIR.mkdir(parents=True, exist_ok=True)
     
-    print("Fetching backlog...")
+    logger.info("Fetching backlog...")
     build_backlog()
     
-    print("Fetching changelog...")
+    logger.info("Fetching changelog...")
     build_changelog()
     
-    print("Fetching sessions...")
+    logger.info("Fetching sessions...")
     build_sessions()
     
-    print("Building health report...")
+    logger.info("Building health report...")
     build_health()
     
-    print("Building site and pushing...")
+    logger.info("Building site and pushing...")
     if rebuild_site():
         try:
             subprocess.run(['git', 'add', 'docs/work/'], cwd=LIFE_DOCS_REPO, check=True)
             subprocess.run(['git', 'commit', '-m', "work: update reports"], cwd=LIFE_DOCS_REPO, check=False)
             subprocess.run(['git', 'push'], cwd=LIFE_DOCS_REPO, check=True)
-            print("Success.")
+            logger.info("Successfully pushed work reports to Git.")
         except subprocess.CalledProcessError as e:
-            print(f"Git operation failed: {e}")
+            logger.error(f"Git operation failed: {e}")
 
 if __name__ == '__main__':
     subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)

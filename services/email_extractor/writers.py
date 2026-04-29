@@ -17,8 +17,11 @@ if os.path.dirname(BASE_DIR) not in sys.path:
 
 from googleapiclient.http import MediaIoBaseUpload
 from toolbox.lib.drive_utils import get_drive_service
+from toolbox.lib.log_manager import LogManager
 
-logger = logging.getLogger('EmailExtractor.Writers')
+# Initialize centralized logger
+log_manager = LogManager.get_instance('email-extractor')
+logger = log_manager.logger
 
 MEMORY_ROOT = '01 - Second Brain/Memory'
 

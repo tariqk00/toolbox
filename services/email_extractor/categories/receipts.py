@@ -18,6 +18,7 @@ REMINDER_KEYWORDS = ('reminder', 'upcoming', 'scheduled', 'due soon', 'autopay',
 FINANCIAL_VENDORS = {
     'Capital One', 'Chase', 'Citi / Costco Visa', 'Toyota Financial',
     'Volvo Financial', 'PSEG Long Island', 'T-Mobile', 'E-ZPass NY',
+    'Allied Physicians Group',
 }
 
 RECEIPT_CATEGORIES = {
@@ -45,7 +46,7 @@ def _extract_amount(subject: str, plain: str) -> str:
         r'[^$\n]{0,80}\$\s*([\d,]+\.\d{2})',
         r'(?:you paid|charged|charge|fare|toll amount|plan fee|renewal fee)'
         r'[^$\n]{0,80}\$\s*([\d,]+\.\d{2})',
-        r'\$\s*([\d,]+\.\d{2})[^.\n]{0,80}'
+        r'\$\s*([\d,]+\.\d{2})[^.\n]{0,40}'
         r'(?:due|scheduled|posted|received|confirmed|payment|statement)',
     ]
     for pattern in priority_patterns:
@@ -63,14 +64,16 @@ def _extract_account(plain: str) -> str:
     for pattern in [
         r'[Cc]ard\s*ending\s*in\s*(\d{4})',
         r'[Cc]ard\s*ending\s*(?:with|in)?\s*[x*• ]*(\d{4})',
-        r'[Aa]ccount\s*ending\s*(?:with|in)?\s*[x*• ]*(\d{4})',
-        r'[Aa]ccount\s*[Nn]umber[:\s]+[x*]+(\d{4,})',
+        r'[Aa]ccount\s*(?:number)?\s*ending\s*(?:with|in)?\s*[x*• ]*(\d{4})',
+        r'[Aa]ccount\s*[Nn]umber[:\s]+[x*•]*(\d{4,})',
         r'[Aa]ccount[:\s]+[x*•]+(\d{4})',
         r'[Aa]ccount\s*[Nn]umber[:\s]+\**(\d{4,})',
+        r'[Aa]ccount\s*[:#]\s*([0-9-]{4,})',
     ]:
-        m = re.search(pattern, plain[:3000])
+        m = re.search(pattern, plain[:3000], re.IGNORECASE)
         if m:
-            return f'...{m.group(1)}'
+            val = m.group(1).replace('-', '')
+            return f'...{val[-4:]}'
     return ''
 
 
@@ -102,8 +105,8 @@ def _extract_date_by_label(text: str, labels: tuple[str, ...], email_date: str) 
     )
     for label in labels:
         patterns = [
-            rf'{label}[^A-Za-z0-9]{{0,20}}{date_pattern}',
-            rf'{date_pattern}[^.\n]{{0,40}}{label}',
+            rf'{label}[\s\S]{{0,60}}?{date_pattern}',
+            rf'{date_pattern}[\s\S]{{0,40}}?{label}',
         ]
         for pattern in patterns:
             m = re.search(pattern, text, re.IGNORECASE)

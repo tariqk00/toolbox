@@ -9,8 +9,11 @@ import logging
 from datetime import datetime, date
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from toolbox.lib.log_manager import LogManager
 
-logger = logging.getLogger('ReporterUtils')
+# Initialize centralized logger
+log_manager = LogManager.get_instance('reporting')
+logger = log_manager.logger
 
 # --- Paths ---
 REPO_ROOT = Path(__file__).resolve().parent.parent

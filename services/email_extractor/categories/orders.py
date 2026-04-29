@@ -100,13 +100,13 @@ def _prep_for_llm(body: str) -> str:
 
 def _extract_order_number(vendor: str, subject: str, body: str) -> str:
     patterns = [
-        r'[Oo]rder\s*[#Nn]o?\.?\s*([A-Z0-9\-]{6,})',
-        r'[Oo]rder\s+[Nn]umber\s+(\d{8,})',
+        r'[Oo]rder\s*(?:confirmation\s*)?[#Nn]o?\.?\s*([A-Za-z0-9\-]{6,})',
+        r'[Oo]rder\s+[Nn]umber\s+([A-Za-z0-9\-]{6,})',
         r'[Oo]rder\s+([A-Z][A-Z0-9\-]{5,})',
-        r'[Oo]rder\s+[Nn]umber\s+is\s+([A-Z][A-Z0-9]{4,})',
-        r'order=([A-Z][A-Z0-9]{4,})',
-        r'\[([a-z][0-9]{15,})\]',
-        r'#(\d{8,})',
+        r'[Oo]rder\s+[Nn]umber\s+is\s+([A-Za-z0-9\-]{4,})',
+        r'order=([A-Za-z0-9\-]{4,})',
+        r'\[([a-z0-9]{15,})\]',
+        r'#([A-Za-z0-9\-]{6,})',
     ]
     for text in (subject, body[:3000]):
         for pattern in patterns:
@@ -448,6 +448,23 @@ def _merge_extracted_order_data(subject: str, body: str, extracted: dict) -> dic
 
 # ── Gemini extraction ────────────────────────────────────────────────────────
 
+def _fallback_extract_items(body: str) -> list[dict]:
+    """Deterministic fallback for item extraction if LLM fails."""
+    items = []
+    # Common pattern: "Items: 1 of Widget A" or "1 of Widget A"
+    m_items = re.findall(r'(\d+)\s+of\s+([^.\n]{2,60})', body[:4000])
+    for qty, name in m_items:
+        items.append({'name': name.strip(), 'qty': qty, 'price': ''})
+    
+    # Another pattern: bullet points with prices
+    # • Widget B — $12.34
+    m_bullets = re.findall(r'[•*-]\s+([^—\n]{2,60})—\s*(\$\s*[\d,]+\.\d{2})', body[:4000])
+    for name, price in m_bullets:
+        items.append({'name': name.strip(), 'qty': '1', 'price': price.strip()})
+        
+    return items
+
+
 def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
     """
     Ask Gemini to extract items, total, and tracking from an order email.
@@ -620,7 +637,16 @@ def process(email: dict, state: dict) -> str | None:
     # New order — call LLM for item extraction
     extracted = _merge_extracted_order_data(subject, body, _extract_items_llm(vendor, subject, body))
     items = extracted.get('items', [])
+    if not items:
+        items = _fallback_extract_items(body)
+        
     total = extracted.get('total', '')
+    if not total:
+        # Simple total fallback: "Order Total: $45.99"
+        m_total = re.search(r'(?:total|amount due|grand total)[:\s]*(\$\s*[\d,]+\.\d{2})', body[:4000], re.IGNORECASE)
+        if m_total:
+            total = m_total.group(1).strip()
+
     shipping = _shipping_details(extracted, body, date)
     tracking = shipping['tracking']
     carrier = shipping['carrier'] if status in ('Shipped', 'Out for Delivery', 'Delivered') else ''

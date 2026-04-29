@@ -18,7 +18,7 @@ sys.path.insert(0, str(REPO_ROOT.parent))
 from toolbox.lib.drive_utils import get_drive_service
 from toolbox.lib.reporter_utils import (
     LIFE_DOCS_REPO, rebuild_site, get_memory_blocks,
-    build_stat_card, build_row
+    build_stat_card, build_row, logger
 )
 
 LIFE_DOCS_DIR = LIFE_DOCS_REPO / 'docs' / 'life'
@@ -153,13 +153,14 @@ def update_home_index(today: date, money_lines: list[str], reading_lines: list[s
     pattern = r'# Life Dashboard.*?(?=\n##|\Z)'
     updated = _re.sub(pattern, new_content.strip(), full_text, flags=_re.DOTALL)
     index_path.write_text(updated)
+    logger.info("Updated docs/index.md", extra={"log_date": log_date_str, "days_logged": f"{n_logged}/7"})
 
 
 def main():
     yesterday_date = date.today() - timedelta(days=1)
     yesterday = yesterday_date.isoformat()
     
-    print(f"Generating report for {yesterday}...")
+    logger.info(f"Generating report for {yesterday}...")
     service = get_drive_service()
     
     sections = {
@@ -267,15 +268,15 @@ def main():
     )
 
     # Build and Push
-    print("Building site and pushing to Git...")
+    logger.info("Building site and pushing to Git...")
     if rebuild_site():
         try:
             subprocess.run(['git', 'add', 'docs/life/', 'docs/index.md'], cwd=LIFE_DOCS_REPO, check=True)
             subprocess.run(['git', 'commit', '-m', f"daily: {yesterday}"], cwd=LIFE_DOCS_REPO, check=False)
             subprocess.run(['git', 'push'], cwd=LIFE_DOCS_REPO, check=True)
-            print("Success.")
+            logger.info("Successfully pushed daily report to Git.")
         except subprocess.CalledProcessError as e:
-            print(f"Git operation failed: {e}")
+            logger.error(f"Git operation failed: {e}")
 
 if __name__ == '__main__':
     subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)

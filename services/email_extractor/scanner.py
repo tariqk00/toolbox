@@ -12,7 +12,6 @@ from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-PLAUD_DIR = os.path.join(os.path.dirname(BASE_DIR), 'plaud')
 STATE_PATH = os.path.join(BASE_DIR, 'config', 'email_extractor_state.json')
 CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'email_extractor_config.json')
 
@@ -22,14 +21,17 @@ if os.path.dirname(BASE_DIR) not in sys.path:
     sys.path.insert(0, os.path.dirname(BASE_DIR))
 
 from toolbox.lib.google_api import GoogleAuth
+from toolbox.lib.log_manager import LogManager
 
-logger = logging.getLogger('EmailExtractor.Scanner')
+# Initialize centralized logger
+log_manager = LogManager.get_instance('email-extractor')
+logger = log_manager.logger
 
 GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
 
 def get_gmail_service():
-    auth = GoogleAuth(base_dir=PLAUD_DIR)
+    auth = GoogleAuth(base_dir=BASE_DIR)
     creds = auth.get_credentials(
         token_filename='token_gmail_plaud.json',
         credentials_filename='config/credentials.json',
