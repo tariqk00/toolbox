@@ -305,6 +305,19 @@ def _extract_total_fallback(subject: str, body: str) -> str:
     return ''
 
 
+def _extract_payment_method(body: str) -> str:
+    text = body[:5000]
+    patterns = [
+        r'((?:Amex|American Express|Visa|Mastercard|Discover)[^.\n]{0,50}(?:ending in|ending with)?[^.\n]{0,12}\d{4})',
+        r'((?:card|credit card|debit card)[^.\n]{0,50}(?:ending in|ending with)[^.\n]{0,12}\d{4})',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text, re.IGNORECASE)
+        if m:
+            return re.sub(r'\s+', ' ', m.group(1)).strip(" .")
+    return ''
+
+
 def _looks_like_product_line(line: str) -> bool:
     lower = line.lower().strip()
     if len(lower) < 4:
@@ -322,8 +335,11 @@ def _looks_like_product_line(line: str) -> bool:
 def _looks_like_section_header(line: str) -> bool:
     lower = line.lower().strip(' :')
     return lower in {
+        'items',
         'items ordered',
         'items in this shipment',
+        'items in your order',
+        'order items',
         'shipment details',
         'order summary',
         'item details',
@@ -343,6 +359,7 @@ def _looks_like_name_only_product_line(line: str) -> bool:
         'account ending', 'gift card', 'billing address', 'shipping address',
         'order status', 'track your package', 'carrier', 'estimated delivery',
         'quantity', 'qty', 'size', 'color', 'price', 'item description',
+        'order total', 'grand total', 'subtotal', 'sold by', 'fulfilled by',
     )
     if any(token in lower for token in reject_tokens):
         return False
@@ -369,10 +386,46 @@ def _extract_qty_nearby(lines: list[str], start_idx: int) -> str:
     return '1'
 
 
+def _clean_product_name(name: str) -> str:
+    name = re.sub(r'^\d{5,10}\s*[-:]\s*', '', name)
+    name = re.sub(r'\s+', ' ', name).strip(' -:\u2022\t')
+    return name
+
+
+def _extract_price_nearby(lines: list[str], start_idx: int) -> str:
+    for offset in range(0, 3):
+        idx = start_idx + offset
+        if idx >= len(lines):
+            break
+        candidate = re.sub(r'\s+', ' ', lines[idx]).strip(' •\t')
+        m = re.search(r'\$\s*([\d,]+\.\d{2})\b', candidate)
+        if m:
+            return f'${m.group(1)}'
+    return ''
+
+
 def _extract_items_fallback(body: str) -> list[dict]:
     items: list[dict] = []
     seen: set[tuple[str, str, str]] = set()
     lines = body.splitlines()
+
+    compact_item_matches = re.findall(
+        r'(?:^|[\n.])\s*(\d+)\s+of\s+([^.\n]{2,100}?)(?=(?:\.\s|$|\n))',
+        body[:4000],
+        re.IGNORECASE,
+    )
+    for qty, name in compact_item_matches:
+        clean_name = _clean_product_name(name)
+        if not clean_name:
+            continue
+        key = (clean_name.lower(), qty, '')
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({'name': clean_name, 'qty': qty, 'price': ''})
+        if len(items) >= 8:
+            return items
+
     for raw_line in lines:
         line = re.sub(r'\s+', ' ', raw_line).strip(' •\t')
         if not _looks_like_product_line(line):
@@ -402,6 +455,7 @@ def _extract_items_fallback(body: str) -> list[dict]:
             qty = leading_qty.group(1)
             name = re.sub(r'\bqty[: ]*\d+\b', '', name, flags=re.IGNORECASE).strip(' -:')
 
+        name = _clean_product_name(name)
         key = (name.lower(), qty, price)
         if key in seen:
             continue
@@ -428,12 +482,14 @@ def _extract_items_fallback(body: str) -> list[dict]:
         if not _looks_like_name_only_product_line(line):
             continue
 
+        clean_name = _clean_product_name(line)
         qty = _extract_qty_nearby(lines, idx)
-        key = (line.lower(), qty, '')
+        price = _extract_price_nearby(lines, idx)
+        key = (clean_name.lower(), qty, price)
         if key in seen:
             continue
         seen.add(key)
-        items.append({'name': line, 'qty': qty, 'price': ''})
+        items.append({'name': clean_name, 'qty': qty, 'price': price})
         if len(items) >= 8:
             break
 
@@ -677,6 +733,7 @@ def process(email: dict, state: dict) -> str | None:
     tracking = shipping['tracking']
     carrier = shipping['carrier'] if status in ('Shipped', 'Out for Delivery', 'Delivered') else ''
     eta = shipping['estimated_delivery']
+    payment_method = _extract_payment_method(body)
 
     # Build lifecycle placeholder lines — updated in-place as order progresses
     shipped_placeholder = '**Shipped:** —'
@@ -712,6 +769,8 @@ def process(email: dict, state: dict) -> str | None:
         lines.append(f'**Estimated Delivery:** {eta}')
     if total:
         lines.append(f'**Total:** {total}')
+    if payment_method:
+        lines.append(f'**Payment Method:** {payment_method}')
     lines.append('')
     for item in items:
         name = item.get('name', '').strip()

@@ -96,6 +96,15 @@ class TestNewOrderFormat(unittest.TestCase):
         _, appended, _, state = _run_process(email, extract_result=EMPTY_EXTRACT)
         self.assertIn('**Total:** $45.67', appended[0])
 
+    def test_new_order_falls_back_to_payment_method(self):
+        email = _make_email(
+            'Amazon',
+            'Order Confirmation',
+            plain='Order total: $45.67. Items: 1 of Widget A. Payment method: Amex ending in 2002.',
+        )
+        _, appended, _, _ = _run_process(email, extract_result=EMPTY_EXTRACT)
+        self.assertIn('**Payment Method:** Amex ending in 2002', appended[0])
+
     def test_order_fallback_uses_n_a(self):
         email = _make_email(
             'UnknownVendor',

@@ -150,6 +150,34 @@ class TestExtractionGaps(unittest.TestCase):
         self.assertIn('- Laptop Computer [Confirmed] 2026-04-25', block)
         self.assertIn('**Total:** $1,234.56', block)
 
+    def test_costco_section_layout_fallback_extraction(self):
+        from toolbox.services.email_extractor.categories import orders
+        email = {
+            'vendor': 'Costco',
+            'subject': 'Order Confirmation - Order #1275228830',
+            'plain': (
+                'Items Ordered\n'
+                '1799472 - Kirkland Signature Coffee Beans\n'
+                'Qty 2\n'
+                '$14.99\n'
+                'Grand Total: $29.98\n'
+            ),
+            'date': '2026-04-25',
+            'id': 'msg_costco_section'
+        }
+        with patch('toolbox.lib.llm.call_json', return_value={}):
+            appended = []
+            def fake_append(category, filename, content, dedup_date='', dedup_ids=()):
+                appended.append(content)
+                return True
+            with patch.object(orders, 'append_to_memory', fake_append), \
+                 patch.object(orders, 'update_in_memory', return_value=True):
+                orders.process(email, {})
+        block = appended[0]
+        self.assertIn('Order #1275228830', block)
+        self.assertIn('- Kirkland Signature Coffee Beans ×2 — $14.99 [Confirmed] 2026-04-25', block)
+        self.assertIn('**Total:** $29.98', block)
+
     def test_lululemon_fallback_extraction(self):
         from toolbox.services.email_extractor.categories import orders
         email = {
@@ -172,6 +200,35 @@ class TestExtractionGaps(unittest.TestCase):
         self.assertIn('Order #c177512979471524', block)
         self.assertIn('- ABC Jogger 32" [Confirmed] 2026-04-25', block)
         self.assertIn('**Total:** $128.00', block)
+
+    def test_lululemon_section_layout_fallback_extraction(self):
+        from toolbox.services.email_extractor.categories import orders
+        email = {
+            'vendor': 'lululemon',
+            'subject': 'Order Confirmation #c177512979471525',
+            'plain': (
+                'Your gear\n'
+                'ABC Classic-Fit Jogger 32"\n'
+                'Quantity: 1\n'
+                '$128.00\n'
+                'Grand Total: $128.00\n'
+                'Visa ending in 1001\n'
+            ),
+            'date': '2026-04-25',
+            'id': 'msg_lulu_section'
+        }
+        with patch('toolbox.lib.llm.call_json', return_value={}):
+            appended = []
+            def fake_append(category, filename, content, dedup_date='', dedup_ids=()):
+                appended.append(content)
+                return True
+            with patch.object(orders, 'append_to_memory', fake_append), \
+                 patch.object(orders, 'update_in_memory', return_value=True):
+                orders.process(email, {})
+        block = appended[0]
+        self.assertIn('Order #c177512979471525', block)
+        self.assertIn('- ABC Classic-Fit Jogger 32" — $128.00 [Confirmed] 2026-04-25', block)
+        self.assertIn('**Payment Method:** Visa ending in 1001', block)
 
     # --- #96: Toyota Financial ---
 
