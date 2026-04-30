@@ -193,6 +193,15 @@ class TestExecuteHighConfidence(unittest.TestCase):
         self.assertEqual(main.stats.moved, 1)
         self.assertEqual(main.stats.renamed, 1)
 
+    def test_lowercase_high_confidence_still_moves(self):
+        files = [_make_file('invoice.pdf', 'application/pdf', fid='id_invoice')]
+        analysis = dict(ANALYSIS_HIGH, confidence='high')
+        svc, mock_move = _run_scan(files, dry_run=False, analysis=analysis,
+                                   new_name='2026-01-15 - Toyota - Car payment.pdf',
+                                   target_id='id_finance')
+        svc.files().update.assert_called()
+        mock_move.assert_called_once()
+
     def test_high_confidence_same_folder_no_move(self):
         """High confidence but target == source folder → rename only, no move."""
         from toolbox.services.drive_organizer import main
@@ -307,6 +316,22 @@ class TestRecursion(unittest.TestCase):
         # list() called once only (for inbox, not for subfolder)
         self.assertEqual(svc.files().list.call_count, 1)
         mock_ai.assert_not_called()
+
+
+class TestSorterFlowHelpers(unittest.TestCase):
+
+    def test_should_sweep_root_only_for_inbox_target(self):
+        from toolbox.services.drive_organizer import main
+
+        self.assertTrue(main.should_sweep_root(main.INBOX_ID))
+        self.assertFalse(main.should_sweep_root('custom-folder-id'))
+
+    def test_unknown_confidence_defaults_low(self):
+        from toolbox.services.drive_organizer import main
+
+        self.assertEqual(main.normalize_confidence('HIGH'), 'High')
+        self.assertEqual(main.normalize_confidence('med'), 'Medium')
+        self.assertEqual(main.normalize_confidence('??'), 'Low')
 
 
 if __name__ == '__main__':

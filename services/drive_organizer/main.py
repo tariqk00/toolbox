@@ -218,6 +218,13 @@ _SKIP_MIME_TYPES = {
     'application/vnd.google-apps.site',
 }
 
+_CONFIDENCE_MAP = {
+    'high': 'High',
+    'medium': 'Medium',
+    'med': 'Medium',
+    'low': 'Low',
+}
+
 _ALREADY_NAMED = re.compile(r'^\d{4}-\d{2}-\d{2} - .* - .*(\.\w+)?$')
 
 
@@ -250,6 +257,15 @@ def sweep_drive_root(dry_run=True, service=None):
 
     if swept:
         logger.info(f"Sweep: {swept} file(s) moved to Inbox")
+
+
+def normalize_confidence(value):
+    raw = str(value or '').strip().lower()
+    return _CONFIDENCE_MAP.get(raw, 'Low')
+
+
+def should_sweep_root(target_id):
+    return target_id == INBOX_ID
 
 
 def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan', folder_name="Inbox", service=None, recursive=True):
@@ -322,7 +338,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                 quota_manager.record_tokens(tokens)
 
             new_name = generate_new_name(analysis, name, f.get('createdTime'))
-            confidence = analysis.get('confidence', 'Low')
+            confidence = normalize_confidence(analysis.get('confidence', 'Low'))
             reasoning = analysis.get('reasoning', 'No reasoning provided.')
             folder_path = analysis.get('folder_path')
 
@@ -403,11 +419,13 @@ if __name__ == "__main__":
     try:
         if args.execute:
             logger.info(f"Mode: Execute (Target: {target_name})")
-            sweep_drive_root(dry_run=False)
+            if should_sweep_root(target_id):
+                sweep_drive_root(dry_run=False)
             scan_folder(target_id, dry_run=False, limit=args.limit, mode='inbox' if target_id == INBOX_ID else 'scan', folder_name=target_name, recursive=args.recursive)
         else:
             logger.info(f"Mode: Dry-Run/Scan (Target: {target_name})")
-            sweep_drive_root(dry_run=True)
+            if should_sweep_root(target_id):
+                sweep_drive_root(dry_run=True)
             scan_folder(target_id, dry_run=True, limit=args.limit, folder_name=target_name, recursive=args.recursive)
             
     finally:
