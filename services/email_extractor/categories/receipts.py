@@ -43,7 +43,8 @@ def _extract_amount(subject: str, plain: str) -> str:
     combined = f'{subject}\n{plain[:3000]}'
     priority_patterns = [
         r'(?:amount|payment|minimum payment|statement balance|total|autopay|auto pay|'
-        r'amount due|balance due|total due|bill total|minimum due|statement amount)'
+        r'amount due|balance due|total due|bill total|minimum due|statement amount|'
+        r'total charged|amount charged|replenishment amount)'
         r'[^$\n]{0,80}\$\s*([\d,]+\.\d{2})',
         r'(?:you paid|charged|charge|fare|toll amount|plan fee|renewal fee)'
         r'[^$\n]{0,80}\$\s*([\d,]+\.\d{2})',
@@ -126,6 +127,7 @@ def _extract_payment_method(plain: str) -> str:
     text = plain[:3000]
     patterns = [
         r'(?:paid from|payment method|from)[:\s]+((?:bank|checking|savings|card|account)[^.\n]{0,80}(?:\d{4}))',
+        r'(?:paid with|charged to|billed to)[:\s]+((?:bank|checking|savings|card|account|visa|mastercard|amex|american express|discover|apple pay|paypal)[^.\n]{0,80}(?:\d{4}|balance))',
         r'(?:using|with)[:\s]+((?:bank|checking|savings|card|account)[^.\n]{0,80}(?:\d{4}))',
         r'((?:Visa|Mastercard|Amex|American Express|Discover)[^.\n]{0,50}(?:\d{4}))',
         r'((?:card|checking account|savings account)[^.\n]{0,50}(?:ending in|ending with)[^.\n]{0,12}\d{4})',
@@ -143,6 +145,7 @@ def _extract_transaction_date(subject: str, plain: str, email_date: str, receipt
         'transaction date', 'purchase date', 'charged on', 'charge date',
         'payment date', 'posted on', 'processed on', 'ride date', 'trip date',
         'trip on', 'date of service', 'service date', 'transaction on',
+        'billed on', 'completed on', 'completed at', 'replenishment date',
     )
     found = _extract_date_by_label(text, labels, email_date)
     if found:
@@ -294,6 +297,7 @@ def process(email: dict, state: dict) -> str | None:
 
     amount = _extract_amount(subject, plain)
     account = _extract_account(plain)
+    payment_method = _extract_payment_method(plain)
     receipt_type = _extract_type(subject)
     category = _derive_category(vendor, receipt_type, plain)
     transaction_date = _extract_transaction_date(subject, plain, date, receipt_type)
@@ -307,6 +311,7 @@ def process(email: dict, state: dict) -> str | None:
             m = re.search(r'(\d{4})', financial_details['payment_method'])
             if m:
                 account = f'...{m.group(1)}'
+        payment_method = financial_details.get('payment_method') or payment_method
         category = _derive_category(vendor, receipt_type, plain)
         # Preserve an explicit transaction/service date when one was extracted.
         if not transaction_date or (transaction_date == date and receipt_type in ('Payment', 'Receipt', 'Transaction', 'Statement', 'Autopay', 'Autopay Scheduled')):
@@ -315,6 +320,10 @@ def process(email: dict, state: dict) -> str | None:
                 or financial_details.get('statement_date')
                 or transaction_date
             )
+    if not account and payment_method:
+        m = re.search(r'(\d{4})', payment_method)
+        if m:
+            account = f'...{m.group(1)}'
     type_line = f'**Type:** [{receipt_type}] {date}'
 
     filename = f'{vendor}.md'
@@ -355,8 +364,8 @@ def process(email: dict, state: dict) -> str | None:
         lines.append(f'**Transaction Date:** {transaction_date}')
     if transaction_time:
         lines.append(f'**Transaction Time:** {transaction_time}')
-    if financial_details.get('payment_method'):
-        lines.append(f'**Payment Method:** {financial_details["payment_method"]}')
+    if payment_method:
+        lines.append(f'**Payment Method:** {payment_method}')
     if financial_details.get('due_date'):
         lines.append(f'**Due Date:** {financial_details["due_date"]}')
     if financial_details.get('payment_date'):

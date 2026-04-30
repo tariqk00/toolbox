@@ -190,6 +190,26 @@ class TestFinancialReceiptExtraction(unittest.TestCase):
         self.assertIn('**Account:** ...7956', block)
         self.assertIn('**Payment Method:** checking account ending in 7956', block)
 
+    def test_uber_receipt_extracts_payment_method_variant(self):
+        email = _make_email(
+            'Uber',
+            '[Personal] Your trip receipt',
+            plain='Thanks for riding, Tariq. Completed at 9:14 PM on Apr 26, 2026. Total charged $23.77. Paid with Visa 1234.',
+            date='2026-04-27',
+        )
+
+        summary, appended, _ = _run_receipt(email)
+
+        block = appended[0]
+        self.assertIn('**Merchant:** Uber', block)
+        self.assertIn('**Amount:** $23.77', block)
+        self.assertIn('**Account:** ...1234', block)
+        self.assertIn('**Transaction Date:** 2026-04-26', block)
+        self.assertIn('**Transaction Time:** 9:14 PM', block)
+        self.assertIn('**Payment Method:** Visa 1234', block)
+        self.assertIn('**Rider:** Tariq (Personal)', block)
+        self.assertIn('Uber: $23.77 [Receipt] — Tariq (Personal)', summary)
+
     def test_apple_receipt_extracts_amount_and_type(self):
         email = _make_email(
             'Apple',
@@ -208,6 +228,23 @@ class TestFinancialReceiptExtraction(unittest.TestCase):
         self.assertIn('**Account:** ...4242', block)
         self.assertIn('**Transaction Date:** 2026-04-27', block)
 
+    def test_apple_receipt_extracts_payment_method_variant(self):
+        email = _make_email(
+            'Apple',
+            'Apple receipt',
+            plain='Total charged $10.81. Billed on Apr 27, 2026. Payment Method: Visa ending in 4242.',
+            date='2026-04-27',
+        )
+
+        _, appended, _ = _run_receipt(email)
+
+        block = appended[0]
+        self.assertIn('**Merchant:** Apple', block)
+        self.assertIn('**Amount:** $10.81', block)
+        self.assertIn('**Account:** ...4242', block)
+        self.assertIn('**Transaction Date:** 2026-04-27', block)
+        self.assertIn('**Payment Method:** Visa ending in 4242', block)
+
     def test_ezpass_receipt_extracts_amount_and_date(self):
         email = _make_email(
             'E-ZPass NY',
@@ -224,6 +261,23 @@ class TestFinancialReceiptExtraction(unittest.TestCase):
         self.assertIn('**Amount:** $25.00', block)
         self.assertIn('**Account:** ...1234', block)
         self.assertIn('**Transaction Date:** 2026-04-24', block)
+
+    def test_ezpass_receipt_extracts_payment_method_variant(self):
+        email = _make_email(
+            'E-ZPass NY',
+            'E-ZPass payment receipt',
+            plain='Replenishment amount $25.00. Replenishment date Apr 24, 2026. Payment Method: Mastercard ending in 1234.',
+            date='2026-04-25',
+        )
+
+        _, appended, _ = _run_receipt(email)
+
+        block = appended[0]
+        self.assertIn('**Merchant:** E-ZPass NY', block)
+        self.assertIn('**Amount:** $25.00', block)
+        self.assertIn('**Account:** ...1234', block)
+        self.assertIn('**Transaction Date:** 2026-04-24', block)
+        self.assertIn('**Payment Method:** Mastercard ending in 1234', block)
 
     def test_pseg_due_notice_fields(self):
         email = _make_email(
