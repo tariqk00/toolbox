@@ -43,7 +43,7 @@ def _extract_amount(subject: str, plain: str) -> str:
     combined = f'{subject}\n{plain[:3000]}'
     priority_patterns = [
         r'(?:amount|payment|minimum payment|statement balance|total|autopay|auto pay|'
-        r'amount due|balance due|total due|bill total)'
+        r'amount due|balance due|total due|bill total|minimum due|statement amount)'
         r'[^$\n]{0,80}\$\s*([\d,]+\.\d{2})',
         r'(?:you paid|charged|charge|fare|toll amount|plan fee|renewal fee)'
         r'[^$\n]{0,80}\$\s*([\d,]+\.\d{2})',
@@ -189,8 +189,11 @@ def _derive_category(vendor: str, receipt_type: str, plain: str) -> str:
 
 def _extract_financial_type(subject: str, plain: str, fallback: str) -> str:
     combined = f'{subject} {plain[:1000]}'.lower()
-    if any(w in combined for w in ('minimum payment due', 'payment due', 'due alert', 'due soon', 'amount due')):
+    if any(w in combined for w in ('minimum payment due', 'payment due', 'due alert', 'due soon',
+                                   'amount due', 'minimum due', 'payment reminder')):
         return 'Payment Due'
+    if any(w in combined for w in ('payment is scheduled', 'scheduled payment', 'payment scheduled')):
+        return 'Autopay Scheduled'
     if any(w in combined for w in ('autopay', 'auto pay', 'automatic payment')):
         if any(w in combined for w in ('scheduled', 'upcoming', 'will be made', 'will withdraw', 'scheduled for')):
             return 'Autopay Scheduled'
@@ -211,7 +214,7 @@ def _extract_financial_details(vendor: str, subject: str, plain: str, email_date
                                receipt_type: str) -> dict:
     text = f'{subject}\n{plain[:5000]}'
     financial_type = _extract_financial_type(subject, plain, receipt_type)
-    return {
+    details = {
         'institution': vendor,
         'event_type': financial_type,
         'account': _extract_account(plain),
@@ -236,6 +239,17 @@ def _extract_financial_details(vendor: str, subject: str, plain: str, email_date
             email_date,
         ),
     }
+    combined = f'{subject} {plain[:1000]}'.lower()
+    if details['statement_date'] and details['event_type'] in ('Reminder', 'Payment', 'Scheduled'):
+        if any(w in combined for w in ('statement', 'bill')):
+            details['event_type'] = 'Statement'
+    if details['due_date'] and details['event_type'] == 'Reminder':
+        details['event_type'] = 'Payment Due'
+    if details['payment_date'] and details['event_type'] == 'Scheduled':
+        details['event_type'] = 'Autopay Scheduled'
+    if details['payment_date'] and details['event_type'] in ('Reminder', 'Receipt'):
+        details['event_type'] = 'Payment'
+    return details
 
 
 def _is_reminder(subject: str, plain: str) -> bool:

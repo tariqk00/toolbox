@@ -122,6 +122,41 @@ class TestFinancialReceiptExtraction(unittest.TestCase):
         self.assertIn('**Statement Date:** 2026-04-20', block)
         self.assertIn('Citi / Costco Visa: $1,234.56 [Statement] — ...4321', summary)
 
+    def test_citi_payment_due_reminder_fields(self):
+        email = _make_email(
+            'Citi / Costco Visa',
+            'Payment reminder',
+            plain='Minimum due: $87.22. Due by May 14, 2026. Card ending in 4321.',
+            date='2026-04-30',
+        )
+
+        summary, appended, _ = _run_receipt(email)
+
+        block = appended[0]
+        self.assertIn('**Type:** [Payment Due] 2026-04-30', block)
+        self.assertIn('**Amount:** $87.22', block)
+        self.assertIn('**Account:** ...4321', block)
+        self.assertIn('**Due Date:** 2026-05-14', block)
+        self.assertIn('Citi / Costco Visa: $87.22 [Payment Due] — ...4321 | due 2026-05-14', summary)
+
+    def test_capital_one_statement_fields(self):
+        email = _make_email(
+            'Capital One',
+            'Your monthly statement is available',
+            plain='Statement amount: $2,820.74. Closing date Apr 27, 2026. Account ending in 7956.',
+            date='2026-04-28',
+        )
+
+        summary, appended, _ = _run_receipt(email)
+
+        block = appended[0]
+        self.assertIn('**Type:** [Statement] 2026-04-28', block)
+        self.assertIn('**Amount:** $2,820.74', block)
+        self.assertIn('**Account:** ...7956', block)
+        self.assertIn('**Transaction Date:** 2026-04-27', block)
+        self.assertIn('**Statement Date:** 2026-04-27', block)
+        self.assertIn('Capital One: $2,820.74 [Statement] — ...7956', summary)
+
     def test_uber_receipt_adds_category_and_transaction_time(self):
         email = _make_email(
             'Uber',
@@ -240,6 +275,23 @@ class TestFinancialReceiptExtraction(unittest.TestCase):
         self.assertIn('**Transaction Date:** 2026-05-01', block)
         self.assertIn('**Payment Date:** 2026-05-01', block)
         self.assertIn('PSEG Long Island: $211.09 [Payment] — ...9012 | 2026-05-01', summary)
+
+    def test_toyota_scheduled_payment_fields_without_autopay_keyword(self):
+        email = _make_email(
+            'Toyota Financial',
+            'Your payment is scheduled',
+            plain='Scheduled payment amount: $584.99. Payment date May 18, 2026. Account ending in 9373.',
+            date='2026-05-15',
+        )
+
+        _, appended, _ = _run_receipt(email)
+
+        block = appended[0]
+        self.assertIn('**Type:** [Autopay Scheduled] 2026-05-15', block)
+        self.assertIn('**Amount:** $584.99', block)
+        self.assertIn('**Account:** ...9373', block)
+        self.assertIn('**Transaction Date:** 2026-05-18', block)
+        self.assertIn('**Payment Date:** 2026-05-18', block)
 
     def test_allied_physicians_preserves_service_date(self):
         email = _make_email(
