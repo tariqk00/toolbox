@@ -257,6 +257,10 @@ def sweep_drive_root(dry_run=True, service=None):
 
     if swept:
         logger.info(f"Sweep: {swept} file(s) moved to Inbox")
+        log("ROOT_SWEEP", "SUCCESS", "Swept files from Drive root into Inbox", data={
+            "count": swept,
+            "dry_run": dry_run,
+        }, app_name="ai-sorter")
 
 
 def normalize_confidence(value):
@@ -344,6 +348,13 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
 
             print(f"  [AI] {name} -> {new_name} ({confidence})")
             logger.info(f"Analysis for {name}: FolderPath={folder_path}, Entity={analysis.get('entity')}, Reasoning={reasoning}")
+            log("FILE_ANALYZED", "SUCCESS", "Analyzed file for routing", data={
+                "file_id": fid,
+                "name": name,
+                "new_name": new_name,
+                "confidence": confidence,
+                "folder_path": folder_path,
+            }, app_name="ai-sorter")
 
             # --- ACTION LOGIC ---
             if not dry_run:
@@ -352,6 +363,12 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                     manual_name = f'[MANUAL] {name}'
                     service.files().update(fileId=fid, body={'name': manual_name}).execute()
                     logger.warning(f"  [Manual] Flagged for manual review: {name}")
+                    log("FILE_FLAGGED", "WARNING", "Flagged file for manual review", data={
+                        "file_id": fid,
+                        "name": name,
+                        "manual_name": manual_name,
+                        "reason": "Invalid_PDF",
+                    }, level="WARNING", app_name="ai-sorter")
                     send_message(f"Manual review needed: {drive_file_link(fid, name)}\nCould not parse as PDF after full-file retry.", service="ai-sorter")
                     stats.processed += 1
                     continue
@@ -378,11 +395,26 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                         full_path = ID_TO_PATH.get(target_id, folder_path or 'Unknown')
                         stats.move_details.append((name, new_name, folder_path or full_path, fid))
                         logger.info(f"  [Moved] -> {full_path}")
+                        log("FILE_MOVED", "SUCCESS", "Moved file to routed folder", data={
+                            "file_id": fid,
+                            "name": name,
+                            "new_name": new_name,
+                            "target_id": target_id,
+                            "target_path": full_path,
+                            "confidence": confidence,
+                        }, app_name="ai-sorter")
                         # Log move (if not already logged via Rename)
                         if new_name == name:
                             log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, full_path, 'Auto-Move')
                 elif confidence == 'Medium':
                     logger.info(f"  [Skip Move] Medium confidence for {name}")
+                    log("FILE_SKIPPED", "WARNING", "Skipped move due to medium confidence", data={
+                        "file_id": fid,
+                        "name": name,
+                        "new_name": new_name,
+                        "folder_path": folder_path,
+                        "confidence": confidence,
+                    }, level="WARNING", app_name="ai-sorter")
 
                 # Record rename-only (not moved)
                 if new_name != name and confidence == 'Medium' and fid not in stats._moved_fids:
@@ -392,6 +424,11 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                 
         except Exception as e:
             logger.error(f"  [Error] {name}: {e}")
+            log("FILE_ERROR", "FAILURE", "File processing error", data={
+                "file_id": fid,
+                "name": name,
+                "error_type": type(e).__name__,
+            }, level="ERROR", app_name="ai-sorter")
             stats.errors += 1
             stats.error_details.append((name, str(e), fid))
 
@@ -415,6 +452,13 @@ if __name__ == "__main__":
     target_name = args.folder_name or ("Inbox" if target_id == INBOX_ID else "Custom Folder")
 
     tokens_before = quota_manager.load().get('total_tokens_used', 0)
+    log("RUN_START", "START", "Drive organizer run started", data={
+        "target_id": target_id,
+        "target_name": target_name,
+        "execute": args.execute,
+        "recursive": args.recursive,
+        "limit": args.limit,
+    }, app_name="ai-sorter")
 
     try:
         if args.execute:
