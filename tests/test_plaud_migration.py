@@ -9,25 +9,34 @@ REPO_ROOT = os.path.dirname(TEST_DIR)
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-# Comprehensive mocks for Google libraries
-sys.modules['google'] = MagicMock()
-sys.modules['google.oauth2'] = MagicMock()
-sys.modules['google.oauth2.credentials'] = MagicMock()
-sys.modules['google.oauth2.service_account'] = MagicMock()
-sys.modules['google_auth_oauthlib'] = MagicMock()
-sys.modules['google_auth_oauthlib.flow'] = MagicMock()
-sys.modules['googleapiclient'] = MagicMock()
-sys.modules['googleapiclient.discovery'] = MagicMock()
-sys.modules['googleapiclient.http'] = MagicMock()
-sys.modules['googleapiclient.errors'] = MagicMock()
+_MOCKED_MODULES = [
+    'google',
+    'google.oauth2',
+    'google.oauth2.credentials',
+    'google.oauth2.service_account',
+    'google_auth_oauthlib',
+    'google_auth_oauthlib.flow',
+    'googleapiclient',
+    'googleapiclient.discovery',
+    'googleapiclient.http',
+    'googleapiclient.errors',
+    'toolbox.lib.llm',
+    'toolbox.lib.google_api',
+    'toolbox.lib.drive_utils',
+    'toolbox.lib.task_utils',
+]
+_ORIGINAL_MODULES = {name: sys.modules.get(name) for name in _MOCKED_MODULES}
 
-# Mock internal lib dependencies that might fail
-sys.modules['toolbox.lib.llm'] = MagicMock()
-sys.modules['toolbox.lib.google_api'] = MagicMock()
-sys.modules['toolbox.lib.drive_utils'] = MagicMock()
-sys.modules['toolbox.lib.task_utils'] = MagicMock()
+for name in _MOCKED_MODULES:
+    sys.modules[name] = MagicMock()
 
 from services.email_extractor.categories import plaud
+
+for name, original in _ORIGINAL_MODULES.items():
+    if original is None:
+        sys.modules.pop(name, None)
+    else:
+        sys.modules[name] = original
 
 def test_parse_logic():
     print("Testing date and subject parsing...")

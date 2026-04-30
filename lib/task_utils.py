@@ -10,6 +10,7 @@ import re
 from datetime import date, datetime
 from enum import Enum
 from typing import Any, Optional, List, Dict, Iterable, Callable
+from toolbox.lib.entity_ids import render_entity_comment, task_entity_id
 
 logger = logging.getLogger('TaskUtils')
 
@@ -226,7 +227,8 @@ def add_task(
     priority: str | TaskPriority = TaskPriority.MEDIUM,
     date_str: str | None = None,
     sync_to_google_tasks: bool = False,
-    task_list: str = "Inbox"
+    task_list: str = "Inbox",
+    entity_source: str = "",
 ) -> bool:
     """
     Unified task creation interface.
@@ -246,6 +248,8 @@ def add_task(
     if not date_str:
         date_str = date.today().isoformat()
 
+    entity_id = task_entity_id(entity_source or sender, subject, date_str)
+
     # 1. Deduplication
     existing_content = get_action_required_content()
     if is_duplicate_task(subject, existing_content):
@@ -255,6 +259,7 @@ def add_task(
     # 2. Drive Update
     priority_label = f" [{priority.value.upper()}]" if priority in (TaskPriority.HIGH, TaskPriority.CRITICAL) else ""
     lines = [
+        render_entity_comment(entity_id),
         f"### {subject}{priority_label}",
         f"**From:** {sender}  ",
         f"**Date:** {date_str}  ",
@@ -280,7 +285,7 @@ def add_task(
                 list_id, 
                 subject, 
                 due=date_str, 
-                notes=f"From: {sender}\nWhy: {reason}\nPriority: {priority.value}"
+                notes=f"From: {sender}\nWhy: {reason}\nPriority: {priority.value}\nEntity ID: {entity_id}"
             )
             logger.info("Synced task to Google Tasks [%s]: %s", task_list, subject)
         except Exception as e:

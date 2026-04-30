@@ -19,6 +19,7 @@ if os.path.dirname(BASE_DIR) not in sys.path:
 from ..scanner import html_to_text
 from ..writers import append_to_memory
 from toolbox.lib.task_utils import create_unique_tasks
+from toolbox.lib.entity_ids import calendar_entity_id, render_entity_comment, task_entity_id
 
 logger = logging.getLogger('EmailExtractor.GoogleBrief')
 
@@ -91,7 +92,10 @@ def _push_to_tasks(tasks: list) -> int:
             ),
             key_fn=lambda t: t.get('text', '').strip(),
             due_fn=lambda t: t.get('due_date') or None,
-            notes_fn=lambda t: t.get('context', '').strip() if t.get('context') else None,
+            notes_fn=lambda t: "\n".join(filter(None, [
+                t.get('context', '').strip() if t.get('context') else None,
+                f"Entity ID: {task_entity_id('google_brief', t.get('text', ''), t.get('due_date') or '')}",
+            ])),
         )
     except Exception as e:
         logger.error(f'Google Tasks push failed: {e}')
@@ -134,6 +138,7 @@ def process(email: dict, state: dict) -> str | None:
     if tasks:
         lines = [f'## {email_date} — {subject}', '']
         for t in tasks:
+            lines.append(render_entity_comment(task_entity_id('google_brief', t.get("text", "").strip(), t.get('due_date') or '')))
             effort = f'({t["effort"]}) ' if t.get('effort') else ''
             due = f' [due: {t["due_date"]}]' if t.get('due_date') else ''
             lines.append(f'- [ ] {effort}{t.get("text", "").strip()}{due}')
@@ -145,6 +150,12 @@ def process(email: dict, state: dict) -> str | None:
     if events:
         lines = [f'## {email_date} — {subject}', '']
         for e in events:
+            lines.append(render_entity_comment(calendar_entity_id(
+                'google_brief',
+                e.get("title", "").strip(),
+                e.get("datetime", "").strip(),
+                e.get("location", "").strip(),
+            )))
             line = f'- {e.get("datetime", "").strip()} — {e.get("title", "").strip()}'
             if e.get('location'):
                 line += f' @ {e["location"].strip()}'

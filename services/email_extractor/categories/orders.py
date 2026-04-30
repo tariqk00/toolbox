@@ -25,6 +25,7 @@ if os.path.dirname(BASE_DIR) not in sys.path:
 from ..writers import append_to_memory, update_in_memory
 from ..enrichment import enrich_order
 from ..scanner import html_to_text
+from toolbox.lib.entity_ids import order_entity_id, render_entity_comment
 
 logger = logging.getLogger('EmailExtractor.Orders')
 
@@ -525,6 +526,7 @@ def process(email: dict, state: dict) -> str | None:
         status_line = f'**Status:** [{status}] {date}'
 
         lines = [f'## {date} — PillPack {order_key.split(":", 1)[1]} [{status}]']
+        lines.append(render_entity_comment(order_entity_id(vendor, order_key)))
         lines.append(f'**Vendor:** Amazon Pharmacy')
         lines.append(status_line)
         if product:
@@ -537,6 +539,7 @@ def process(email: dict, state: dict) -> str | None:
         known_orders[order_key] = {
             'vendor': vendor, 'status': status, 'date': date, 'product': product,
             'status_line': status_line,
+            'entity_id': order_entity_id(vendor, order_key),
         }
         summary = f'Amazon Pharmacy: {product} [{status}]'
         if total:
@@ -667,7 +670,9 @@ def process(email: dict, state: dict) -> str | None:
     elif status == 'Delivered':
         delivered_placeholder = f'**Delivered:** {eta or date}'
 
+    entity_key = order_num or f'{date}|{subject[:120]}'
     lines = [f'## {date} — Order #{order_num or "N/A"} [{status}]']
+    lines.append(render_entity_comment(order_entity_id(vendor, entity_key)))
     lines.append(f'**Vendor:** {vendor}')
     lines.append(f'**Order Number:** {order_num or "N/A"}')
     url = _order_url(vendor, order_num)
@@ -715,6 +720,7 @@ def process(email: dict, state: dict) -> str | None:
             'carrier': carrier,
             'tracking': tracking,
             'estimated_delivery': eta,
+            'entity_id': order_entity_id(vendor, entity_key),
         }
 
     n = len(items)

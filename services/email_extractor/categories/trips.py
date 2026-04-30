@@ -10,6 +10,7 @@ import logging
 from ..writers import append_to_memory, update_in_memory, get_memory_content, block_exists
 from ..enrichment import enrich_trip
 from ..scanner import html_to_text
+from toolbox.lib.entity_ids import render_entity_comment, travel_entity_id
 
 logger = logging.getLogger('EmailExtractor.Trips')
 
@@ -257,6 +258,7 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
         label = route or dest or vendor
 
         lines = [f'## {travel_date} — Flight{f" — {route}" if route else ""}']
+        lines.append(render_entity_comment(travel_entity_id(vendor, trip_type, confirmation, travel_date, label)))
         lines.append(f'**Vendor:** {vendor}')
         if confirmation:
             lines.append(f'**Confirmation:** {confirmation}')
@@ -291,6 +293,7 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
         label = dest or vendor
 
         lines = [f'## {travel_date} — Hotel{f" — {dest}" if dest else ""}']
+        lines.append(render_entity_comment(travel_entity_id(vendor, trip_type, confirmation, travel_date, label)))
         lines.append(f'**Vendor:** {vendor}')
         if confirmation:
             lines.append(f'**Confirmation:** {confirmation}')
@@ -318,6 +321,7 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
         label = loc or vendor
 
         lines = [f'## {travel_date} — Car Rental{f" — {loc}" if loc else ""}']
+        lines.append(render_entity_comment(travel_entity_id(vendor, trip_type, confirmation, travel_date, label)))
         lines.append(f'**Vendor:** {vendor}')
         if confirmation:
             lines.append(f'**Confirmation:** {confirmation}')
@@ -345,6 +349,7 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
         label = restaurant or vendor
 
         lines = [f'## {travel_date} — Dining{f" — {restaurant}" if restaurant else ""}']
+        lines.append(render_entity_comment(travel_entity_id(vendor, trip_type, confirmation, travel_date, label)))
         lines.append(f'**Vendor:** {vendor}')
         if confirmation:
             lines.append(f'**Confirmation:** {confirmation}')
@@ -362,6 +367,7 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
         travel_date = email_date
         label = destination or vendor
         lines = [f'## {travel_date} — {trip_type}{f" — {destination}" if destination else ""}']
+        lines.append(render_entity_comment(travel_entity_id(vendor, trip_type, confirmation, travel_date, label)))
         lines.append(f'**Vendor:** {vendor}')
         if confirmation:
             lines.append(f'**Confirmation:** {confirmation}')
@@ -405,7 +411,7 @@ def process(email: dict, state: dict) -> str | None:
                 and status == prev_status and not prev.get('has_return')):
             body = _prep_body(plain, html)
             details = _extract_trip_details_llm(trip_type, vendor, subject, body)
-            if details.get('is_return'):
+            if details.get('is_return') is True:
                 return_section = _build_return_section(details)
                 old_block = prev.get('block', '')
                 if old_block:
@@ -466,6 +472,7 @@ def process(email: dict, state: dict) -> str | None:
             'vendor': vendor, 'status': status, 'status_line': status_line,
             'date': date, 'destination': destination, 'trip_type': trip_type,
             'label': destination or vendor, 'has_return': False, 'block': '',
+            'entity_id': travel_entity_id(vendor, trip_type, confirmation, date, destination or vendor),
         }
         return None
     elif not confirmation:
@@ -477,6 +484,7 @@ def process(email: dict, state: dict) -> str | None:
                 'vendor': vendor, 'status': status, 'status_line': status_line,
                 'date': date, 'destination': destination, 'trip_type': trip_type,
                 'label': destination or vendor, 'has_return': False, 'block': '',
+                'entity_id': travel_entity_id(vendor, trip_type, confirmation, date, destination or vendor),
             }
             return None
 
@@ -497,6 +505,7 @@ def process(email: dict, state: dict) -> str | None:
         'trip_type': trip_type, 'label': label,
         'has_return': False,
         'block': block,
+        'entity_id': travel_entity_id(vendor, trip_type, confirmation, travel_date, label),
     }
 
     summary = f'{trip_type}: {label} ({vendor}) [{status}]'

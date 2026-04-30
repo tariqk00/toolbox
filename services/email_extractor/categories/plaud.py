@@ -10,6 +10,7 @@ from datetime import datetime
 from ..writers import append_to_memory
 from ..scanner import get_attachment
 from toolbox.lib.task_utils import add_task
+from toolbox.lib.entity_ids import plaud_entity_id, render_entity_comment
 
 logger = logging.getLogger('EmailExtractor.Plaud')
 
@@ -85,7 +86,7 @@ def _extract_details_llm(subject: str, date_str: str, text: str) -> dict:
 
 
 def _build_markdown(subject: str, date_str: str, details: dict, original_text: str) -> str:
-    lines = [f'# {subject}', '']
+    lines = [f'# {subject}', render_entity_comment(plaud_entity_id(subject, date_str)), '']
     lines.append(f'**Date:** {date_str}')
     lines.append(f'**Source:** Plaud Email Ingestion')
     lines.append('')
@@ -165,7 +166,8 @@ def process(email: dict, state: dict, service=None) -> str | None:
             reason=item.get('context') or "Extracted from voice recording",
             priority="medium",
             date_str=item.get('due_date') or doc_date,
-            sync_to_google_tasks=True
+            sync_to_google_tasks=True,
+            entity_source=f"plaud:{subject}",
         ):
             created_tasks += 1
             
