@@ -148,7 +148,7 @@ def _extract_status(subject: str) -> str:
         return 'Delivered'
     if any(w in lower for w in ('out for delivery', 'get ready for your', 'landing on your')):
         return 'Out for Delivery'
-    if any(w in lower for w in ('confirmed', 'received your order', 'we got your order',
+    if any(w in lower for w in ('confirmed', 'confirmation', 'received your order', 'we got your order',
                                  'is confirmed', 'order confirmed', 'thank you for your order')):
         return 'Confirmed'
     if any(w in lower for w in ('refund', 'refunded', 'credit issued', 'return approved',

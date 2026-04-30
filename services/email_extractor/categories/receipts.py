@@ -195,7 +195,7 @@ def _extract_financial_type(subject: str, plain: str, fallback: str) -> str:
             return 'Autopay Scheduled'
         return 'Autopay'
     if any(w in combined for w in ('payment posted', 'payment received', 'payment confirmed',
-                                   'payment confirmation', 'payment has posted')):
+                                   'payment confirmation', 'payment has posted', 'payment receipt')):
         return 'Payment'
     if any(w in combined for w in ('purchase alert', 'transaction alert', 'charge alert')):
         return 'Transaction'
@@ -221,6 +221,7 @@ def _extract_financial_details(vendor: str, subject: str, plain: str, email_date
             (
                 'payment date', 'posted on', 'processed on', 'scheduled for',
                 'will be made on', 'autopay date', 'withdrawal date', 'will withdraw on',
+                'payment on', 'payment of',
             ),
             email_date,
         ),
