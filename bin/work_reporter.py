@@ -169,6 +169,7 @@ def main():
     build_health()
     
     logger.info("Building site and pushing...")
+    publish_success = False
     if rebuild_site():
         try:
             subprocess.run(['git', 'add', 'docs/work/'], cwd=LIFE_DOCS_REPO, check=True)
@@ -178,6 +179,7 @@ def main():
             log("GIT_PUBLISH", "SUCCESS", "Published work reports to life-docs", data={
                 "output_dir": str(WORK_DOCS_DIR),
             }, app_name="reporting")
+            publish_success = True
         except subprocess.CalledProcessError as e:
             logger.error(f"Git operation failed: {e}")
             log("GIT_PUBLISH", "FAILURE", "Failed publishing work reports to life-docs", data={
@@ -185,9 +187,10 @@ def main():
                 "error_type": type(e).__name__,
             }, level="ERROR", app_name="reporting")
 
-    log("RUN_COMPLETE", "SUCCESS", "Work reporter finished", data={
+    log("RUN_COMPLETE", "SUCCESS" if publish_success else "ERROR", 
+        "Work reporter finished", data={
         "output_dir": str(WORK_DOCS_DIR),
-    }, app_name="reporting")
+    }, app_name="work-reporter")
 
 if __name__ == '__main__':
     subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)

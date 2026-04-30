@@ -293,6 +293,7 @@ def main():
 
     # Build and Push
     logger.info("Building site and pushing to Git...")
+    publish_success = False
     if rebuild_site():
         try:
             subprocess.run(['git', 'add', 'docs/life/', 'docs/index.md'], cwd=LIFE_DOCS_REPO, check=True)
@@ -302,6 +303,7 @@ def main():
             log("GIT_PUBLISH", "SUCCESS", "Published daily report to life-docs", data={
                 "report_date": yesterday,
             }, app_name="reporting")
+            publish_success = True
         except subprocess.CalledProcessError as e:
             logger.error(f"Git operation failed: {e}")
             log("GIT_PUBLISH", "FAILURE", "Failed publishing daily report to life-docs", data={
@@ -310,11 +312,12 @@ def main():
             }, level="ERROR", app_name="reporting")
 
     total_items = sum(len(items) for items in sections.values())
-    log("RUN_COMPLETE", "SUCCESS", "Daily reporter finished", data={
+    log("RUN_COMPLETE", "SUCCESS" if publish_success else "ERROR", 
+        f"Daily reporter finished for {yesterday}", data={
         "report_date": yesterday,
         "sections": {name: len(items) for name, items in sections.items()},
         "total_items": total_items,
-    }, app_name="reporting")
+    }, app_name="daily-reporter")
 
 if __name__ == '__main__':
     subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)
