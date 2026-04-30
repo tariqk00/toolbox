@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT.parent))
 
 from toolbox.lib.drive_utils import get_drive_service
+from toolbox.lib.log_manager import log
 from toolbox.lib.reporter_utils import (
     LIFE_DOCS_REPO, rebuild_site, get_memory_blocks,
     build_stat_card, build_row, logger
@@ -160,6 +161,9 @@ def main():
     yesterday_date = date.today() - timedelta(days=1)
     yesterday = yesterday_date.isoformat()
     
+    log("RUN_START", "START", "Daily reporter started", data={
+        "report_date": yesterday,
+    }, app_name="reporting")
     logger.info(f"Generating report for {yesterday}...")
     service = get_drive_service()
     
@@ -179,6 +183,10 @@ def main():
             # Extract bullet points
             lines = [l.strip() for l in b.split('\n') if l.strip().startswith('•')]
             sections['Money'].extend(lines)
+    log("REPORT_SECTION", "SUCCESS", "Built Money section", data={
+        "section": "Money",
+        "items": len(sections['Money']),
+    }, app_name="reporting")
             
     # 2. Travel
     travel_blocks = get_memory_blocks(service, 'Travel.md', yesterday)
@@ -193,6 +201,10 @@ def main():
                     sections['Travel'].append(f"• [{label}]({url}) [{status}]")
                 else:
                     sections['Travel'].append(line)
+    log("REPORT_SECTION", "SUCCESS", "Built Travel section", data={
+        "section": "Travel",
+        "items": len(sections['Travel']),
+    }, app_name="reporting")
                 
     # 3. Inbox (Action Required)
     inbox_blocks = get_memory_blocks(service, 'Inbox/Action Required.md', yesterday)
@@ -203,6 +215,10 @@ def main():
             if line.startswith('### '):
                 subject = line.replace('### ', '').strip()
                 sections['Inbox'].append(f"• {subject}")
+    log("REPORT_SECTION", "SUCCESS", "Built Inbox section", data={
+        "section": "Inbox",
+        "items": len(sections['Inbox']),
+    }, app_name="reporting")
     
     # 4. Readwise (local config)
     last_digest = REPO_ROOT / 'config' / 'readwise_last_digest.json'
@@ -218,6 +234,14 @@ def main():
                     sections['Reading'].append(f'• "{title}" by {author} — {summary}')
         except Exception as e:
             print(f"Error reading readwise digest: {e}")
+            log("REPORT_SECTION", "FAILURE", "Failed reading Readwise digest", data={
+                "section": "Reading",
+                "error_type": type(e).__name__,
+            }, level="ERROR", app_name="reporting")
+    log("REPORT_SECTION", "SUCCESS", "Built Reading section", data={
+        "section": "Reading",
+        "items": len(sections['Reading']),
+    }, app_name="reporting")
             
     # Output markdown
     LIFE_DOCS_DIR.mkdir(parents=True, exist_ok=True)
@@ -275,8 +299,22 @@ def main():
             subprocess.run(['git', 'commit', '-m', f"daily: {yesterday}"], cwd=LIFE_DOCS_REPO, check=False)
             subprocess.run(['git', 'push'], cwd=LIFE_DOCS_REPO, check=True)
             logger.info("Successfully pushed daily report to Git.")
+            log("GIT_PUBLISH", "SUCCESS", "Published daily report to life-docs", data={
+                "report_date": yesterday,
+            }, app_name="reporting")
         except subprocess.CalledProcessError as e:
             logger.error(f"Git operation failed: {e}")
+            log("GIT_PUBLISH", "FAILURE", "Failed publishing daily report to life-docs", data={
+                "report_date": yesterday,
+                "error_type": type(e).__name__,
+            }, level="ERROR", app_name="reporting")
+
+    total_items = sum(len(items) for items in sections.values())
+    log("RUN_COMPLETE", "SUCCESS", "Daily reporter finished", data={
+        "report_date": yesterday,
+        "sections": {name: len(items) for name, items in sections.items()},
+        "total_items": total_items,
+    }, app_name="reporting")
 
 if __name__ == '__main__':
     subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)

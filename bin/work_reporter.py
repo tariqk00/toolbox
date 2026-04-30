@@ -19,6 +19,7 @@ sys.path.insert(0, str(REPO_ROOT.parent))
 from toolbox.lib.reporter_utils import (
     LIFE_DOCS_REPO, rebuild_site, ReportSection, logger
 )
+from toolbox.lib.log_manager import log
 
 WORK_DOCS_DIR = LIFE_DOCS_REPO / 'docs' / 'work'
 
@@ -35,6 +36,11 @@ def build_backlog():
             issues = json.loads(res.stdout)
         except Exception as e:
             logger.error(f"Failed to fetch issues for {repo}: {e}")
+            log("REPORT_SECTION", "FAILURE", "Failed fetching backlog issues", data={
+                "section": "Backlog",
+                "repo": repo,
+                "error_type": type(e).__name__,
+            }, level="ERROR", app_name="reporting")
             continue
             
         for issue in issues:
@@ -62,6 +68,10 @@ def build_backlog():
     content = "# Backlog\n\n" + "\n".join(sections)
     content += f"\n_Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}_\n"
     (WORK_DOCS_DIR / 'backlog.md').write_text(content)
+    log("REPORT_SECTION", "SUCCESS", "Built backlog report", data={
+        "section": "Backlog",
+        "counts": {name: len(items) for name, items in priorities.items()},
+    }, app_name="reporting")
 
 def build_changelog():
     repos = {
@@ -92,6 +102,10 @@ def build_changelog():
         
     content += f"\n_Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}_\n"
     (WORK_DOCS_DIR / 'changelog.md').write_text(content)
+    log("REPORT_SECTION", "SUCCESS", "Built changelog report", data={
+        "section": "Changelog",
+        "repos": list(repos.keys()),
+    }, app_name="reporting")
 
 def build_sessions():
     session_dir = Path.home() / '.claude' / 'session-data'
@@ -116,6 +130,9 @@ def build_sessions():
         
     content += f"\n_Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}_\n"
     (WORK_DOCS_DIR / 'sessions.md').write_text(content)
+    log("REPORT_SECTION", "SUCCESS", "Built sessions report", data={
+        "section": "Sessions",
+    }, app_name="reporting")
 
 def build_health():
     # Simple placeholder for now, could be expanded to parse activity.jsonl
@@ -128,9 +145,16 @@ def build_health():
         
     content += f"\n_Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}_\n"
     (WORK_DOCS_DIR / 'health.md').write_text(content)
+    log("REPORT_SECTION", "SUCCESS", "Built health report", data={
+        "section": "Health",
+        "services": services,
+    }, app_name="reporting")
 
 def main():
     WORK_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    log("RUN_START", "START", "Work reporter started", data={
+        "output_dir": str(WORK_DOCS_DIR),
+    }, app_name="reporting")
     
     logger.info("Fetching backlog...")
     build_backlog()
@@ -151,8 +175,19 @@ def main():
             subprocess.run(['git', 'commit', '-m', "work: update reports"], cwd=LIFE_DOCS_REPO, check=False)
             subprocess.run(['git', 'push'], cwd=LIFE_DOCS_REPO, check=True)
             logger.info("Successfully pushed work reports to Git.")
+            log("GIT_PUBLISH", "SUCCESS", "Published work reports to life-docs", data={
+                "output_dir": str(WORK_DOCS_DIR),
+            }, app_name="reporting")
         except subprocess.CalledProcessError as e:
             logger.error(f"Git operation failed: {e}")
+            log("GIT_PUBLISH", "FAILURE", "Failed publishing work reports to life-docs", data={
+                "output_dir": str(WORK_DOCS_DIR),
+                "error_type": type(e).__name__,
+            }, level="ERROR", app_name="reporting")
+
+    log("RUN_COMPLETE", "SUCCESS", "Work reporter finished", data={
+        "output_dir": str(WORK_DOCS_DIR),
+    }, app_name="reporting")
 
 if __name__ == '__main__':
     subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)

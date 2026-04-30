@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, date
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from toolbox.lib.log_manager import LogManager
+from toolbox.lib.log_manager import LogManager, log
 
 # Initialize centralized logger
 log_manager = LogManager.get_instance('reporting')
@@ -77,6 +77,9 @@ def rebuild_site():
     """Run mkdocs build in the life-docs repo."""
     if not MKDOCS_BIN.exists():
         logger.warning(f"MkDocs binary not found at {MKDOCS_BIN}, skipping rebuild.")
+        log("SITE_BUILD", "SKIPPED", "MkDocs binary not found, skipping site rebuild", data={
+            "mkdocs_bin": str(MKDOCS_BIN),
+        }, level="WARNING", app_name="reporting")
         return False
         
     try:
@@ -87,12 +90,23 @@ def rebuild_site():
             check=True,
             capture_output=True
         )
+        log("SITE_BUILD", "SUCCESS", "Rebuilt life-docs site", data={
+            "repo": str(LIFE_DOCS_REPO),
+        }, app_name="reporting")
         return True
     except subprocess.CalledProcessError as e:
         logger.error(f"MkDocs build failed: {e.stderr.decode()}")
+        log("SITE_BUILD", "FAILURE", "MkDocs build failed", data={
+            "repo": str(LIFE_DOCS_REPO),
+            "error_type": type(e).__name__,
+        }, level="ERROR", app_name="reporting")
         return False
     except Exception as e:
         logger.error(f"Error during site rebuild: {e}")
+        log("SITE_BUILD", "FAILURE", "Unexpected error during site rebuild", data={
+            "repo": str(LIFE_DOCS_REPO),
+            "error_type": type(e).__name__,
+        }, level="ERROR", app_name="reporting")
         return False
 
 class ReportSection:
