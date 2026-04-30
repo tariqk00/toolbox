@@ -206,6 +206,63 @@ class TestFinancialReceiptExtraction(unittest.TestCase):
         self.assertIn('**Due Date:** 2026-05-03', block)
         self.assertIn('**Account:** ...7452', block)
 
+    def test_tmobile_bill_ready_fields(self):
+        email = _make_email(
+            'T-Mobile',
+            'Your T-Mobile bill is ready',
+            plain='Bill total: $130.55. Pay by May 18, 2026. Account number: xxxxxx2468.',
+            date='2026-04-27',
+        )
+
+        _, appended, _ = _run_receipt(email)
+
+        block = appended[0]
+        self.assertIn('**Type:** [Statement] 2026-04-27', block)
+        self.assertIn('**Category:** Utilities', block)
+        self.assertIn('**Amount:** $130.55', block)
+        self.assertIn('**Due Date:** 2026-05-18', block)
+        self.assertIn('**Account:** ...2468', block)
+
+    def test_pseg_payment_received_fields(self):
+        email = _make_email(
+            'PSEG Long Island',
+            'Payment received',
+            plain='We received your payment of $211.09 on 05/01/2026 for account # 1234-5678-9012.',
+            date='2026-05-02',
+        )
+
+        summary, appended, _ = _run_receipt(email)
+
+        block = appended[0]
+        self.assertIn('**Type:** [Payment] 2026-05-02', block)
+        self.assertIn('**Amount:** $211.09', block)
+        self.assertIn('**Account:** ...9012', block)
+        self.assertIn('**Transaction Date:** 2026-05-01', block)
+        self.assertIn('**Payment Date:** 2026-05-01', block)
+        self.assertIn('PSEG Long Island: $211.09 [Payment] — ...9012 | 2026-05-01', summary)
+
+    def test_allied_physicians_preserves_service_date(self):
+        email = _make_email(
+            'Allied Physicians Group',
+            'Payment Receipt from Allied Physicians Group',
+            plain=(
+                'Thank you for your payment of $35.00 on 04/24/2026 for service date Apr 10, 2026. '
+                'Visa ending in 9876.'
+            ),
+            date='2026-04-25',
+        )
+
+        _, appended, _ = _run_receipt(email)
+
+        block = appended[0]
+        self.assertIn('**Type:** [Payment] 2026-04-25', block)
+        self.assertIn('**Category:** Healthcare', block)
+        self.assertIn('**Amount:** $35.00', block)
+        self.assertIn('**Account:** ...9876', block)
+        self.assertIn('**Transaction Date:** 2026-04-10', block)
+        self.assertIn('**Payment Method:** Visa ending in 9876', block)
+        self.assertIn('**Payment Date:** 2026-04-24', block)
+
     def test_toyota_financial_scheduled_payment_fields(self):
         email = _make_email(
             'Toyota Financial',
