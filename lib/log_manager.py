@@ -1,43 +1,45 @@
-
 import os
 import json
 import logging
 from logging.handlers import RotatingFileHandler
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
+
+
+def _utc_now_iso():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _json_dumps(payload):
+    return json.dumps(payload, default=str)
+
 
 class JsonlFormatter(logging.Formatter):
     """Custom formatter to output log records as JSONL."""
     def format(self, record):
-        # If the message is already a JSON string (from log_event), use it
-        try:
-            if isinstance(record.msg, str) and record.msg.startswith('{') and record.msg.endswith('}'):
-                # Try to parse to verify it's JSON
-                json.loads(record.msg)
-                return record.msg
-        except:
-            pass
-            
-        # Otherwise, wrap the standard log record in a JSON structure
+        app_name = getattr(record, 'app_name', None)
+        if not app_name:
+            app_name = record.name.split("toolbox.", 1)[-1] if record.name.startswith("toolbox.") else record.name
         entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "app": getattr(record, 'app_name', 'toolbox'),
+            "timestamp": _utc_now_iso(),
+            "app": app_name or 'toolbox',
             "level": record.levelname,
             "module": record.module,
             "message": record.getMessage(),
         }
-        
-        # Add correlation ID if present
-        correlation_id = getattr(record, 'correlation_id', None)
-        if correlation_id:
-            entry["correlation_id"] = correlation_id
-            
-        # Add extra data if present
-        if hasattr(record, 'extra_data'):
+        if hasattr(record, 'event_type'):
+            entry["event"] = record.event_type
+        if hasattr(record, 'status'):
+            entry["status"] = record.status
+        if hasattr(record, 'correlation_id') and record.correlation_id:
+            entry["correlation_id"] = record.correlation_id
+        if hasattr(record, 'extra_data') and record.extra_data is not None:
             entry["data"] = record.extra_data
-            
-        return json.dumps(entry)
+        if record.exc_info:
+            entry["exception"] = self.formatException(record.exc_info)
+
+        return _json_dumps(entry)
 
 class LogManager:
     """
@@ -57,15 +59,7 @@ class LogManager:
         self.correlation_id = None
         
         # Determine Log Directory
-        if log_dir:
-            self.log_dir = log_dir
-        else:
-            # Default to /opt/tariqk00/logs on NUC, or ~/.local/state/tariqk/logs on Dev
-            if os.path.exists("/opt/tariqk00"):
-                self.log_dir = "/opt/tariqk00/logs"
-            else:
-                home = os.path.expanduser("~")
-                self.log_dir = os.path.join(home, ".local", "state", "tariqk", "logs")
+        self.log_dir = log_dir or self.default_log_dir()
 
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir, exist_ok=True)
@@ -93,47 +87,54 @@ class LogManager:
 
         self.initialized = True
 
+    @staticmethod
+    def default_log_dir():
+        if os.path.exists("/opt/tariqk00"):
+            return "/opt/tariqk00/logs"
+        home = os.path.expanduser("~")
+        return os.path.join(home, ".local", "state", "tariqk", "logs")
+
     @classmethod
-    def get_instance(cls, app_name="toolbox"):
+    def get_instance(cls, app_name="toolbox", log_dir=None):
         with cls._lock:
             if app_name not in cls._instances:
-                cls._instances[app_name] = cls(app_name)
+                cls._instances[app_name] = cls(app_name, log_dir=log_dir)
             return cls._instances[app_name]
 
     def set_correlation_id(self, cid=None):
         self.correlation_id = cid or str(uuid.uuid4())
         return self.correlation_id
 
-    def log_event(self, event_type, status, message, data=None, level="INFO"):
-        """
-        Log a structured event specifically for JSONL consumption.
-        """
-        if data is None:
-            data = {}
-
-        entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+    def build_entry(self, event_type, status, message, data=None, level="INFO"):
+        return {
+            "timestamp": _utc_now_iso(),
             "app": self.app_name,
             "level": level,
             "event": event_type,
             "status": status,
             "message": message,
-            "data": data
+            "data": data or {},
+            "correlation_id": self.correlation_id,
         }
-        
-        if self.correlation_id:
-            entry["correlation_id"] = self.correlation_id
 
-        # Serialize
-        json_line = json.dumps(entry)
-
-        # Log via standard python logger. 
-        # The file handler's JsonlFormatter will see this is already JSON and pass it through.
-        # The console handler will print the JSON string (which is fine for debug).
+    def log_event(self, event_type, status, message, data=None, level="INFO"):
+        """
+        Log a structured event specifically for JSONL consumption.
+        """
+        entry = self.build_entry(event_type, status, message, data=data, level=level)
         log_method = getattr(self.logger, level.lower(), self.logger.info)
-        log_method(json_line)
+        log_method(
+            message,
+            extra={
+                "app_name": self.app_name,
+                "event_type": event_type,
+                "status": status,
+                "extra_data": entry["data"],
+                "correlation_id": entry["correlation_id"],
+            },
+        )
 
 # Usage Helper
-def log(event_type, status, message, data=None, level="INFO", app_name="toolbox"):
-    manager = LogManager.get_instance(app_name)
+def log(event_type, status, message, data=None, level="INFO", app_name="toolbox", log_dir=None):
+    manager = LogManager.get_instance(app_name, log_dir=log_dir)
     manager.log_event(event_type, status, message, data, level)
