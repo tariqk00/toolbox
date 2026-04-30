@@ -27,6 +27,11 @@ LIFE_DOCS_DIR = LIFE_DOCS_REPO / 'docs' / 'life'
 HAWAII_DEPART = date(2026, 4, 22)
 HAWAII_RETURN = date(2026, 5, 4)
 
+ALLOWED_LIFE_DOCS_DIRTY_PATHS = (
+    "docs/index.md",
+    "docs/life/",
+)
+
 def _trip_stat_html(today: date) -> str:
     if today < HAWAII_DEPART:
         n = (HAWAII_DEPART - today).days
@@ -155,6 +160,56 @@ def update_home_index(today: date, money_lines: list[str], reading_lines: list[s
     updated = _re.sub(pattern, new_content.strip(), full_text, flags=_re.DOTALL)
     index_path.write_text(updated)
     logger.info("Updated docs/index.md", extra={"log_date": log_date_str, "days_logged": f"{n_logged}/7"})
+
+
+def _run_git(args: list[str], check: bool = True, capture_output: bool = False):
+    return subprocess.run(
+        ["git", *args],
+        cwd=LIFE_DOCS_REPO,
+        check=check,
+        capture_output=capture_output,
+        text=True if capture_output else False,
+    )
+
+
+def _life_docs_status_lines() -> list[str]:
+    result = _run_git(["status", "--short"], capture_output=True)
+    return [line.rstrip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _unexpected_dirty_paths(lines: list[str]) -> list[str]:
+    unexpected = []
+    for line in lines:
+        path = line[3:] if len(line) > 3 else line
+        if not any(path == allowed or path.startswith(allowed) for allowed in ALLOWED_LIFE_DOCS_DIRTY_PATHS):
+            unexpected.append(line)
+    return unexpected
+
+
+def publish_life_docs(report_date: str) -> bool:
+    _run_git(["add", "docs/life/", "docs/index.md"])
+
+    status_lines = _life_docs_status_lines()
+    unexpected = _unexpected_dirty_paths(status_lines)
+    if unexpected:
+        raise RuntimeError(
+            "life-docs repo has unexpected dirty paths: " + "; ".join(unexpected)
+        )
+
+    commit_result = _run_git(["commit", "-m", f"daily: {report_date}"], check=False, capture_output=True)
+    if commit_result.returncode == 0:
+        logger.info("Committed life-docs daily report changes.")
+    elif "nothing to commit" not in (commit_result.stdout + commit_result.stderr).lower():
+        raise subprocess.CalledProcessError(
+            commit_result.returncode,
+            commit_result.args,
+            output=commit_result.stdout,
+            stderr=commit_result.stderr,
+        )
+
+    _run_git(["pull", "--rebase"])
+    _run_git(["push"])
+    return True
 
 
 def main():
@@ -296,15 +351,13 @@ def main():
     publish_success = False
     if rebuild_site():
         try:
-            subprocess.run(['git', 'add', 'docs/life/', 'docs/index.md'], cwd=LIFE_DOCS_REPO, check=True)
-            subprocess.run(['git', 'commit', '-m', f"daily: {yesterday}"], cwd=LIFE_DOCS_REPO, check=False)
-            subprocess.run(['git', 'push'], cwd=LIFE_DOCS_REPO, check=True)
+            publish_life_docs(yesterday)
             logger.info("Successfully pushed daily report to Git.")
             log("GIT_PUBLISH", "SUCCESS", "Published daily report to life-docs", data={
                 "report_date": yesterday,
             }, app_name="reporting")
             publish_success = True
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, RuntimeError) as e:
             logger.error(f"Git operation failed: {e}")
             log("GIT_PUBLISH", "FAILURE", "Failed publishing daily report to life-docs", data={
                 "report_date": yesterday,
@@ -320,5 +373,4 @@ def main():
     }, app_name="daily-reporter")
 
 if __name__ == '__main__':
-    subprocess.run(['git', 'pull', '--rebase'], cwd=LIFE_DOCS_REPO, check=True)
     main()

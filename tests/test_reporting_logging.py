@@ -41,3 +41,57 @@ def test_rebuild_site_logs_skip_when_mkdocs_missing():
         assert reporter_utils.rebuild_site() is False
 
     assert mock_log.call_args_list[0].args[0] == "SITE_BUILD"
+
+
+def test_daily_reporter_publish_life_docs_commits_before_pull():
+    from toolbox.bin import daily_reporter
+
+    def fake_run(cmd, cwd=None, check=True, capture_output=False, text=False):
+        class Result:
+            def __init__(self, returncode=0, stdout="", stderr="", args=None):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+                self.args = args or cmd
+
+        if cmd[:2] == ["git", "status"]:
+            return Result(stdout="M  docs/index.md\nA  docs/life/2026-04-29.md\n")
+        if cmd[:2] == ["git", "commit"]:
+            return Result(returncode=0, stdout="[main abc123] daily: 2026-04-29\n")
+        return Result()
+
+    with patch.object(daily_reporter.subprocess, "run", side_effect=fake_run) as mock_run:
+        assert daily_reporter.publish_life_docs("2026-04-29") is True
+
+    commands = [call.args[0] for call in mock_run.call_args_list]
+    assert commands == [
+        ["git", "add", "docs/life/", "docs/index.md"],
+        ["git", "status", "--short"],
+        ["git", "commit", "-m", "daily: 2026-04-29"],
+        ["git", "pull", "--rebase"],
+        ["git", "push"],
+    ]
+
+
+def test_daily_reporter_publish_life_docs_rejects_unexpected_dirty_paths():
+    from toolbox.bin import daily_reporter
+
+    def fake_run(cmd, cwd=None, check=True, capture_output=False, text=False):
+        class Result:
+            def __init__(self, returncode=0, stdout="", stderr="", args=None):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+                self.args = args or cmd
+
+        if cmd[:2] == ["git", "status"]:
+            return Result(stdout=" M README.md\n")
+        return Result()
+
+    with patch.object(daily_reporter.subprocess, "run", side_effect=fake_run):
+        try:
+            daily_reporter.publish_life_docs("2026-04-29")
+        except RuntimeError as exc:
+            assert "unexpected dirty paths" in str(exc)
+        else:
+            raise AssertionError("Expected publish_life_docs to reject unrelated life-docs changes")
