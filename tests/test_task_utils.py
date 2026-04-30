@@ -1,3 +1,5 @@
+import importlib
+
 from toolbox.lib.task_utils import (
     create_unique_tasks,
     dedupe_action_items,
@@ -35,11 +37,12 @@ def test_normalize_task_title_strips_effort_prefix():
 
 def test_create_unique_tasks_skips_existing_and_same_batch_duplicates(monkeypatch):
     created = []
+    tasks_mod = importlib.import_module("toolbox.lib.tasks")
 
     def fake_create_task(service, list_id, title, due=None, notes=None):
         created.append((list_id, title, due, notes))
 
-    monkeypatch.setattr("toolbox.lib.tasks.create_task", fake_create_task)
+    monkeypatch.setattr(tasks_mod, "create_task", fake_create_task)
 
     service = _Service(existing=["(5 min) Pay invoice"])
     count = create_unique_tasks(

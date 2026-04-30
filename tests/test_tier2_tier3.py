@@ -125,6 +125,12 @@ class TestImageResize(unittest.TestCase):
 
 class TestBuildDeltaQueue(unittest.TestCase):
 
+    def _first_tracked_id(self):
+        from toolbox.lib.drive_utils import ID_TO_PATH
+        if not isinstance(ID_TO_PATH, dict) or not ID_TO_PATH:
+            self.skipTest("drive_tree.json not present")
+        return next(iter(ID_TO_PATH.keys()))
+
     def _make_service(self, start_token='tok0', change_pages=None):
         """Build a mock Drive service for changes API calls."""
         svc = MagicMock()
@@ -176,13 +182,7 @@ class TestBuildDeltaQueue(unittest.TestCase):
     def test_new_file_in_tracked_folder_added_to_pending(self):
         """A new file in a tracked folder should appear in the returned list."""
         from toolbox.services.drive_organizer import backfill
-        from toolbox.lib.drive_utils import ID_TO_PATH
-
-        # Pick a real folder ID from the drive tree
-        if not ID_TO_PATH:
-            self.skipTest("drive_tree.json not present")
-
-        tracked_id = next(iter(ID_TO_PATH.keys()))  # first folder ID
+        tracked_id = self._first_tracked_id()
         state = self._base_state(token='tok')
 
         change = {
@@ -211,11 +211,7 @@ class TestBuildDeltaQueue(unittest.TestCase):
     def test_already_cached_file_skipped(self):
         """Files already in gemini_cache.json should not appear in delta queue."""
         from toolbox.services.drive_organizer import backfill
-        from toolbox.lib.drive_utils import ID_TO_PATH
-        if not ID_TO_PATH:
-            self.skipTest("drive_tree.json not present")
-
-        tracked_id = next(iter(ID_TO_PATH.keys()))
+        tracked_id = self._first_tracked_id()
         state = self._base_state(token='tok')
 
         change = {
@@ -243,11 +239,7 @@ class TestBuildDeltaQueue(unittest.TestCase):
     def test_removed_change_ignored(self):
         """Files marked removed in a change should not be queued."""
         from toolbox.services.drive_organizer import backfill
-        from toolbox.lib.drive_utils import ID_TO_PATH
-        if not ID_TO_PATH:
-            self.skipTest("drive_tree.json not present")
-
-        tracked_id = next(iter(ID_TO_PATH.keys()))
+        tracked_id = self._first_tracked_id()
         state = self._base_state(token='tok')
 
         change = {'removed': True, 'file': {'id': 'deleted_id', 'parents': [tracked_id],

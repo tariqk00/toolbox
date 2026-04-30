@@ -1,6 +1,5 @@
 
 import sys
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -9,19 +8,6 @@ TEST_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TEST_DIR.parent
 if str(REPO_ROOT.parent) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT.parent))
-
-# Mock everything before importing reporter_utils
-sys.modules['googleapiclient'] = MagicMock()
-sys.modules['googleapiclient.discovery'] = MagicMock()
-sys.modules['googleapiclient.http'] = MagicMock()
-sys.modules['googleapiclient.errors'] = MagicMock()
-sys.modules['google.oauth2'] = MagicMock()
-sys.modules['google.oauth2.credentials'] = MagicMock()
-
-# Mock internal lib dependencies that import google modules
-sys.modules['toolbox.lib.google_api'] = MagicMock()
-sys.modules['toolbox.lib.drive_utils'] = MagicMock()
-sys.modules['toolbox.services.email_extractor.writers'] = MagicMock()
 
 from toolbox.lib.reporter_utils import (
     ReportSection, build_stat_card, build_row, get_memory_blocks, rebuild_site

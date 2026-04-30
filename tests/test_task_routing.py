@@ -1,8 +1,7 @@
 
 import sys
-import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 # Setup paths
 TEST_DIR = Path(__file__).resolve().parent
@@ -10,11 +9,6 @@ REPO_ROOT = TEST_DIR.parent
 # Add the parent of the repository to sys.path to support 'from toolbox.lib...'
 if str(REPO_ROOT.parent) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT.parent))
-
-# Mock LLM and Drive
-sys.modules['toolbox.lib.llm'] = MagicMock()
-sys.modules['toolbox.lib.drive_utils'] = MagicMock()
-sys.modules['toolbox.lib.tasks'] = MagicMock()
 
 from toolbox.lib.task_utils import add_task, classify_and_route_task
 
@@ -48,7 +42,8 @@ def test_routing_logic():
 @patch('toolbox.lib.task_utils.classify_and_route_task')
 @patch('toolbox.lib.task_utils.add_task_to_github')
 @patch('toolbox.lib.task_utils.TaskClient')
-def test_add_task_routing(mock_client, mock_github, mock_route, mock_content):
+@patch('toolbox.lib.drive_utils.append_to_file')
+def test_add_task_routing(mock_append, mock_client, mock_github, mock_route, mock_content):
     print("Testing add_task with auto_route...")
     
     # Test Github Routing

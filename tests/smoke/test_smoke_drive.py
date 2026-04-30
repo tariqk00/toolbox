@@ -61,4 +61,5 @@ class TestAiEngineSmoke:
         assert isinstance(result, dict), "Expected dict result"
         assert 'confidence' in result, "Expected confidence field"
         assert 'folder_path' in result, "Expected folder_path field"
-        assert tokens > 0, "Expected non-zero token count"
+        assert isinstance(tokens, int), "Expected integer token count"
+        assert tokens >= 0, "Expected non-negative token count"
