@@ -220,6 +220,71 @@ def create_unique_tasks(
 
     return created
 
+ROUTING_PROMPT = """\
+Classify the following task to determine if it should be sent to GitHub (technical/coding) or Google Tasks (personal/life).
+
+Subject: {subject}
+Reason/Context: {reason}
+Sender/Source: {sender}
+
+Return ONLY valid JSON:
+{{
+  "destination": "github" or "google_tasks",
+  "repository": "tariqk00/toolbox" (or setup, plaud, life-docs - ONLY if github),
+  "rationale": "one sentence explanation"
+}}
+
+Guidelines for "github":
+- Code changes, bug fixes, script enhancements
+- Infrastructure, deployment, server config
+- Automation logic updates
+- Technical documentation
+
+Guidelines for "google_tasks":
+- Meetings, appointments, personal errands
+- Non-technical follow-ups
+- Content consumption (reading, watching)
+- Property management (unless technical)
+"""
+
+def classify_and_route_task(subject: str, reason: str, sender: str) -> dict:
+    """Use LLM to determine the best destination for a task."""
+    from toolbox.lib.llm import call_json
+    prompt = ROUTING_PROMPT.format(subject=subject, reason=reason, sender=sender)
+    result = call_json(prompt)
+    if not result:
+        return {"destination": "google_tasks", "rationale": "Fallback: LLM failed"}
+    return result
+
+def add_task_to_github(subject: str, reason: str, repo: str, sender: str, entity_id: str) -> bool:
+    """Create a GitHub issue for a technical task."""
+    import subprocess
+    body = f"""\
+Filed automatically from {sender}.
+
+**Context:**
+{reason}
+
+**Entity ID:** `{entity_id}`
+
+_Created via intelligent task router._
+"""
+    try:
+        # Check if gh CLI is available
+        subprocess.run(["gh", "--version"], check=True, capture_output=True)
+        subprocess.run([
+            "gh", "issue", "create",
+            "--repo", repo,
+            "--title", subject,
+            "--body", body,
+            "--label", "task"
+        ], check=True, capture_output=True)
+        logger.info(f"Created GitHub issue in {repo}: {subject}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to create GitHub issue: {e}")
+        return False
+
 def add_task(
     subject: str,
     sender: str,
@@ -229,12 +294,13 @@ def add_task(
     sync_to_google_tasks: bool = False,
     task_list: str = "Inbox",
     entity_source: str = "",
+    auto_route: bool = False,
 ) -> bool:
     """
     Unified task creation interface.
     1. Dedupes against Action Required.md content.
     2. Appends to Action Required.md in Drive.
-    3. Optionally syncs to Google Tasks (forced if priority is HIGH/CRITICAL).
+    3. Optionally syncs to Google Tasks or GitHub (intelligent routing).
     """
     from toolbox.lib.drive_utils import append_to_file
     
@@ -270,10 +336,24 @@ def add_task(
     append_to_file(ACTION_REQUIRED_PATH, ACTION_REQUIRED_FILE, "\n".join(lines))
     logger.info("Added task to Drive: %s", subject)
 
-    # 3. Google Tasks Sync
+    # 3. Routing logic
+    destination = "google_tasks"
+    repo = None
+    
+    if auto_route:
+        route = classify_and_route_task(subject, reason, sender)
+        destination = route.get("destination", "google_tasks")
+        repo = route.get("repository")
+        logger.info(f"Task routed to {destination} ({route.get('rationale')})")
+
+    # 4. Target Sync
+    if destination == "github" and repo:
+        return add_task_to_github(subject, reason, repo, sender, entity_id)
+    
+    # Default Target: Google Tasks
     # Force sync for high/critical priority unless explicitly disabled
     force_sync = priority in (TaskPriority.HIGH, TaskPriority.CRITICAL)
-    if sync_to_google_tasks or force_sync:
+    if sync_to_google_tasks or force_sync or auto_route:
         try:
             client = TaskClient()
             service = client.get_service()

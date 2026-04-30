@@ -159,7 +159,7 @@ def process(email: dict, state: dict, service=None) -> str | None:
     action_items = details.get('action_items', [])
     created_tasks = 0
     for item in action_items:
-        # Use task_utils to add to Google Tasks if sync_to_google_tasks=True
+        # Use task_utils to add to Google Tasks or GitHub (auto-routed)
         if add_task(
             subject=item['text'],
             sender=f"Plaud: {subject}",
@@ -168,6 +168,7 @@ def process(email: dict, state: dict, service=None) -> str | None:
             date_str=item.get('due_date') or doc_date,
             sync_to_google_tasks=True,
             entity_source=f"plaud:{subject}",
+            auto_route=True,
         ):
             created_tasks += 1
             
