@@ -147,15 +147,20 @@ def process(email: dict, state: dict, service=None) -> str | None:
     # 1. Extract details via LLM
     details = _extract_details_llm(subject, doc_date, full_text)
     
-    # 2. Build and save markdown
-    # Format: 01 - Second Brain/Plaud/YYYY-MM-DD - Subject.md
+    # 2. Categorize and Determine Standardized Path
+    from toolbox.bin.standardize_plaud import get_category, get_standard_path
+    category = get_category(subject, full_text)
+    folder_path = get_standard_path(category, doc_date)
+    
+    # 3. Build and save markdown
+    # Format: 01 - Second Brain/Plaud/[Category]/[Year]/YYYY-MM-DD - Subject.md
     filename = f"{doc_date} - {subject}.md"
     
     content = _build_markdown(subject, doc_date, details, full_text)
-    # Using 'Plaud' folder as target under Memory root
-    append_to_memory('Plaud', filename, content)
+    # Using standardized folder path under Memory root
+    append_to_memory(folder_path, filename, content)
     
-    # 3. Handle Action Items
+    # 4. Handle Action Items
     action_items = details.get('action_items', [])
     created_tasks = 0
     for item in action_items:
