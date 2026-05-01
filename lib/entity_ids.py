@@ -43,6 +43,10 @@ def task_entity_id(source: str, subject: str, due_date: str) -> str:
     return build_entity_id("tasks", canonicalize_key(source, subject, due_date))
 
 
+def low_confidence_entity_id(source_type: str, source_id: str) -> str:
+    return build_entity_id("low_confidence", canonicalize_key(source_type, source_id))
+
+
 def render_entity_comment(entity_id: str) -> str:
     """Emit a hidden markdown marker for entity identity."""
     return f"<!-- entity_id: {entity_id} -->"

@@ -70,6 +70,7 @@ def _run_scan(files, dry_run=True, analysis=ANALYSIS_HIGH, new_name='2026-01-15 
          patch.object(main, 'analyze_with_gemini', return_value=(analysis, 10)), \
          patch.object(main, 'generate_new_name', return_value=new_name), \
          patch.object(main, 'resolve_folder_id', return_value=target_id), \
+         patch.object(main, 'route_drive_file_to_low_confidence', return_value={'memory_filename': 'id_file.md'}) as mock_low_conf, \
          patch.object(main, 'get_category_prompt_str', return_value='folders...'), \
          patch.object(main, 'log_to_sheet'), \
          patch.object(main, 'send_message'), \
@@ -78,7 +79,7 @@ def _run_scan(files, dry_run=True, analysis=ANALYSIS_HIGH, new_name='2026-01-15 
         main.scan_folder('id_inbox', dry_run=dry_run, limit=limit,
                          mode=mode, folder_name='Inbox', service=svc, recursive=recursive)
 
-    return svc, mock_move
+    return svc, mock_move, mock_low_conf
 
 
 class TestSkipLogic(unittest.TestCase):
@@ -152,11 +153,12 @@ class TestDryRun(unittest.TestCase):
         """Dry run still calls AI but makes no Drive mutations."""
         from toolbox.services.drive_organizer import main
         files = [_make_file('invoice.pdf', 'application/pdf')]
-        svc, mock_move = _run_scan(files, dry_run=True)
+        svc, mock_move, mock_low = _run_scan(files, dry_run=True)
         # AI was called (download + analyze)
         # No update or move on Drive
         svc.files().update.assert_not_called()
         mock_move.assert_not_called()
+        mock_low.assert_not_called()
 
     def test_dry_run_stats_incremented(self):
         from toolbox.services.drive_organizer import main
@@ -176,7 +178,7 @@ class TestExecuteHighConfidence(unittest.TestCase):
     def test_high_confidence_renames_and_moves(self):
         """High confidence + different name + target → rename + move."""
         files = [_make_file('invoice.pdf', 'application/pdf', fid='id_invoice')]
-        svc, mock_move = _run_scan(files, dry_run=False, analysis=ANALYSIS_HIGH,
+        svc, mock_move, mock_low = _run_scan(files, dry_run=False, analysis=ANALYSIS_HIGH,
                                    new_name='2026-01-15 - Toyota - Car payment.pdf',
                                    target_id='id_finance')
         # rename happened
@@ -184,6 +186,7 @@ class TestExecuteHighConfidence(unittest.TestCase):
         # move happened
         mock_move.assert_called_once_with(svc, 'id_invoice', 'id_finance',
                                           '2026-01-15 - Toyota - Car payment.pdf')
+        mock_low.assert_not_called()
 
     def test_high_confidence_stats(self):
         from toolbox.services.drive_organizer import main
@@ -196,21 +199,23 @@ class TestExecuteHighConfidence(unittest.TestCase):
     def test_lowercase_high_confidence_still_moves(self):
         files = [_make_file('invoice.pdf', 'application/pdf', fid='id_invoice')]
         analysis = dict(ANALYSIS_HIGH, confidence='high')
-        svc, mock_move = _run_scan(files, dry_run=False, analysis=analysis,
+        svc, mock_move, mock_low = _run_scan(files, dry_run=False, analysis=analysis,
                                    new_name='2026-01-15 - Toyota - Car payment.pdf',
                                    target_id='id_finance')
         svc.files().update.assert_called()
         mock_move.assert_called_once()
+        mock_low.assert_not_called()
 
     def test_high_confidence_same_folder_no_move(self):
         """High confidence but target == source folder → rename only, no move."""
         from toolbox.services.drive_organizer import main
         files = [_make_file('invoice.pdf', 'application/pdf', fid='id_invoice')]
-        svc, mock_move = _run_scan(files, dry_run=False, analysis=ANALYSIS_HIGH,
+        svc, mock_move, mock_low = _run_scan(files, dry_run=False, analysis=ANALYSIS_HIGH,
                                    new_name='2026-01-15 - Toyota - Car payment.pdf',
                                    target_id='id_inbox')  # same as source
         svc.files().update.assert_called()
         mock_move.assert_not_called()
+        mock_low.assert_not_called()
 
 
 class TestExecuteMediumConfidence(unittest.TestCase):
@@ -220,21 +225,23 @@ class TestExecuteMediumConfidence(unittest.TestCase):
         main.stats = main.RunStats()
 
     def test_medium_confidence_renames_no_move(self):
-        """Medium confidence → rename only, no move."""
+        """Medium confidence routes to low confidence instead of mutating the file in place."""
         files = [_make_file('doc.txt', fid='id_doc')]
-        svc, mock_move = _run_scan(files, dry_run=False, analysis=ANALYSIS_MEDIUM,
+        svc, mock_move, mock_low = _run_scan(files, dry_run=False, analysis=ANALYSIS_MEDIUM,
                                    new_name='2026-01-15 - Unknown - Some document.txt',
                                    target_id='id_brain')
-        svc.files().update.assert_called()
+        svc.files().update.assert_not_called()
         mock_move.assert_not_called()
+        mock_low.assert_called_once()
 
     def test_medium_confidence_stats(self):
         from toolbox.services.drive_organizer import main
         files = [_make_file('doc.txt', fid='id_doc')]
         _run_scan(files, dry_run=False, analysis=ANALYSIS_MEDIUM,
                   new_name='2026-01-15 - Unknown - Some document.txt')
-        self.assertEqual(main.stats.renamed, 1)
+        self.assertEqual(main.stats.renamed, 0)
         self.assertEqual(main.stats.moved, 0)
+        self.assertEqual(main.stats.low_confidence, 1)
 
 
 class TestExecuteLowConfidence(unittest.TestCase):
@@ -244,12 +251,13 @@ class TestExecuteLowConfidence(unittest.TestCase):
         main.stats = main.RunStats()
 
     def test_low_confidence_no_action(self):
-        """Low confidence → no rename, no move."""
+        """Low confidence routes to the low-confidence bucket."""
         files = [_make_file('mystery.pdf', 'application/pdf', fid='id_mystery')]
-        svc, mock_move = _run_scan(files, dry_run=False, analysis=ANALYSIS_LOW,
+        svc, mock_move, mock_low = _run_scan(files, dry_run=False, analysis=ANALYSIS_LOW,
                                    new_name='mystery.pdf')  # same name
         svc.files().update.assert_not_called()
         mock_move.assert_not_called()
+        mock_low.assert_called_once()
 
 
 class TestRecursion(unittest.TestCase):

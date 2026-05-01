@@ -28,6 +28,11 @@ from toolbox.lib.drive_utils import (
     resolve_folder_id, get_category_prompt_str,
     INBOX_ID, METADATA_FOLDER_ID, HISTORY_SHEET_ID, ID_TO_PATH
 )
+from toolbox.lib.low_confidence import (
+    LOW_CONFIDENCE_DRIVE_PATH,
+    route_drive_file_to_low_confidence,
+    route_needs_low_confidence,
+)
 
 # --- CONFIG ---
 # LOGGING
@@ -45,10 +50,12 @@ class RunStats:
         self.moved = 0
         self.renamed = 0
         self.swept = 0
+        self.low_confidence = 0
         self.errors = 0
         self.start_time = time.time()
         self.move_details = []    # (original_name, new_name, folder_path, file_id)
         self.rename_details = []  # (original_name, new_name, file_id)
+        self.low_confidence_details = []  # (original_name, bucket_path, file_id)
         self.error_details = []   # (name, error_str, file_id)
         self._moved_fids = set()  # track which files were moved (to avoid duplicate rename lines)
 
@@ -58,10 +65,11 @@ class RunStats:
             "processed": self.processed,
             "moved": self.moved,
             "renamed": self.renamed,
+            "low_confidence": self.low_confidence,
             "errors": self.errors,
             "duration_s": duration
         }, app_name="ai-sorter")
-        return f"Run completed in {duration}s. Processed: {self.processed}, Moved: {self.moved}, Renamed: {self.renamed}, Errors: {self.errors}."
+        return f"Run completed in {duration}s. Processed: {self.processed}, Moved: {self.moved}, Renamed: {self.renamed}, Low confidence: {self.low_confidence}, Errors: {self.errors}."
 
     def get_notification(self):
         duration = int(time.time() - self.start_time)
@@ -73,6 +81,8 @@ class RunStats:
             summary_parts.append(f"{self.renamed} renamed")
         if self.swept:
             summary_parts.append(f"{self.swept} swept")
+        if self.low_confidence:
+            summary_parts.append(f"{self.low_confidence} low-confidence")
         if self.errors:
             summary_parts.append(f"{self.errors} error{'s' if self.errors > 1 else ''}")
         header = ", ".join(summary_parts) + f" ({duration}s)"
@@ -89,6 +99,9 @@ class RunStats:
         for orig, new, fid in self.rename_details:
             label = drive_file_link(fid, new) if fid else f"<code>{escape(new)}</code>"
             all_lines.append(f"  Renamed: <code>{escape(orig)}</code> → {label}")
+        for orig, folder, fid in self.low_confidence_details:
+            label = drive_file_link(fid, orig) if fid else f"<code>{escape(orig)}</code>"
+            all_lines.append(f"  Low confidence: {label}\n    → {escape(folder)}")
         for name, err, fid in self.error_details:
             label = drive_file_link(fid, name) if fid else f"<code>{escape(name)}</code>"
             all_lines.append(f"  Error: {label}\n    {escape(str(err))}")
@@ -373,8 +386,36 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                     stats.processed += 1
                     continue
 
-                # Rename if High or Medium (Rename-only fallback for Medium)
-                if new_name != name and confidence in ['High', 'Medium']:
+                target_id = resolve_folder_id(folder_path)
+                if not target_id and folder_path:
+                    _maybe_flag_new_trip(folder_path, name, fid)
+
+                if route_needs_low_confidence(confidence, target_id):
+                    bucket = route_drive_file_to_low_confidence(
+                        service=service,
+                        file_id=fid,
+                        current_name=name,
+                        source_folder_id=folder_id,
+                        source_folder_path=folder_name,
+                        created_time=f.get('createdTime', ''),
+                        analysis=analysis,
+                        proposed_name=new_name,
+                    )
+                    stats.low_confidence += 1
+                    stats.low_confidence_details.append((name, LOW_CONFIDENCE_DRIVE_PATH, fid))
+                    logger.info(f"  [LowConfidence] Routed {name} -> {LOW_CONFIDENCE_DRIVE_PATH}")
+                    log("FILE_LOW_CONFIDENCE", "WARNING", "Routed file to low-confidence bucket", data={
+                        "file_id": fid,
+                        "name": name,
+                        "bucket_path": LOW_CONFIDENCE_DRIVE_PATH,
+                        "memory_file": bucket["memory_filename"],
+                        "confidence": confidence,
+                        "proposed_folder_path": folder_path,
+                    }, level="WARNING", app_name="ai-sorter")
+                    stats.processed += 1
+                    continue
+
+                if new_name != name and confidence == 'High':
                     service.files().update(fileId=fid, body={'name': new_name}).execute()
                     stats.renamed += 1
                     logger.info(f"  [Renamed] {new_name}")
@@ -384,10 +425,6 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                     target_path = ID_TO_PATH.get(target_id, folder_path)
                     log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, target_path, f'Auto-Rename ({confidence})')
 
-                # Move ONLY if High confidence and we have a target
-                target_id = resolve_folder_id(folder_path)
-                if not target_id and folder_path:
-                    _maybe_flag_new_trip(folder_path, name, fid)
                 if confidence == 'High' and target_id and target_id != folder_id:
                     if move_file(service, fid, target_id, new_name):
                         stats.moved += 1
@@ -406,18 +443,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                         # Log move (if not already logged via Rename)
                         if new_name == name:
                             log_to_sheet(time.strftime("%Y-%m-%d %H:%M:%S"), fid, name, new_name, target_id, full_path, 'Auto-Move')
-                elif confidence == 'Medium':
-                    logger.info(f"  [Skip Move] Medium confidence for {name}")
-                    log("FILE_SKIPPED", "WARNING", "Skipped move due to medium confidence", data={
-                        "file_id": fid,
-                        "name": name,
-                        "new_name": new_name,
-                        "folder_path": folder_path,
-                        "confidence": confidence,
-                    }, level="WARNING", app_name="ai-sorter")
-
-                # Record rename-only (not moved)
-                if new_name != name and confidence == 'Medium' and fid not in stats._moved_fids:
+                if new_name != name and confidence == 'High' and fid not in stats._moved_fids:
                     stats.rename_details.append((name, new_name, fid))
 
             stats.processed += 1

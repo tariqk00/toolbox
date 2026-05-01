@@ -97,4 +97,4 @@ def test_sorter_scan_logs_structured_file_events():
 
     events = [call.args[0] for call in mock_log.call_args_list]
     assert "FILE_ANALYZED" in events
-    assert "FILE_SKIPPED" in events
+    assert "FILE_LOW_CONFIDENCE" in events

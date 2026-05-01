@@ -34,6 +34,11 @@ from toolbox.lib.drive_utils import (
     resolve_folder_id, get_category_prompt_str,
     INBOX_ID, HISTORY_SHEET_ID, CONFIG_PATH, ID_TO_PATH,
 )
+from toolbox.lib.low_confidence import (
+    LOW_CONFIDENCE_DRIVE_PATH,
+    route_drive_file_to_low_confidence,
+    route_needs_low_confidence,
+)
 
 # --- CONFIG ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -467,6 +472,7 @@ def run(args):
     processed = moved = renamed = errors = 0
     move_details = []   # (original, new_name, folder_path)
     rename_details = [] # (original, new_name)
+    low_confidence_details = []  # (original, bucket_path)
     error_details = []  # (name, error_str)
     moved_fids = set()
 
@@ -507,7 +513,26 @@ def run(args):
             if not dry_run:
                 ts = time.strftime("%Y-%m-%d %H:%M:%S")
 
-                if new_name != name and confidence in ('High', 'Medium'):
+                target_id = resolve_folder_id(folder_target)
+                if route_needs_low_confidence(confidence, target_id):
+                    bucket = route_drive_file_to_low_confidence(
+                        service=service,
+                        file_id=fid,
+                        current_name=name,
+                        source_folder_id=folder_id,
+                        source_folder_path=folder_path,
+                        created_time=item.get('createdTime', ''),
+                        analysis=analysis,
+                        proposed_name=new_name,
+                    )
+                    low_confidence_details.append((name, LOW_CONFIDENCE_DRIVE_PATH))
+                    logger.info(f"  [LowConfidence] Routed {name} -> {LOW_CONFIDENCE_DRIVE_PATH}")
+                    processed += 1
+                    state['total_processed'] = state.get('total_processed', 0) + 1
+                    save_state(state)
+                    continue
+
+                if new_name != name and confidence == 'High':
                     service.files().update(fileId=fid, body={'name': new_name}).execute()
                     renamed += 1
                     logger.info(f"  [Renamed] {new_name}")
@@ -515,7 +540,6 @@ def run(args):
                     target_path_for_log = ID_TO_PATH.get(target_id_for_log, folder_path)
                     log_to_sheet(ts, fid, name, new_name, target_id_for_log, target_path_for_log, f'Backfill-Rename ({confidence})')
 
-                target_id = resolve_folder_id(folder_target)
                 if confidence == 'High' and target_id and target_id != folder_id:
                     if move_file(service, fid, target_id, new_name):
                         moved += 1
@@ -526,7 +550,7 @@ def run(args):
                         if new_name == name:
                             log_to_sheet(ts, fid, name, new_name, target_id, full_path, 'Backfill-Move')
 
-                if new_name != name and confidence == 'Medium' and fid not in moved_fids:
+                if new_name != name and confidence == 'High' and fid not in moved_fids:
                     rename_details.append((name, new_name))
 
             processed += 1
@@ -553,6 +577,7 @@ def run(args):
     summary_parts = []
     if moved:    summary_parts.append(f"{moved} moved")
     if renamed:  summary_parts.append(f"{renamed} renamed")
+    if low_confidence_details: summary_parts.append(f"{len(low_confidence_details)} low-confidence")
     if errors:   summary_parts.append(f"{errors} error{'s' if errors > 1 else ''}")
     if not summary_parts:
         summary_parts.append(f"{processed} processed (no changes)")
@@ -566,6 +591,8 @@ def run(args):
         detail_lines.append(f"  Moved: {orig}\n    → {folder}/{new}")
     for orig, new in rename_details:
         detail_lines.append(f"  Renamed: {orig}\n    → {new}")
+    for orig, bucket_path in low_confidence_details:
+        detail_lines.append(f"  Low confidence: {orig}\n    → {bucket_path}")
     for name, err in error_details:
         detail_lines.append(f"  Error: {name}\n    {err}")
     lines.extend(detail_lines[:MAX])
