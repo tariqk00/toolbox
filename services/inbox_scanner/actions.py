@@ -198,6 +198,28 @@ def send_uptown_nudge(inquiry: dict, hours_old: int, telegram_service: str) -> N
     send_message(msg, service=telegram_service)
 
 
+def send_uptown_missed_inquiry_alert(entry: dict, telegram_service: str) -> None:
+    """Heads-up that an inquiry was responded to but not captured by initial automation."""
+    from html import escape
+    from toolbox.lib.telegram import send_message
+
+    tenant = entry.get('lead_name') or 'Unknown prospect'
+    subject = entry.get('subject', '')
+    responses = entry.get('responses', [])
+    response_count = len(responses)
+    last_response_date = responses[-1].get('date', '') if responses else ''
+
+    lines = [
+        f'👤 <b>Uptown Ghost Inquiry: {escape(tenant)}</b>',
+        '<i>(Heads-up: response detected for an untracked inquiry)</i>\n',
+        f'<b>Source:</b> {escape(entry.get("source", "Direct"))}',
+        f'<b>Subject:</b> {escape(subject)}',
+        f'<b>Responses:</b> {response_count} detected (latest {last_response_date})',
+        '\nThis inquiry was handled manually by Christina without a prior automation alert.',
+    ]
+    send_message('\n'.join(lines), service=telegram_service)
+
+
 def write_uptown_inquiries(items: list) -> None:
     """Write Uptown Edenton inquiries to Memory/Properties/Uptown Edenton Inquiries.md."""
     if not items:
@@ -248,7 +270,7 @@ def _render_uptown_inquiry_block(item: dict, kb_filename: str = '', response_sta
 
 
 def _split_blocks(content: str) -> list[str]:
-    return [block.strip() for block in content.split('---') if block.strip()]
+    return [block.strip() for block in (content or "").split('---') if block.strip()]
 
 
 def _join_blocks(blocks: list[str]) -> str:
@@ -336,6 +358,9 @@ def sync_uptown_inquiry_index(kb_entries: list[dict]) -> None:
             'notes': 'Linked from Uptown response KB',
             'thread_id': entry.get('thread_id', ''),
         }, kb_filename=entry.get('_kb_filename', ''), response_status='Responded'))
+        
+        # Heads-up: this was missed by the initial alert logic
+        send_uptown_missed_inquiry_alert(entry, "inbox-scanner · uptown")
         changed = True
 
     if changed:
