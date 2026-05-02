@@ -268,10 +268,12 @@ def _match_sender(from_header: str, senders: dict, sender_domains: dict = None) 
 
 
 def fetch_category_emails(service, category: str, config: dict,
-                          after_date: str = None, first_run: bool = False) -> list:
+                          state: dict = None, after_date: str = None, 
+                          first_run: bool = False) -> list:
     """
     Fetch and parse emails for a given category.
     Returns list of dicts: email metadata + body + matched vendor name.
+    Skips threads already marked as processed in state.
     """
     cat_config = config.get(category, {})
     senders = cat_config.get('senders', {})
@@ -290,10 +292,20 @@ def fetch_category_emails(service, category: str, config: dict,
 
     results = []
     seen_ids = set()
+    
+    # Thread-level hardening: skip threads already fully processed
+    processed_threads = set(state.get('processed_threads', [])) if state else set()
+    
     for m in raw:
         if m['id'] in seen_ids:
             continue
         seen_ids.add(m['id'])
+        
+        thread_id = m.get('threadId')
+        if thread_id and thread_id in processed_threads:
+            logger.debug(f"Skipping already processed thread: {thread_id}")
+            continue
+
         try:
             full = get_full_email(service, m['id'])
             vendor = _match_sender(full['from'], senders, sender_domains)

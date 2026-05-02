@@ -267,7 +267,7 @@ def _extract_type(subject: str) -> str:
     return 'Payment'
 
 
-def process(email: dict, state: dict) -> str | None:
+def process(email: dict, state: dict) -> dict | None:
     vendor = email['vendor']
     subject = email['subject']
     plain = email['plain'] or ''
@@ -279,6 +279,13 @@ def process(email: dict, state: dict) -> str | None:
     category = _derive_category(vendor, receipt_type, plain)
     transaction_date = _extract_transaction_date(subject, plain, date, receipt_type)
     transaction_time = _extract_transaction_time(plain)
+
+    # Simple confidence scoring for Spec v2
+    confidence = 1.0
+    if not amount: confidence -= 0.3
+    if not transaction_date: confidence -= 0.1
+    if vendor == 'UnknownVendor': confidence -= 0.4
+
     financial_details = {}
     if vendor in FINANCIAL_VENDORS:
         financial_details = _extract_financial_details(vendor, subject, plain, date, receipt_type)
@@ -312,8 +319,7 @@ def process(email: dict, state: dict) -> str | None:
 
             summary = f'{vendor}: {amount} → {receipt_type} [{date}]'
             logger.info(f'Receipts/{filename}: {summary}')
-            return summary
-        # Same type again or non-Reminder already seen — fall through to new entry
+            return {'summary': summary, 'confidence': 1.0, 'category': 'receipts'}
 
     # New entry
     lines = [f'## {date} — {amount or receipt_type}']
@@ -371,4 +377,9 @@ def process(email: dict, state: dict) -> str | None:
         summary += f' — {rider}'
     summary = enrich_receipt(summary, vendor, amount, receipt_type)
     logger.info(f'Receipts/{filename}: {summary.splitlines()[0]}')
-    return summary
+    
+    return {
+        'summary': summary,
+        'confidence': max(0.0, confidence),
+        'category': 'receipts'
+    }

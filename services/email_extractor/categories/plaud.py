@@ -10,7 +10,6 @@ from datetime import datetime
 from ..writers import append_to_memory
 from ..scanner import get_attachment
 from toolbox.lib.task_utils import add_task
-from toolbox.lib.entity_ids import plaud_entity_id, render_entity_comment
 
 logger = logging.getLogger('EmailExtractor.Plaud')
 
@@ -86,7 +85,7 @@ def _extract_details_llm(subject: str, date_str: str, text: str) -> dict:
 
 
 def _build_markdown(subject: str, date_str: str, details: dict, original_text: str) -> str:
-    lines = [f'# {subject}', render_entity_comment(plaud_entity_id(subject, date_str)), '']
+    lines = [f'# {subject}', '']
     lines.append(f'**Date:** {date_str}')
     lines.append(f'**Source:** Plaud Email Ingestion')
     lines.append('')
@@ -125,7 +124,7 @@ def _build_markdown(subject: str, date_str: str, details: dict, original_text: s
     return '\n'.join(lines)
 
 
-def process(email: dict, state: dict, service=None) -> str | None:
+def process(email: dict, state: dict, service=None) -> dict | None:
     raw_subject = email['subject']
     date_header = email['date']
     
@@ -147,19 +146,25 @@ def process(email: dict, state: dict, service=None) -> str | None:
     # 1. Extract details via LLM
     details = _extract_details_llm(subject, doc_date, full_text)
     
-    # 2. Build and save markdown
-    # Format: 01 - Second Brain/Plaud/YYYY-MM-DD - Subject.md
+    # 2. Categorize and Determine Standardized Path
+    from toolbox.bin.standardize_plaud import get_category, get_standard_path
+    category = get_category(subject, full_text)
+    folder_path = get_standard_path(category, doc_date)
+    
+    # 3. Build and save markdown
+    # Format: 01 - Second Brain/Plaud/[Category]/[Year]/YYYY-MM-DD - Subject.md
     filename = f"{doc_date} - {subject}.md"
     
     content = _build_markdown(subject, doc_date, details, full_text)
-    # Using 'Plaud' folder as target under Memory root
-    append_to_memory('Plaud', filename, content)
+    # Using standardized folder path under Memory root
+    from ..writers import append_to_memory
+    append_to_memory(folder_path, filename, content)
     
-    # 3. Handle Action Items
+    # 4. Handle Action Items
     action_items = details.get('action_items', [])
     created_tasks = 0
     for item in action_items:
-        # Use task_utils to add to Google Tasks if sync_to_google_tasks=True
+        # Use task_utils to add to Google Tasks or GitHub (auto-routed)
         if add_task(
             subject=item['text'],
             sender=f"Plaud: {subject}",
@@ -168,6 +173,7 @@ def process(email: dict, state: dict, service=None) -> str | None:
             date_str=item.get('due_date') or doc_date,
             sync_to_google_tasks=True,
             entity_source=f"plaud:{subject}",
+            auto_route=True,
         ):
             created_tasks += 1
             
@@ -176,4 +182,8 @@ def process(email: dict, state: dict, service=None) -> str | None:
         summary += f" ({created_tasks} tasks created)"
         
     logger.info(f"Processed Plaud email: {subject}")
-    return summary
+    return {
+        'summary': summary,
+        'confidence': 1.0,
+        'category': 'plaud'
+    }

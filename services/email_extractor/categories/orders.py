@@ -542,11 +542,11 @@ def process(email: dict, state: dict) -> str | None:
             'status_line': status_line,
             'entity_id': order_entity_id(vendor, order_key),
         }
-        summary = f'Amazon Pharmacy: {product} [{status}]'
+        summary = f'{vendor}: {product} [{status}]'
         if total:
             summary += f' — {total}'
         logger.info(f'Orders/{filename}: new shipment — {summary}')
-        return summary
+        return {'summary': summary, 'confidence': 1.0, 'category': 'orders'}
 
     # ── All other vendors: order-number dedup ───────────────────────────────
     order_num = _extract_order_number(vendor, subject, body)
@@ -636,7 +636,7 @@ def process(email: dict, state: dict) -> str | None:
         if url:
             summary += f'\n{url}'
         logger.info(f'Orders/{filename}: status update — {vendor} #{order_num} → {status}')
-        return summary
+        return {'summary': summary, 'confidence': 1.0, 'category': 'orders'}
 
     # New order — call LLM for item extraction
     extracted = _merge_extracted_order_data(subject, body, _extract_items_llm(vendor, subject, body))
@@ -741,4 +741,8 @@ def process(email: dict, state: dict) -> str | None:
         summary += f'\n{url}'
     summary = enrich_order(summary, vendor, order_num, n, total, status)
     logger.info(f'Orders/{filename}: new order — {label}: {n} items [{status}]')
-    return summary
+    return {
+        'summary': summary,
+        'confidence': max(0.0, confidence),
+        'category': 'orders'
+    }

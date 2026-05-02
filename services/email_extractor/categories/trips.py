@@ -382,7 +382,7 @@ def _build_block(trip_type: str, email_date: str, vendor: str, confirmation: str
 
 # ── Main processor ────────────────────────────────────────────────────────────
 
-def process(email: dict, state: dict) -> str | None:
+def process(email: dict, state: dict) -> dict | None:
     vendor = email['vendor']
     subject = email['subject']
     plain = email.get('plain') or ''
@@ -440,7 +440,7 @@ def process(email: dict, state: dict) -> str | None:
                 if url:
                     summary += f'\n{url}'
                 logger.info(f'Travel.md: return leg — {vendor} {confirmation}')
-                return summary
+                return {'summary': summary, 'confidence': 1.0, 'category': 'trips'}
 
         if status == prev_status:
             return None
@@ -461,7 +461,7 @@ def process(email: dict, state: dict) -> str | None:
         if url:
             summary += f'\n{url}'
         logger.info(f'Travel.md: status update — {vendor} {confirmation or state_key} → {status}')
-        return summary
+        return {'summary': summary, 'confidence': 1.0, 'category': 'trips'}
 
     # ── Content-based safety net ──────────────────────────────────────────────
     existing_content = get_memory_content(None, filename)
@@ -516,4 +516,4 @@ def process(email: dict, state: dict) -> str | None:
         summary += f'\n{url}'
     summary = enrich_trip(summary, trip_type, vendor, label, status, travel_date)
     logger.info(f'Travel.md: new {trip_type} — {label} ({vendor}) [{status}]')
-    return summary
+    return {'summary': summary, 'confidence': 1.0, 'category': 'trips'}
