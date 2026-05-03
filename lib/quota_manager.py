@@ -46,6 +46,7 @@ def load() -> dict:
     return {
         "date": today,
         "total_tokens_used": 0,
+        "total_usd_used": 0.0,
         "daily_budget": DAILY_BUDGET,
         "files_per_run": FILES_PER_RUN,
         "sorter_calls_today": 0,
@@ -71,6 +72,20 @@ def record_tokens(tokens: int) -> dict:
     state["total_tokens_used"] = state.get("total_tokens_used", 0) + tokens
     save(state)
     return state
+
+
+def record_llm_usage(tokens: int, usd_cost: float) -> dict:
+    """Record both tokens and USD cost for a single LLM call."""
+    state = load()
+    state["total_tokens_used"] = state.get("total_tokens_used", 0) + tokens
+    state["total_usd_used"] = state.get("total_usd_used", 0.0) + usd_cost
+    save(state)
+    return state
+
+
+def get_total_usd_used() -> float:
+    """Return today's total USD usage."""
+    return load().get("total_usd_used", 0.0)
 
 
 def remaining() -> int:

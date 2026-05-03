@@ -32,6 +32,9 @@ def _get_client():
 class GroqProvider(AIProvider):
     name = "Groq"
 
+    def __init__(self, model_name: str = None):
+        self.model_name = model_name or GROQ_MODEL
+
     def supports(self, mime_type: str) -> bool:
         # Groq handles text only — PDFs and images go to Gemini
         return mime_type == 'text/plain'
@@ -46,13 +49,13 @@ class GroqProvider(AIProvider):
         try:
             client = _get_client()
             resp = client.chat.completions.create(
-                model=GROQ_MODEL,
+                model=self.model_name,
                 messages=[{'role': 'user', 'content': full_prompt}],
                 max_tokens=512,
             )
             text = resp.choices[0].message.content.strip()
             tokens = resp.usage.total_tokens if resp.usage else 0
-            logger.info(f"  [Groq/{GROQ_MODEL}] tokens={tokens}")
+            logger.info(f"  [Groq/{self.model_name}] tokens={tokens}")
             return text, tokens
         except Exception as e:
             msg = str(e)

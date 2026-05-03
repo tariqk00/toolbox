@@ -16,13 +16,16 @@ OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma4:e2b')
 class OllamaProvider(AIProvider):
     name = "Ollama"
 
+    def __init__(self, model_name: str = None):
+        self.model_name = model_name or OLLAMA_MODEL
+
     def supports(self, mime_type: str) -> bool:
         return mime_type == 'text/plain'
 
     def analyze(self, content_bytes: bytes, mime_type: str, prompt: str) -> tuple[str, int]:
         text_content = content_bytes.decode('utf-8', errors='ignore')
         payload = {
-            "model": OLLAMA_MODEL,
+            "model": self.model_name,
             "prompt": f"{prompt}\n\nCONTENT TO ANALYZE:\n{text_content}",
             "stream": False,
         }
