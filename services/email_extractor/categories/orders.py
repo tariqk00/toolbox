@@ -484,7 +484,7 @@ def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
 
 # ── Main processor ───────────────────────────────────────────────────────────
 
-def process(email: dict, state: dict) -> str | None:
+def process(email: dict, state: dict) -> dict | None:
     vendor = email['vendor']
     subject = email['subject']
     body = _get_body(email)
@@ -497,38 +497,57 @@ def process(email: dict, state: dict) -> str | None:
     filename = f'{vendor}.md'
     known_orders = state.setdefault('order_numbers', {})
 
+    # Simple confidence scoring for Spec v2
+    confidence = 1.0
+    if vendor == 'UnknownVendor': confidence -= 0.4
+
     # ── Amazon Pharmacy: month-based dedup key ──────────────────────────────
     if vendor == 'Amazon Pharmacy':
         if status == 'Update':
             return None
         order_key = f'pillpack:{_extract_pillpack_shipment_key(body, date)}'
 
+        status_icons = {'Shipped': '🚚', 'Delivered': '✅', 'Confirmed': '📩', 'Out for Delivery': '📦'}
+        icon = status_icons.get(status, '📝')
+
         if order_key in known_orders:
             prev = known_orders[order_key]
             prev_status = prev.get('status', '')
             if status == prev_status:
                 return None
+            
+            # 1. Update in-place in Markdown
             old_line = prev.get('status_line') or f'**Status:** [{prev_status}] {prev.get("date", "")}'.rstrip()
             new_line = f'**Status:** [{status}] {date}'
             if not update_in_memory('Orders', filename, old_line, new_line):
                 fallback_old_line = f'**Status:** [{prev_status}]'
                 update_in_memory('Orders', filename, fallback_old_line, new_line)
+            
+            # 2. Update Header Icon
+            month_key = order_key.split(":", 1)[1]
+            old_header = f'## {prev.get("date", "")} — PillPack {month_key} [{prev_status}]'
+            new_header = f'## {date} — PillPack {month_key} [{status}] {icon}'
+            update_in_memory('Orders', filename, old_header, new_header)
+
+            # 3. Update State
             prev['status'] = status
             prev['date'] = date
             prev['status_line'] = new_line
-            summary = f'Amazon Pharmacy → {status}'
+            
+            summary = f'{vendor} → {status} {icon}'
             logger.info(f'Orders/{filename}: status update {summary}')
-            return summary
+            return {'summary': summary, 'confidence': 1.0, 'category': 'orders'}
 
+        # New Shipment
         extracted = _merge_extracted_order_data(subject, body, _extract_items_llm(vendor, subject, body))
         items = extracted.get('items', [])
         total = extracted.get('total', '')
         product = items[0]['name'] if items else 'PillPack medications'
         status_line = f'**Status:** [{status}] {date}'
 
-        lines = [f'## {date} — PillPack {order_key.split(":", 1)[1]} [{status}]']
+        lines = [f'## {date} — PillPack {order_key.split(":", 1)[1]} [{status}] {icon}']
         lines.append(render_entity_comment(order_entity_id(vendor, order_key)))
-        lines.append(f'**Vendor:** Amazon Pharmacy')
+        lines.append(f'**Vendor:** {vendor}')
         lines.append(status_line)
         if product:
             lines.append(f'**Medications:** {product}')
@@ -542,7 +561,7 @@ def process(email: dict, state: dict) -> str | None:
             'status_line': status_line,
             'entity_id': order_entity_id(vendor, order_key),
         }
-        summary = f'{vendor}: {product} [{status}]'
+        summary = f'{vendor}: {product} [{status}] {icon}'
         if total:
             summary += f' — {total}'
         logger.info(f'Orders/{filename}: new shipment — {summary}')

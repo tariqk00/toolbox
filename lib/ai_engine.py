@@ -5,591 +5,92 @@ Provider chain: Ollama (local) → Groq (remote, text) → Gemini (remote, all t
 import os
 import json
 import logging
-import io
 import re
-import random
-import time
-import requests
-from datetime import datetime
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
-from toolbox.lib import telegram
+from typing import Any
+from .providers.ollama import OllamaProvider
+from .providers.groq import GroqProvider
+from .providers.gemini import GeminiProvider
+from .providers.base import ProviderSkip
+from . import quota_manager
 
-try:
-    from PIL import Image as _PILImage
-    _PILLOW_AVAILABLE = True
-except ImportError:
-    _PILLOW_AVAILABLE = False
+logger = logging.getLogger("toolbox.ai_engine")
 
-# --- LOGGING SETUP ---
-logger = logging.getLogger("DriveSorter.AI")
+# Initialize providers in priority order
+_PROVIDERS = [
+    OllamaProvider(),
+    GroqProvider(),
+    GeminiProvider(),
+]
 
-# --- CONFIG ---
-# This file is in toolbox/lib/ai_engine.py
-# Root is toolbox/
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_DIR = os.path.join(BASE_DIR, 'config')
-
-# Load centralized secrets
-load_dotenv(os.path.join(CONFIG_DIR, 'secrets.env'))
-
-SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_secret')
-CACHE_PATH = os.path.join(CONFIG_DIR, 'gemini_cache.json')
-
-# Default model — use gemini-flash-latest to always track the current Flash release.
-# Override via GEMINI_MODEL env var if needed.
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-flash-latest')
-
-# --- LOCAL MODEL CONFIG ---
-OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434/api/generate')
-OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma4:e2b')
-OLLAMA_LOG_PATH = os.path.join(BASE_DIR, 'logs', 'ollama_metrics.jsonl')
-# Free tier model — AI Studio project, 15 RPM / 1,000 RPD
-GEMINI_FREE_MODEL = os.getenv('GEMINI_FREE_MODEL', 'gemini-2.5-flash-lite')
-
-FREE_SECRET_PATH = os.path.join(CONFIG_DIR, 'gemini_ai_studio_secret')
-# Min seconds between free-tier calls: 15 RPM = 1 per 4s
-_FREE_TIER_MIN_INTERVAL = 4.0
-_last_free_call_time: float = 0.0
-
-
-def _load_key(env_var: str, file_path: str):
-    val = os.getenv(env_var)
-    if val:
-        return val
-    try:
-        if os.path.exists(file_path):
-            with open(file_path, 'r') as f:
-                return f.read().strip()
-    except Exception as e:
-        logger.error(f"Error reading {file_path}: {e}")
-    return None
-
-
-GEMINI_API_KEY = _load_key('GEMINI_API_KEY', SECRET_PATH)
-GEMINI_FREE_API_KEY = _load_key('GEMINI_FREE_API_KEY', FREE_SECRET_PATH)
-
-# Lazy singletons
-_client = None
-_free_client = None
-
-
-def _get_client():
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=GEMINI_API_KEY)
-    return _client
-
-
-def _get_free_client():
-    global _free_client
-    if _free_client is None:
-        if not GEMINI_FREE_API_KEY:
-            raise ValueError("Free-tier Gemini API key missing (GEMINI_FREE_API_KEY or config/gemini_ai_studio_secret)")
-        _free_client = genai.Client(api_key=GEMINI_FREE_API_KEY)
-    return _free_client
-
-
-def _rate_limit_free_tier():
-    """Sleep if needed to stay under 15 RPM."""
-    global _last_free_call_time
-    elapsed = time.monotonic() - _last_free_call_time
-    if elapsed < _FREE_TIER_MIN_INTERVAL:
-        time.sleep(_FREE_TIER_MIN_INTERVAL - elapsed)
-    _last_free_call_time = time.monotonic()
-
-
-def _is_rate_limit_error(e: Exception) -> bool:
-    msg = str(e).upper()
-    return "429" in msg or "RESOURCE_EXHAUSTED" in msg or "QUOTA" in msg
-
-
-def _is_daily_limit_error(e: Exception) -> bool:
-    """Distinguish per-day quota exhaustion from per-minute rate limits."""
-    msg = str(e).upper()
-    return _is_rate_limit_error(e) and ("PER_DAY" in msg or "DAILY" in msg or "DAY" in msg)
-
-
-def _is_invalid_pdf_error(e: Exception) -> bool:
-    """Detect corrupt/empty PDFs (often caused by raw byte truncation)."""
-    msg = str(e).upper()
-    return "NO PAGES" in msg or ("INVALID_ARGUMENT" in msg and "400" in msg and "PAGES" in msg)
-
-# --- CACHE LOGIC ---
-GEMINI_CACHE = {}
-
-def load_cache():
-    global GEMINI_CACHE
-    if os.path.exists(CACHE_PATH):
-        try:
-            with open(CACHE_PATH, 'r') as f:
-                GEMINI_CACHE = json.load(f)
-            logger.info(f"Loaded {len(GEMINI_CACHE)} entries from cache.")
-        except Exception as e:
-            logger.error(f"Error loading cache: {e}")
-            GEMINI_CACHE = {}
-
-def save_cache():
-    try:
-        with open(CACHE_PATH, 'w') as f:
-            json.dump(GEMINI_CACHE, f, indent=2)
-    except Exception as e:
-        logger.error(f"Error saving cache: {e}")
-
-# Load cache on module import
-load_cache()
-
-
-# --- PROMPT ---
-SYSTEM_PROMPT = """
-You are a highly capable Personal Document Assistant. Your goal is to analyze the provided content (image or text) and categorize it for a long-term digital archive.
-
-CONTEXT: {context_hint}
-
-EXTRACT the following fields into a pure JSON object:
-- "doc_date": Use YYYY-MM-DD format. For travel documents (flights, hotels, car rentals, reservations), use the trip/travel/check-in date, NOT the booking or email date. For all other documents, use the actual document date. If not found, use the creation date provided in context or '0000-00-00'.
-- "entity": The primary organization, person, or vendor.
-    - CRITICAL: For bank statements or transaction lists, the entity MUST be the Institution (e.g., "Chase", "Verizon").
-    - CRITICAL: Do NOT pick a merchant from a random row in a spreadsheet as the entity.
-- "folder_path": Choose the most appropriate destination from this folder list:
-{folder_paths}
-Return the exact path string. Use the most specific subfolder that fits.
-- "summary": A concise 3-5 word description (e.g., "Monthly Internet Bill", "Property Tax Assessment").
-- "reasoning": A brief 1-sentence explanation of why you chose this folder/entity.
-- "confidence": "High", "Medium", or "Low".
-
-- "person": If this document is specifically for Dawn, Thomas, or Sofia, return their first name. Otherwise return null.
-
-RULES:
-1. Pure JSON only. No markdown formatting.
-2. If "confidence" is Medium or Low, explain why in "reasoning".
-3. For medical docs, choose the Health folder.
-4. For ID cards/passports, choose the Personal ID folder.
-5. For generic transcripts/logs not matching other rules, choose the Archive Source_Dumps folder.
-6. For trip research files (menus, maps, activity guides, itineraries, resort info, restaurant recommendations, local guides), route to the most specific active trip folder under 08 - Travel/Active/. Match by destination name (e.g. "Maui", "Peru", "Inca Trail"). If no specific trip matches, use 08 - Travel.
-"""
-
-_PDF_TEXT_THRESHOLD = 200  # chars below this → treat as scanned, send to Gemini
-
-
-def _extract_pdf_text(content_bytes: bytes) -> str:
-    """Extract text from a native PDF. Returns empty string for scanned/image PDFs."""
-    try:
-        import pypdf
-        import io
-        reader = pypdf.PdfReader(io.BytesIO(content_bytes))
-        text = '\n'.join(
-            page.extract_text() or '' for page in reader.pages
-        ).strip()
-        return text
-    except Exception as e:
-        logger.debug(f"  [PDF extract] failed: {e}")
-        return ''
-
-
-def _extract_docx_text(content_bytes: bytes) -> str:
-    """Extract text from a .docx file."""
-    try:
-        import docx, io
-        doc = docx.Document(io.BytesIO(content_bytes))
-        return '\n'.join(p.text for p in doc.paragraphs).strip()
-    except Exception as e:
-        logger.debug(f"  [docx extract] failed: {e}")
-        return ''
-
-
-def _extract_pptx_text(content_bytes: bytes) -> str:
-    """Extract text from a .pptx file."""
-    try:
-        from pptx import Presentation
-        import io
-        prs = Presentation(io.BytesIO(content_bytes))
-        lines = []
-        for slide in prs.slides:
-            for shape in slide.shapes:
-                if hasattr(shape, 'text') and shape.text.strip():
-                    lines.append(shape.text.strip())
-        return '\n'.join(lines)
-    except Exception as e:
-        logger.debug(f"  [pptx extract] failed: {e}")
-        return ''
-
-
-def _parse_json_response(text: str) -> dict | None:
-    """Extract and parse the first JSON object from a provider response. Returns None on failure."""
-    if not text:
-        return None
-    try:
-        start_idx = text.find('{')
-        if start_idx == -1:
-            return None
-        decoder = json.JSONDecoder()
-        data, _ = decoder.raw_decode(text[start_idx:])
-        if isinstance(data, str) and "```json" in data:
-            data = json.loads(data.split("```json")[-1].split("```")[0].strip())
-        if isinstance(data, list):
-            data = data[0] if data else None
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
-
-
-def get_ai_supported_mime(mime_type, filename=None):
-    """Returns a Gemini-supported MIME type or None if unsupported."""
-    
-    # 1. Direct PDF/Image support
-    if 'pdf' in mime_type: return 'application/pdf'
-    if 'image' in mime_type: return 'image/jpeg' 
-    
-    # 2. Google Apps (exported by drive_utils)
-    if 'vnd.google-apps.document' in mime_type: return 'text/plain'
-    if 'vnd.google-apps.spreadsheet' in mime_type: return 'text/plain'
-    
-    # 3. Known Text types
-    supported_text = ['text/plain', 'text/csv', 'text/markdown', 'text/html', 'application/json']
-    if any(st in mime_type for st in supported_text):
-        return 'text/plain'
-        
-    # 4. Office Open XML formats (text extracted before sending)
-    if 'wordprocessingml.document' in mime_type:
-        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    if 'presentationml.presentation' in mime_type:
-        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-
-    # 5. Handle octet-stream/unknown via extension
-    if mime_type == 'application/octet-stream' or '/' not in mime_type:
-        ext = os.path.splitext(filename or "")[1].lower()
-        if ext in ['.txt', '.csv', '.md', '.log']:
-            return 'text/plain'
-            
-    return None
-
-def call_ollama(prompt, content_bytes=None, mime_type=None):
-    """Calls the local Ollama instance on the NUC."""
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": False
-    }
-    
-    # If we have text content, append it to the prompt
-    if content_bytes and mime_type == 'text/plain':
-        try:
-           text_content = content_bytes.decode('utf-8', errors='ignore')
-           payload["prompt"] = f"{prompt}\n\nCONTENT TO ANALYZE:\n{text_content}"
-        except Exception:
-            pass
-
-    try:
-        start = time.time()
-        response = requests.post(OLLAMA_URL, json=payload, timeout=180)
-        duration = time.time() - start
-        
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("response", "").strip(), duration
-        return f"Error: Ollama status {response.status_code}", duration
-    except Exception as e:
-        return f"Error: {str(e)}", 0
-
-def log_comparison(filename, gemini_data, gemma_text, gemini_duration, gemma_duration):
-    """Logs the comparison between Gemini and Gemma."""
-    os.makedirs(os.path.dirname(COMPARISON_LOG_PATH), exist_ok=True)
-    
-    log_entry = {
-        "timestamp": datetime.now().isoformat(),
-        "filename": filename,
-        "gemini": {
-            "result": gemini_data,
-            "latency": round(gemini_duration, 2)
-        },
-        "gemma": {
-            "result": gemma_text,
-            "latency": round(gemma_duration, 2)
-        }
-    }
-    
-    try:
-        with open(COMPARISON_LOG_PATH, 'a') as f:
-            f.write(json.dumps(log_entry) + "\n")
-            
-        # Send Telegram notification
-        summary = gemini_data.get('summary', 'No summary')
-        gemini_conf = gemini_data.get('confidence', 'N/A')
-        
-        msg = (
-            f"🤖 *Shadow AI Comparison*\n"
-            f"📄 `{filename}`\n\n"
-            f"🔹 *Gemini (Flash):* {gemini_conf} - {summary}\n"
-            f"🔸 *Gemma (2B):* {gemma_text[:150]}...\n\n"
-            f"⏱ Gemini: {round(gemini_duration,1)}s | Gemma: {round(gemma_duration,1)}s"
-        )
-        telegram.send_message(msg, service="shadow-ai", parse_mode="Markdown")
-        
-    except Exception as e:
-        logger.error(f"Failed to log comparison: {e}")
-
-def analyze_with_gemini(content_bytes, mime_type, filename, folder_paths_str, context_hint="", file_id=None, use_free_tier=False):
+def analyze_file(filename: str, content_bytes: bytes, mime_type: str, prompt: str) -> tuple[dict, str, int]:
     """
-    Sends content to Gemini for analysis using the google.genai SDK.
+    Core entry point for file analysis.
+    Tries each provider in the chain until one succeeds.
+    Returns (json_data, reasoning, tokens_used).
     """
-    if not GEMINI_API_KEY:
-        raise ValueError("Gemini API Key missing")
-
-    # --- GENERIC PLAUD EXPORTS ---
-    if filename.lower().endswith('summary.txt') or filename.lower().endswith('transcript.txt'):
-        logger.info(f"  [Rule] Detected Generic Plaud Export: {filename}")
-        base_name = os.path.splitext(filename)[0]
-        folder = "01 - Second Brain/Plaud/Transcripts" if filename.lower().endswith('transcript.txt') else "01 - Second Brain/Plaud"
-        # Extract date if present (MM-DD), else use today
-        match = re.search(r'(\d{2})-(\d{2})', filename)
-        doc_date = f"{datetime.now().year}-{match.group(1)}-{match.group(2)}" if match else datetime.now().strftime("%Y-%m-%d")
-        return {
-            "doc_date": doc_date,
-            "entity": "Plaud_Export",
-            "folder_path": folder,
-            "summary": base_name,
-            "confidence": "High"
-        }, 0
-
-    # --- GEMINI JOURNAL RULE ---
-    if " - Journal - " in filename:
-        logger.info(f"  [Rule] Detected Gemini Journal: {filename}")
-        parts = filename.split(" - ")
-        if len(parts) >= 3:
-            doc_date = parts[0]
-            summary = os.path.splitext(parts[2])[0]
-        else:
-            doc_date = "0000-00-00"
-            summary = filename
-
-        return {
-            "doc_date": doc_date,
-            "entity": "Journal",
-            "folder_path": "01 - Second Brain/Gemini",
-            "summary": summary,
-            "confidence": "High"
-        }, 0
-
-    # --- CACHE CHECK ---
-    if file_id:
-        cache_key = file_id
-        if cache_key in GEMINI_CACHE:
-            return GEMINI_CACHE[cache_key], 0
-
-    # --- PLAUD / MM-DD HEURISTIC ---
-    if re.match(r'^\d{2}-\d{2}\s', filename):
-        logger.info(f"  [Rule] Detected Plaud/Journal pattern: {filename}")
-        return {
-            "doc_date": "2026-" + filename[:5],
-            "entity": "Plaud_Note",
-            "folder_path": "01 - Second Brain/Plaud",
-            "summary": filename,
-            "confidence": "High"
-        }, 0
-
-    ai_mime = get_ai_supported_mime(mime_type, filename)
+    full_prompt = f"{prompt}\n\nFILENAME: {filename}"
     
-    if not ai_mime:
-        logger.warning(f"  [Skip] Unsupported file type for AI: {filename} ({mime_type})")
-        return {
-            "doc_date": "0000-00-00",
-            "entity": "Unknown",
-            "folder_path": None,
-            "summary": "Unsupported_Format",
-            "confidence": "Low"
-        }, 0
-
-    # Size limits before sending
-    if ai_mime == 'text/plain' and len(content_bytes) > 1024 * 10:
-        logger.info(f"  [Info] Truncating text ({len(content_bytes):,} bytes) to 10KB.")
-        content_bytes = content_bytes[:1024 * 10]
-    original_pdf_bytes = None
-    if ai_mime == 'application/pdf' and len(content_bytes) > 200 * 1024:
-        logger.info(f"  [Info] Truncating PDF ({len(content_bytes):,} bytes) to 200KB.")
-        original_pdf_bytes = content_bytes
-        content_bytes = content_bytes[:200 * 1024]
-    if ai_mime == 'image/jpeg':
-        if _PILLOW_AVAILABLE:
+    for provider in _PROVIDERS:
+        if not provider.supports(mime_type):
+            continue
+            
+        try:
+            raw_text, tokens = provider.analyze(content_bytes, mime_type, full_prompt)
+            # Parse JSON from response
             try:
-                orig_size = len(content_bytes)
-                img = _PILImage.open(io.BytesIO(content_bytes))
-                img.thumbnail((1024, 1024))
-                buf = io.BytesIO()
-                img.save(buf, format='JPEG', quality=75)
-                content_bytes = buf.getvalue()
-                logger.info(f"  [Resize] Image {orig_size:,} → {len(content_bytes):,} bytes")
+                data = _parse_json(raw_text)
+                reasoning = data.get('reasoning', '') or raw_text[:200]
+                quota_manager.record_tokens(tokens)
+                return data, reasoning, tokens
             except Exception as e:
-                logger.warning(f"  [Resize] Failed ({e}); sending original")
-        else:
-            logger.debug("  [Resize] Pillow not available; sending image at original size")
+                logger.warning(f"  [{provider.name}] JSON parse failed: {e}")
+                # If JSON fails but we got text, maybe try next provider or fallback
+                continue
+                
+        except ProviderSkip as e:
+            logger.info(f"  [{provider.name}] skipped: {e}")
+            continue
+        except Exception as e:
+            logger.error(f"  [{provider.name}] error: {e}")
+            continue
+            
+    return {}, "All providers failed", 0
 
-    # --- OFFICE FORMAT TEXT EXTRACTION ---
-    # PDF: extract text for native PDFs → Groq; scanned → Gemini.
-    # docx/pptx: always extract text → Groq if substantial, else skip.
-    if ai_mime == 'application/pdf':
-        extracted = _extract_pdf_text(content_bytes)
-        if len(extracted) >= _PDF_TEXT_THRESHOLD:
-            logger.info(f"  [PDF] Native — extracted {len(extracted)} chars, routing to Groq")
-            content_bytes = extracted.encode('utf-8')
-            ai_mime = 'text/plain'
-        else:
-            logger.info(f"  [PDF] Scanned/image ({len(extracted)} chars extracted), routing to Gemini")
-
-    elif ai_mime == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        extracted = _extract_docx_text(content_bytes)
-        if len(extracted) >= _PDF_TEXT_THRESHOLD:
-            logger.info(f"  [docx] Extracted {len(extracted)} chars, routing to Groq")
-            content_bytes = extracted.encode('utf-8')
-            ai_mime = 'text/plain'
-        else:
-            logger.info(f"  [docx] No extractable text ({len(extracted)} chars), skipping")
-            return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
-                    "summary": "Empty_Document", "confidence": "Low"}, 0
-
-    elif ai_mime == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        extracted = _extract_pptx_text(content_bytes)
-        if len(extracted) >= _PDF_TEXT_THRESHOLD:
-            logger.info(f"  [pptx] Extracted {len(extracted)} chars, routing to Groq")
-            content_bytes = extracted.encode('utf-8')
-            ai_mime = 'text/plain'
-        else:
-            logger.info(f"  [pptx] No extractable text ({len(extracted)} chars), skipping")
-            return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
-                    "summary": "Empty_Document", "confidence": "Low"}, 0
-
-    if use_free_tier:
-        model_name = GEMINI_FREE_MODEL
-    else:
-        model_name = GEMINI_MODEL
-
-    # Inject context
-    prompt_with_context = SYSTEM_PROMPT.format(
-        context_hint=context_hint,
-        folder_paths=folder_paths_str
-    )
-
-    # --- PROVIDER CHAIN: Groq → (Ollama if enabled) → Gemini ---
-    # Ollama is disabled by default — re-enable via OLLAMA_PROVIDER=on
-    from toolbox.lib.providers.base import ProviderSkip
-    from toolbox.lib.providers.groq import GroqProvider
-
-    text_providers = [GroqProvider()]
-    if os.getenv('OLLAMA_PROVIDER') == 'on':
-        from toolbox.lib.providers.ollama import OllamaProvider
-        text_providers.append(OllamaProvider())
-
-    for provider in text_providers:
-        if not provider.supports(ai_mime):
+def call(prompt: str, mime_type: str = 'text/plain', max_tokens: int = 500) -> str:
+    """Simple text-in, text-out interface."""
+    content = prompt.encode('utf-8')
+    for provider in _PROVIDERS:
+        if not provider.supports(mime_type):
             continue
         try:
-            raw, _ = provider.analyze(content_bytes, ai_mime, prompt_with_context)
-            data = _parse_json_response(raw)
-            if data:
-                if file_id:
-                    GEMINI_CACHE[file_id] = data
-                    save_cache()
-                return data, 0
-            logger.warning(f"  [{provider.name}] JSON parse failed, trying next provider")
-        except ProviderSkip as e:
-            logger.warning(f"  [{provider.name}] skipped: {e}")
-        except Exception as e:
-            logger.warning(f"  [{provider.name}] failed: {e}, trying next provider")
+            text, tokens = provider.analyze(content, mime_type, "") # Provider handles prompt wrap
+            quota_manager.record_tokens(tokens)
+            return text
+        except (ProviderSkip, Exception):
+            continue
+    return ""
 
-    # --- FALLBACK TO GEMINI ---
-    _RETRY_DELAYS = [4, 16, 64]
+def call_json(prompt: str, mime_type: str = 'text/plain') -> dict:
+    """Simple text-in, dict-out interface."""
+    res = call(prompt, mime_type)
+    if not res:
+        return {}
+    return _parse_json(res)
 
-    def _call_api():
-        if use_free_tier:
-            _rate_limit_free_tier()
-            client = _get_free_client()
-        else:
-            client = _get_client()
-        return client.models.generate_content(
-            model=model_name,
-            contents=[
-                prompt_with_context,
-                types.Part.from_bytes(data=content_bytes, mime_type=ai_mime)
-            ],
-            config=types.GenerateContentConfig(max_output_tokens=512)
-        )
-
+def _parse_json(text: str) -> dict:
+    """Robustly extract JSON from LLM markdown-wrapped text."""
     try:
-        start_gemini = time.time()
-        response = None
-        for attempt, delay in enumerate([0] + _RETRY_DELAYS):
-            if delay:
-                logger.warning(f"  [429] Rate limited. Retrying in {delay}s (attempt {attempt+1}/3)...")
-                time.sleep(delay)
-            try:
-                response = _call_api()
-                if use_free_tier:
-                    from toolbox.lib import quota_manager as _qm
-                    _qm.record_call()
-                break
-            except Exception as api_err:
-                if _is_daily_limit_error(api_err):
-                    logger.error(f"  [RPD] Daily free-tier quota exhausted by API. Skipping.")
-                    return {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
-                            "summary": "RPD_Exhausted", "confidence": "Low"}, 0
-                if _is_invalid_pdf_error(api_err):
-                    if original_pdf_bytes is not None:
-                        logger.warning(f"  [PDF] Truncated PDF invalid (no pages); retrying with full file ({len(original_pdf_bytes):,} bytes)...")
-                        content_bytes = original_pdf_bytes
-                        original_pdf_bytes = None
-                        try:
-                            response = _call_api()
-                            if use_free_tier:
-                                from toolbox.lib import quota_manager as _qm
-                                _qm.record_call()
-                            break
-                        except Exception:
-                            pass
-                    logger.warning(f"  [PDF] Invalid/empty PDF: {filename}. Caching to skip future retries.")
-                    result = {"doc_date": "0000-00-00", "entity": "Unknown", "folder_path": None,
-                              "summary": "Invalid_PDF", "confidence": "Low"}
-                    if file_id:
-                        GEMINI_CACHE[file_id] = result
-                        save_cache()
-                    return result, 0
-                if _is_rate_limit_error(api_err) and attempt < len(_RETRY_DELAYS):
-                    continue
-                raise
-
-        if response is None:
-            raise RuntimeError("All retry attempts exhausted (429)")
-        
-        gemini_duration = time.time() - start_gemini
-
-        usage = response.usage_metadata
-        token_count = 0
-        if usage:
-            token_count = usage.total_token_count or 0
-            logger.info(
-                f"  [Tokens] in={usage.prompt_token_count} "
-                f"out={usage.candidates_token_count} "
-                f"total={token_count} "
-                f"bytes_sent={len(content_bytes):,}"
-            )
-
-        text = response.text.strip()
-        data = _parse_json_response(text)
-        if data is None:
-            logger.error(f"    [No JSON] Raw text: {text}")
-            raise ValueError("No JSON found in Gemini response")
-
-        if file_id:
-            GEMINI_CACHE[file_id] = data
-            save_cache()
-        return data, token_count
-
-    except Exception as e:
-        logger.error(f"Gemini Error during analysis: {e}", exc_info=True)
-        return {
-            "doc_date": "0000-00-00",
-            "entity": "Unknown",
-            "folder_path": None,
-            "summary": "AI_Error",
-            "confidence": "Low"
-        }, 0
+        # Try direct parse
+        return json.loads(text)
+    except:
+        # Try stripping markdown fences
+        clean = re.sub(r'^```(?:json)?\s*', '', text, flags=re.MULTILINE)
+        clean = re.sub(r'\s*```$', '', clean, flags=re.MULTILINE)
+        try:
+            return json.loads(clean)
+        except:
+            # Last ditch: search for first { and last }
+            match = re.search(r'(\{.*\})', clean, re.DOTALL)
+            if match:
+                return json.loads(match.group(1))
+    raise ValueError("No valid JSON found in response")
