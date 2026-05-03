@@ -31,19 +31,34 @@ def test_budget_enforcement_daily(gateway, mocker):
     with pytest.raises(RuntimeError, match="Daily LLM budget exceeded"):
         gateway.call("coding", "fix bug")
 
-def test_budget_enforcement_per_task(gateway, mocker):
+def test_pre_call_budget_block(gateway, mocker):
+    mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    
+    # Patch config to have a very low per-task limit
+    gateway.config['budgets']['per_task_usd'] = 0.000001
+    
+    with pytest.raises(RuntimeError, match="All providers in tier coding failed"):
+        gateway.call("coding", "this should be too expensive")
+
+def test_token_cap_truncation(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
     mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
     
     mock_provider = MagicMock()
     mock_provider.supports.return_value = True
-    # 2M tokens at 0.15/1M = $0.30. Per-task limit in config is 0.20.
-    mock_provider.analyze.return_value = ("result", 2000000) 
+    # Capture the prompt sent to provider
+    def analyze_side_effect(data, mime, prompt):
+        return f"Truncated: {len(prompt)}", 10
+    mock_provider.analyze.side_effect = analyze_side_effect
     
     mocker.patch.object(gateway, '_get_provider_instance', return_value=mock_provider)
     
-    with pytest.raises(RuntimeError, match="Task cost .* exceeded limit"):
-        gateway.call("coding", "huge task")
+    # Cheapest tier cap is 2000 tokens -> 8000 chars
+    long_prompt = "x" * 20000
+    res = gateway.call("heartbeat", long_prompt)
+    
+    # 2000 tokens * 4 chars/token = 8000 chars
+    assert "Truncated: 8000" in res['text']
 
 def test_fallback_behavior(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
@@ -59,7 +74,6 @@ def test_fallback_behavior(gateway, mocker):
     mock_provider_success.analyze.return_value = ("fallback success", 20)
     
     # side_effect returns one for each call to _get_provider_instance
-    # First provider is tried, then 3 retries (all fail), then next provider instance requested
     mocker.patch.object(gateway, '_get_provider_instance', side_effect=[mock_provider_fail, mock_provider_success])
     
     # Patch time.sleep to speed up tests
@@ -78,19 +92,13 @@ def test_long_context_routing(gateway, mocker):
     mock_provider.analyze.return_value = ("long result", 100)
     mocker.patch.object(gateway, '_get_provider_instance', return_value=mock_provider)
     
-    # Prompt > 15000 tokens (threshold in config) -> 60000 chars
-    long_prompt = "a" * 65000 
+    # Prompt > 200000 tokens (threshold in config) -> 800000 chars
+    long_prompt = "a" * 900000 
     res = gateway.call("automation", long_prompt)
     assert res['tier'] == 'long-context'
 
-def test_unknown_route_defaults_to_efficiency(gateway, mocker):
+def test_unknown_route_fails_loudly(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
-    mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
     
-    mock_provider = MagicMock()
-    mock_provider.supports.return_value = True
-    mock_provider.analyze.return_value = ("default result", 10)
-    mocker.patch.object(gateway, '_get_provider_instance', return_value=mock_provider)
-    
-    res = gateway.call("unknown_task", "hello")
-    assert res['tier'] == 'efficiency'
+    with pytest.raises(ValueError, match="Unknown task_type 'unknown_task'"):
+        gateway.call("unknown_task", "hello")

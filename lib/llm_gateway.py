@@ -80,43 +80,55 @@ class LLMGateway:
         prompt_tokens = len(prompt) // 4
         
         # Check for long-context override
-        long_context_threshold = self.config.get('thresholds', {}).get('long_context_tokens', 15000)
+        long_context_threshold = self.config.get('thresholds', {}).get('long_context_tokens', 200000)
         if prompt_tokens > long_context_threshold:
             route = 'long-context'
         else:
-            route = self.config.get('routes', {}).get(task_type, 'default')
+            route = self.config.get('routes', {}).get(task_type)
+            if not route:
+                msg = f"Unknown task_type '{task_type}' and no default route defined."
+                logger.error(msg)
+                raise ValueError(msg)
             
         tier_name = route
         tier = self.config.get('tiers', {}).get(tier_name)
         if not tier:
-            # Fallback to efficiency if tier unknown
-            tier_name = 'efficiency'
-            tier = self.config['tiers'][tier_name]
+            msg = f"Route '{route}' maps to undefined tier '{tier_name}'."
+            logger.error(msg)
+            raise ValueError(msg)
 
-        # 2. Budget Enforcement
+        # 2. Budget Enforcement (Daily)
         daily_usd_limit = self.config.get('budgets', {}).get('daily_usd', 2.0)
-        per_task_usd_limit = self.config.get('budgets', {}).get('per_task_usd', 0.20)
-        
         current_usd = quota_manager.get_total_usd_used()
         if current_usd >= daily_usd_limit:
             msg = f"Daily LLM budget exceeded: ${current_usd:.4f} >= ${daily_usd_limit:.4f}"
             logger.error(msg)
-            self._log_routing(task_type, tier_name, {}, 0, 0, "blocked", msg)
+            self._log_routing(task_type, tier_name, {}, prompt_tokens, 0, "blocked", msg)
             raise RuntimeError(msg)
 
-        # 3. Context / Token Caps
+        # 3. Context / Token Caps (Enforce Hard Truncation)
         token_cap = self.config.get('token_caps', {}).get(tier_name, 4000)
         if prompt_tokens > token_cap:
-            logger.warning(f"Prompt tokens ({prompt_tokens}) exceed cap for tier {tier_name} ({token_cap})")
-            # We don't block yet, but we might truncate in providers if they support it.
-            # For heartbeat/health, we might want to be stricter.
-            if task_type in ['heartbeat', 'health']:
-                prompt = prompt[:token_cap * 4] # Hard truncate for background tasks
+            logger.warning(f"Prompt tokens ({prompt_tokens}) exceed cap for tier {tier_name} ({token_cap}). Truncating.")
+            prompt = prompt[:token_cap * 4]
+            prompt_tokens = token_cap
+
+        per_task_usd_limit = self.config.get('budgets', {}).get('per_task_usd', 0.20)
 
         # 4. Try providers in tier (Fallback Chain)
         last_exception = None
+        attempts_chain = []
         for provider_cfg in tier['providers']:
             try:
+                # Pre-call Cost Estimation
+                cost_per_m = self.config.get('costs', {}).get(provider_cfg['name'], 0.10)
+                est_cost = (prompt_tokens * cost_per_m) / 1_000_000
+                if est_cost > per_task_usd_limit:
+                    msg = f"Estimated task cost ${est_cost:.4f} exceeds limit ${per_task_usd_limit:.4f} for provider {provider_cfg['name']}"
+                    logger.warning(msg)
+                    attempts_chain.append({"provider": provider_cfg['name'], "result": "blocked", "error": msg})
+                    continue # Try next provider in tier (might be cheaper)
+
                 provider = self._get_provider_instance(provider_cfg)
                 if not provider.supports(mime_type):
                     continue
@@ -135,22 +147,21 @@ class LLMGateway:
                         result_text, actual_tokens = provider.analyze(data_to_send, mime_type, prompt)
                         latency = time.time() - start_time
                         
-                        # Calculate cost
-                        cost_per_m = self.config.get('costs', {}).get(provider_cfg['name'], 0.10)
+                        # Calculate actual cost
                         cost = (actual_tokens * cost_per_m) / 1_000_000
                         
-                        # Per-task budget enforcement (Block IF EXCEEDED)
+                        # Post-call budget enforcement (Safety valve)
                         if cost > per_task_usd_limit:
-                            msg = f"Task cost ${cost:.4f} exceeded limit ${per_task_usd_limit:.4f}"
+                            msg = f"Actual task cost ${cost:.4f} exceeded limit ${per_task_usd_limit:.4f}"
                             logger.error(msg)
-                            self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, cost, "blocked", msg, attempt+1, latency)
+                            self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, cost, "blocked", msg, attempt+1, latency, prompt_tokens)
                             raise RuntimeError(msg)
 
                         # Record usage
                         quota_manager.record_llm_usage(actual_tokens, cost)
                         
                         # Log success
-                        self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, cost, "success", "", attempt+1, latency)
+                        self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, cost, "success", "", attempt+1, latency, prompt_tokens)
                         
                         return {
                             "text": result_text,
@@ -163,14 +174,17 @@ class LLMGateway:
                     except ProviderSkip as e:
                         latency = time.time() - start_time
                         logger.warning(f"Provider {provider_cfg['name']} skipped: {e}")
-                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "skipped", str(e), attempt+1, latency)
+                        attempts_chain.append({"provider": provider_cfg['name'], "result": "skipped", "error": str(e)})
+                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "skipped", str(e), attempt+1, latency, prompt_tokens)
                         break # Try next provider in tier
                     except Exception as e:
                         latency = time.time() - start_time
                         last_exception = e
-                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "error", str(e), attempt+1, latency)
-                        # Retry only on 429 / RPM / TPM
                         err_msg = str(e).upper()
+                        attempts_chain.append({"provider": provider_cfg['name'], "result": "error", "error": str(e)})
+                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "error", str(e), attempt+1, latency, prompt_tokens)
+                        
+                        # Retry only on 429 / RPM / TPM / Timeout
                         if any(x in err_msg for x in ["429", "RATE_LIMIT", "RESOURCE_EXHAUSTED", "TIMEOUT"]):
                             continue
                         break # Other errors → try next provider
@@ -181,17 +195,19 @@ class LLMGateway:
                 continue
                 
         # 5. Final Failure
-        err_msg = str(last_exception)
+        err_msg = str(last_exception) or "No valid providers available."
+        self._log_routing(task_type, tier_name, {}, prompt_tokens, 0, "failure", f"Attempts: {attempts_chain}. Error: {err_msg}")
         raise RuntimeError(f"All providers in tier {tier_name} failed. Last error: {err_msg}")
 
-    def _log_routing(self, task_type: str, tier: str, provider: Dict, tokens: int, cost: float, result: str, error: str = "", attempt: int = 1, latency: float = 0):
+    def _log_routing(self, task_type: str, tier: str, provider: Dict, tokens: int, cost: float, result: str, error: str = "", attempt: int = 1, latency: float = 0, est_tokens: int = 0):
         log_entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "task_type": task_type,
             "tier": tier,
             "provider": provider.get('name', 'N/A'),
             "model": provider.get('model', 'N/A'),
-            "tokens": tokens,
+            "est_tokens": est_tokens,
+            "actual_tokens": tokens,
             "cost_usd": round(cost, 6),
             "result": result,
             "attempt": attempt,

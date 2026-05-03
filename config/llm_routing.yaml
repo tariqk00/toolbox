@@ -25,7 +25,7 @@ tiers:
   frontier:
     providers:
       - name: gemini-paid
-        model: gemini-2.0-flash
+        model: gemini-1.5-pro
 
 routes:
   heartbeat: cheapest
@@ -43,7 +43,7 @@ budgets:
   per_task_usd: 0.20
 
 thresholds:
-  long_context_tokens: 15000
+  long_context_tokens: 200000
 
 # Estimated costs per 1M tokens (blended USD)
 costs:
@@ -53,6 +53,7 @@ costs:
   gemini-paid: 0.10
   gemini-2.5-flash-lite: 0.0
   gemini-2.0-flash: 0.10
+  gemini-1.5-pro: 1.25
 
 token_caps:
   cheapest: 2000
