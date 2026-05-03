@@ -1,6 +1,15 @@
 # Project Journal
 
-- 2026-03-31: feat: replaced abstract category taxonomy with live Drive folder tree routing (Option B) — `bin/refresh_drive_tree.py` crawls Drive from root IDs in `folder_config.json`, writes `config/drive_tree.json`; `drive_utils.py` resolves folder_path → ID via direct dict lookup; AI prompt now receives real folder paths instead of hand-maintained labels
+- 2026-05-03: feat: implemented cost-optimized LLM routing and budget governance (#149). 
+  - **Routing:** Config-driven tier selection (`cheapest`, `efficiency`, `coding`, `long-context`, `frontier`) in `config/llm_routing.yaml`. 
+  - **Budget:** Implemented daily USD caps ($2.00) and per-task limits ($0.20) with pre-spend estimation and blocking.
+  - **Resilience:** Unified `LLMGateway` with exponential backoff for rate limits (`RateLimitError`) and provider fallback chains (e.g., Ollama -> Groq -> Gemini).
+  - **Observability:** Added detailed JSONL logging in `logs/llm_routing.jsonl` tracking attempts, latency, and specific model pricing (e.g., `gemini-1.5-pro` @ $1.25/1M).
+  - **Compatibility:** Updated `lib/providers/` to support dynamic model injection while preserving backward compatibility for legacy callers.
+  - **Follow-ups:** Created #151 for usage analytics improvements. Migration of existing scripts to `call_llm` to be done incrementally.
+
+- 2026-03-31: feat: replaced abstract category taxonomy with live Drive folder tree routing (Option B)
+ — `bin/refresh_drive_tree.py` crawls Drive from root IDs in `folder_config.json`, writes `config/drive_tree.json`; `drive_utils.py` resolves folder_path → ID via direct dict lookup; AI prompt now receives real folder paths instead of hand-maintained labels
 - 2026-03-31: feat: added `drive-tree-refresh.timer` (weekly) to keep `drive_tree.json` in sync with Drive structure; exclusion rules in refresh script remove Media, Archive, Soccer attachment folders, and Taxes year subfolders — tree trimmed from 283 to 49 actionable destinations
 - 2026-03-31: chore: updated Gemini model to `gemini-flash-latest` via `GEMINI_MODEL` constant (env var override); removed stale `save_recommendation()` dead code from `ai_engine.py`; fixed `monthly_review.py` to use `DRIVE_TREE` instead of removed `mappings` block
 - 2026-03-31: fix: rule-based shortcuts (Plaud exports, Gemini journals, MM-DD pattern) now return real `folder_path` strings; cleared 348-entry Gemini cache to force re-analysis under new prompt
