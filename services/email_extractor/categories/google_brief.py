@@ -78,12 +78,18 @@ def process(email: dict, state: dict) -> dict | None:
         if events:
             lines.append('### Schedule')
             for e in events:
-                line = f'- **{e["time"]}** — {e["title"]}'
-                if e.get('location'):
-                    line += f' @ {e["location"].strip()}'
+                time_str = e.get('time') or "All Day"
+                title_str = e.get('title') or "Untitled Event"
+                line = f'- **{time_str}** — {title_str}'
+                
+                location = e.get('location')
+                if location:
+                    line += f' @ {str(location).strip()}'
                 lines.append(line)
-                if e.get('notes'):
-                    lines.append(f'  *{e["notes"].strip()}*')
+                
+                notes = e.get('notes')
+                if notes:
+                    lines.append(f'  *{str(notes).strip()}*')
         lines += ['', '---']
         append_to_memory('Daily Brief', 'Daily Brief.md', '\n'.join(lines))
 
