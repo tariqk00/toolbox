@@ -30,23 +30,17 @@ def parse_usage(logs: str) -> tuple[dict, dict]:
     fallback_counts = defaultdict(int)
 
     for line in logs.splitlines():
-        # Completed calls (successes only)
-        if "embedded run agent end" in line and "isError=false" in line:
+        # Completed calls
+        if "embedded run agent end" in line:
             m = re.search(r'model=(\S+)\s+provider=(\S+)', line)
             if m:
                 model_counts[f"{m.group(2)}/{m.group(1)}"] += 1
 
-        # Fallback decisions (captures when a model failed and what happened next)
-        if "[model-fallback/decision]" in line:
-            if "candidate_failed" in line:
-                m = re.search(r'candidate=(\S+)\s+reason=(\S+)', line)
-                if m:
-                    fallback_counts[f"{m.group(1)} ({m.group(2)})"] += 1
-            elif "candidate_succeeded" in line:
-                # This counts successful fallbacks toward usage to accurately reflect total volume
-                m = re.search(r'candidate=(\S+)', line)
-                if m:
-                    model_counts[m.group(1)] += 1
+        # Fallback decisions (only when Groq fell through to something else)
+        if "model fallback decision" in line and "candidate_failed" in line:
+            m = re.search(r'candidate=(\S+)\s+reason=(\S+)', line)
+            if m:
+                fallback_counts[f"{m.group(1)} ({m.group(2)})"] += 1
 
     return dict(model_counts), dict(fallback_counts)
 
