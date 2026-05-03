@@ -5,7 +5,11 @@ from abc import ABC, abstractmethod
 
 
 class ProviderSkip(Exception):
-    """Raised when a provider is temporarily unavailable (rate limit, quota)."""
+    """Raised when a provider should be skipped entirely (disabled, missing key, unsupported mime)."""
+
+
+class RateLimitError(Exception):
+    """Raised on 429 / RPM / TPM limits — signals the gateway to retry with backoff."""
 
 
 class AIProvider(ABC):
