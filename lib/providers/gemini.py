@@ -4,9 +4,10 @@ Primary for multi-modal tasks, fallback for text tasks.
 """
 import os
 import logging
+import time
 from google import genai
 from google.genai import types
-from .base import AIProvider, ProviderSkip
+from .base import AIProvider, ProviderSkip, RateLimitError
 from .. import quota_manager
 
 logger = logging.getLogger("DriveSorter.AI.Gemini")
@@ -47,11 +48,21 @@ def _get_client(is_paid=False):
 class GeminiProvider(AIProvider):
     name = "Gemini"
 
+    def __init__(self, model_name: str = None, api_key: str = None):
+        self.model_name = model_name
+        self.api_key = api_key
+        self._gateway_client = genai.Client(api_key=api_key) if api_key else None
+
     def supports(self, mime_type: str) -> bool:
         # Gemini handles almost everything
         return True
 
     def analyze(self, content_bytes: bytes, mime_type: str, prompt: str) -> tuple[str, int]:
+        # If initialized by gateway with specific model/key
+        if self._gateway_client and self.model_name:
+            return self._analyze_gateway(content_bytes, mime_type, prompt)
+        
+        # Original backward-compatible path
         # Decide between Free (Lite) or Paid (Pro)
         use_paid = quota_manager.is_rpd_exhausted()
         client = _get_client(is_paid=use_paid)
@@ -92,5 +103,32 @@ class GeminiProvider(AIProvider):
             
         except Exception as e:
             if '429' in str(e):
-                raise ProviderSkip(f"Gemini {model} rate limited: {e}")
+                raise RateLimitError(f"Gemini {model} rate limited: {e}")
+            raise
+
+    def _analyze_gateway(self, content_bytes: bytes, mime_type: str, prompt: str) -> tuple[str, int]:
+        """Gateway-specific analyze path."""
+        try:
+            start = time.time()
+            # Gateway handles payload wrapping
+            response = self._gateway_client.models.generate_content(
+                model=self.model_name,
+                contents=[
+                    prompt,
+                    types.Part.from_bytes(data=content_bytes, mime_type=mime_type)
+                ],
+                config=types.GenerateContentConfig(max_output_tokens=1024)
+            )
+            duration = time.time() - start
+            text = response.text.strip()
+            
+            usage = response.usage_metadata
+            tokens = usage.total_token_count if usage else 0
+            
+            logger.info(f"  [Gemini/{self.model_name}] tokens={tokens} ({round(duration, 1)}s)")
+            return text, tokens
+        except Exception as e:
+            msg = str(e).upper()
+            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                raise RateLimitError(f"Gemini rate limited: {e}")
             raise
