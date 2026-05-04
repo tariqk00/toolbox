@@ -105,8 +105,24 @@ def is_rpd_exhausted() -> bool:
     return state.get('sorter_calls_today', 0) >= 1400
 
 
-def log_cost(record: dict) -> None:
-    """Append a cost record to cost_log.jsonl."""
+def log_cost(run_type_or_record: str | dict, files_processed: int = 0, tokens_used: int = 0) -> None:
+    """
+    Append a cost record to cost_log.jsonl.
+    Supports both legacy positional args and the new single-dict record format.
+    """
+    if isinstance(run_type_or_record, dict):
+        record = run_type_or_record
+    else:
+        # Legacy positional path
+        cost = (tokens_used * 0.10) / 1_000_000 # Default rate
+        record = {
+            "date": datetime.now().strftime('%Y-%m-%d'),
+            "run_type": run_type_or_record,
+            "files_processed": files_processed,
+            "tokens_used": tokens_used,
+            "cost_usd_est": round(cost, 6),
+        }
+
     os.makedirs(os.path.dirname(COST_LOG_PATH), exist_ok=True)
     try:
         with open(COST_LOG_PATH, 'a') as f:
