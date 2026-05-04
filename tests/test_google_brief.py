@@ -10,22 +10,6 @@ REPO_ROOT = TEST_DIR.parent
 if str(REPO_ROOT.parent) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT.parent))
 
-# Mock everything before importing local modules
-sys.modules['googleapiclient'] = MagicMock()
-sys.modules['googleapiclient.discovery'] = MagicMock()
-sys.modules['googleapiclient.http'] = MagicMock()
-sys.modules['googleapiclient.errors'] = MagicMock()
-sys.modules['google.oauth2'] = MagicMock()
-sys.modules['google.oauth2.credentials'] = MagicMock()
-sys.modules['dotenv'] = MagicMock()
-
-# Mock internal lib dependencies
-sys.modules['toolbox.lib.log_manager'] = MagicMock()
-sys.modules['toolbox.lib.telegram'] = MagicMock()
-sys.modules['toolbox.lib.google_api'] = MagicMock()
-sys.modules['toolbox.lib.drive_utils'] = MagicMock()
-sys.modules['toolbox.lib.task_utils'] = MagicMock()
-
 from toolbox.services.email_extractor.categories import google_brief
 
 def test_google_brief_none_handling():
@@ -52,7 +36,8 @@ def test_google_brief_none_handling():
         ]
     }
     
-    with patch('toolbox.lib.llm.call_json', return_value=mock_details), \
+    import json
+    with patch('toolbox.lib.llm_gateway.call_llm', return_value={'text': json.dumps(mock_details)}), \
          patch('toolbox.services.email_extractor.categories.google_brief.append_to_memory') as mock_append:
         
         result = google_brief.process(email, state)
@@ -79,3 +64,4 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         sys.exit(1)
+

@@ -58,7 +58,7 @@ class TestFinancialReceiptExtraction(unittest.TestCase):
         self.assertIn('**Amount:** $40.00', block)
         self.assertIn('**Account:** ...1234', block)
         self.assertIn('**Due Date:** 2026-05-15', block)
-        self.assertIn('Capital One: $40.00 [Payment Due] — ...1234 | due 2026-05-15', summary)
+        self.assertIn('Capital One: $40.00 [Payment Due] — ...1234 | due 2026-05-15', summary['summary'])
 
     def test_chase_payment_confirmation_fields(self):
         email = _make_email(
@@ -83,7 +83,7 @@ class TestFinancialReceiptExtraction(unittest.TestCase):
         self.assertIn('**Transaction Date:** 2026-04-24', block)
         self.assertIn('**Payment Method:** checking account ending in 6789', block)
         self.assertIn('**Payment Date:** 2026-04-24', block)
-        self.assertIn('Chase: $250.00 [Payment] — ...6789 | 2026-04-24', summary)
+        self.assertIn('Chase: $250.00 [Payment] — ...6789 | 2026-04-24', summary['summary'])
 
     def test_chase_due_alert_fields(self):
         email = _make_email(
@@ -120,7 +120,7 @@ class TestFinancialReceiptExtraction(unittest.TestCase):
         self.assertIn('**Account:** ...4321', block)
         self.assertIn('**Transaction Date:** 2026-04-20', block)
         self.assertIn('**Statement Date:** 2026-04-20', block)
-        self.assertIn('Citi / Costco Visa: $1,234.56 [Statement] — ...4321', summary)
+        self.assertIn('Citi / Costco Visa: $1,234.56 [Statement] — ...4321', summary['summary'])
 
     def test_uber_receipt_adds_category_and_transaction_time(self):
         email = _make_email(

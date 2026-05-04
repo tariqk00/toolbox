@@ -90,9 +90,13 @@ def _extract_details_llm(subject: str, date_str: str, text: str) -> dict:
 
 
 def _build_markdown(subject: str, date_str: str, details: dict, original_text: str) -> str:
+    from toolbox.lib.entity_ids import plaud_entity_id, render_entity_comment
+    eid = plaud_entity_id(subject, date_str)
+
     lines = [f'# {subject}', '']
     lines.append(f'**Date:** {date_str}')
     lines.append(f'**Source:** Plaud Email Ingestion')
+    lines.append(render_entity_comment(eid))
     lines.append('')
     lines.append('---')
     lines.append('')

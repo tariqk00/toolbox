@@ -15,19 +15,7 @@ REPO_ROOT = TEST_DIR.parent
 if str(REPO_ROOT.parent) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT.parent))
 
-# Mock everything before importing local modules
-sys.modules['googleapiclient'] = MagicMock()
-sys.modules['googleapiclient.discovery'] = MagicMock()
-sys.modules['googleapiclient.http'] = MagicMock()
-sys.modules['googleapiclient.errors'] = MagicMock()
-sys.modules['google.oauth2'] = MagicMock()
-sys.modules['google.oauth2.credentials'] = MagicMock()
-sys.modules['dotenv'] = MagicMock()
-
-# Mock internal lib dependencies
-sys.modules['toolbox.lib.google_api'] = MagicMock()
-sys.modules['toolbox.lib.drive_utils'] = MagicMock()
-sys.modules['toolbox.lib.log_manager'] = MagicMock()
+# Remove global mock assignments that poison pytest
 
 GOOD_EXTRACT = {'items': [{'name': 'Anker Cable', 'qty': '1', 'price': '$15.99'}],
                 'total': '$15.99', 'tracking': '1Z999AA1'}
