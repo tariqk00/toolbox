@@ -50,12 +50,12 @@ HISTORY_SHEET_ID = _system.get('history_sheet_id', '')
 def get_drive_service():
     auth = GoogleAuth(base_dir=BASE_DIR)
     # Creds in config/
-    creds = auth.get_credentials(token_filename='token_full_drive.json', credentials_filename='config/credentials.json')
+    creds = auth.get_credentials(token_filename='token_drive_sorter.json', credentials_filename='config/credentials.json')
     return auth.get_service('drive', 'v3', creds)
 
 def get_sheets_service():
     auth = GoogleAuth(base_dir=BASE_DIR)
-    creds = auth.get_credentials(token_filename='token_full_drive.json', credentials_filename='config/credentials.json')
+    creds = auth.get_credentials(token_filename='token_drive_sorter.json', credentials_filename='config/credentials.json')
     return auth.get_service('sheets', 'v4', creds)
 
 def get_category_prompt_str():
