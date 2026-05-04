@@ -1,5 +1,13 @@
 # Project Journal
 
+- 2026-05-04: feat: integrated LLMGateway across all production automation paths (#154).
+  - **Migration:** Replaced legacy `ai_engine.py` and `llm.py` calls with `LLMGateway` in `drive_organizer`, `email_extractor`, `inbox_scanner`, and `readwise_digest`.
+  - **Shims:** Converted `lib/ai_engine.py`, `lib/llm.py`, and `lib/gemini.py` into shims with deprecation warnings to prevent production bypasses.
+  - **Providers:** Added `DeepSeekProvider` to `LLMGateway` and updated `llm_routing.yaml` to include DeepSeek in `efficiency` and `coding` tiers.
+  - **Frontier:** Updated `frontier` tier to `gemini-3.1-pro-preview` ($2.00/1M).
+  - **Tests:** Fixed `test_llm_gateway.py` and `test_ai_engine_refactor.py` to align with the new routing and mock behavior.
+  - **Audit:** Resolved all Python-side recommendations from the #149 audit report.
+
 - 2026-05-03: feat: implemented cost-optimized LLM routing and budget governance (#149). 
   - **Routing:** Config-driven tier selection (`cheapest`, `efficiency`, `coding`, `long-context`, `frontier`) in `config/llm_routing.yaml`. 
   - **Budget:** Implemented daily USD caps ($2.00) and per-task limits ($0.20) with pre-spend estimation and blocking.

@@ -170,6 +170,7 @@ class LLMGateway:
                                 logger.warning(f"Provider {provider_name} returned invalid JSON: {e}")
                                 attempts_chain.append({"provider": provider_name, "model": model_name, "result": "json_error", "error": str(e)})
                                 self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, 0, "json_error", str(e), attempt+1, latency, prompt_tokens)
+                                last_exception = e
                                 break # Fail this provider, try next one in tier (outer loop)
 
                         # Calculate actual cost
