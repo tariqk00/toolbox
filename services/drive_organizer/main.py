@@ -24,7 +24,7 @@ logger = LogManager.get_instance("ai-sorter").logger
 from toolbox.lib.drive_utils import (
     get_drive_service, download_file_content, move_file,
     resolve_folder_id, get_category_prompt_str,
-    INBOX_ID, METADATA_ID, ID_TO_PATH, _ALREADY_NAMED
+    INBOX_ID, ID_TO_PATH, _ALREADY_NAMED, _SKIP_MIME_TYPES
 )
 from toolbox.lib.telegram import send_message, drive_file_link
 from toolbox.lib.ai_engine import analyze_file

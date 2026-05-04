@@ -6,6 +6,7 @@ import os
 import io
 import json
 import logging
+import re
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from toolbox.lib.google_api import GoogleAuth
 
@@ -46,6 +47,13 @@ _system = FOLDER_CONFIG.get('system', {})
 INBOX_ID = _system.get('inbox_id', '')
 METADATA_FOLDER_ID = _system.get('metadata_folder_id', '')
 HISTORY_SHEET_ID = _system.get('history_sheet_id', '')
+
+# --- CONSTANTS ---
+_ALREADY_NAMED = re.compile(r'^\d{4}-\d{2}-\d{2} - ')
+_SKIP_MIME_TYPES = [
+    'application/vnd.google-apps.shortcut',
+    'application/vnd.google-apps.site'
+]
 
 def get_drive_service():
     auth = GoogleAuth(base_dir=BASE_DIR)
