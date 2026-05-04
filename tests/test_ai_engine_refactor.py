@@ -21,18 +21,26 @@ from toolbox.lib import ai_engine, llm, gemini
 def test_wrappers_redirect():
     print("Testing LLM/Gemini wrapper redirection...")
     
-    with patch('toolbox.lib.ai_engine.call') as mock_call:
-        mock_call.return_value = "Engine Response"
+    with patch('toolbox.lib.llm.call_llm') as mock_llm_call, \
+         patch('toolbox.lib.gemini.call_llm') as mock_gemini_call:
+        
+        mock_llm_call.return_value = {"text": "Engine Response"}
+        mock_gemini_call.return_value = {"text": "Engine Response"}
         
         # Test llm.call
         res = llm.call("Hello")
         assert res == "Engine Response"
-        mock_call.assert_called_with("Hello", max_tokens=500)
+        mock_llm_call.assert_called_with(task_type='automation', prompt="Hello")
+        
+        # Test ai_engine.call (which now redirects to llm.call)
+        res = ai_engine.call("Hello AI")
+        assert res == "Engine Response"
+        mock_llm_call.assert_called_with(task_type='automation', prompt="Hello AI")
         
         # Test gemini.call_gemini
         res = gemini.call_gemini("Hello Gemini")
         assert res == "Engine Response"
-        mock_call.assert_called_with("Hello Gemini")
+        mock_gemini_call.assert_called_with(task_type='automation', prompt="Hello Gemini")
         
     print("Wrapper redirection passed!")
 

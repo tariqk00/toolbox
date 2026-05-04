@@ -24,10 +24,11 @@ logger = LogManager.get_instance("ai-sorter").logger
 from toolbox.lib.drive_utils import (
     get_drive_service, download_file_content, move_file,
     resolve_folder_id, get_category_prompt_str,
-    INBOX_ID, ID_TO_PATH, _ALREADY_NAMED, _SKIP_MIME_TYPES
+    INBOX_ID, ID_TO_PATH, _ALREADY_NAMED, _SKIP_MIME_TYPES,
+    SORTER_SYSTEM_PROMPT
 )
 from toolbox.lib.telegram import send_message, drive_file_link
-from toolbox.lib.ai_engine import analyze_file
+from toolbox.lib.llm_gateway import call_json_llm
 from toolbox.lib import quota_manager
 from toolbox.lib.entity_ids import render_entity_comment, order_entity_id, travel_entity_id, build_entity_id
 
@@ -190,7 +191,17 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                     raise
 
             # --- AI ANALYSIS ---
-            analysis, reasoning, tokens_this_run = analyze_file(name, content, mime, folder_paths_str)
+            full_prompt = SORTER_SYSTEM_PROMPT.format(
+                context_hint=f"Filename: {name}",
+                folder_paths=folder_paths_str
+            )
+            analysis, reasoning, tokens_this_run = call_json_llm(
+                task_type='automation',
+                prompt=full_prompt,
+                content_bytes=content,
+                mime_type=mime,
+                filename=name
+            )
             
             new_name = analysis.get('new_filename', name)
             folder_path = analysis.get('folder_path', '')
@@ -242,7 +253,6 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                 state["analyzed_ids"][fid] = final_name
 
             stats.processed += 1
-            quota_manager.log_cost('sorter', 1, tokens_this_run)
                 
         except Exception as e:
             logger.error(f"  [Error] {name}: {e}")

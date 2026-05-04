@@ -1,13 +1,18 @@
 """
 Gemini interface wrapper.
-Now redirects to lib/ai_engine.py for centralized provider management.
+DEPRECATED: Use toolbox.lib.llm_gateway instead.
+This module is now a shim for LLMGateway.
 """
 import logging
-from . import ai_engine
+import warnings
+from .llm_gateway import call_llm
 
 logger = logging.getLogger('toolbox.gemini')
 
 def call_gemini(prompt: str) -> str:
-    """Redirect to ai_engine.call specifically requesting Gemini if needed, 
-    but currently uses the standard provider chain."""
-    return ai_engine.call(prompt)
+    """Redirect to LLMGateway.call with 'automation' task type."""
+    warnings.warn("toolbox.lib.gemini.call_gemini is deprecated. Use toolbox.lib.llm_gateway.call_llm instead.", DeprecationWarning, stacklevel=2)
+    logger.warning("Legacy Gemini call detected (redirecting to gateway)")
+    res = call_llm(task_type='automation', prompt=prompt)
+    return res.get('text', '')
+

@@ -25,13 +25,14 @@ repo_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
 if repo_root not in sys.path:
     sys.path.append(repo_root)
 
-from toolbox.lib.ai_engine import analyze_with_gemini, get_ai_supported_mime
+from toolbox.lib.llm_gateway import call_json_llm
 from toolbox.lib import quota_manager
 from toolbox.lib.telegram import send_message
 from toolbox.lib.drive_utils import (
     get_drive_service, get_sheets_service,
     download_file_content, move_file,
     resolve_folder_id, get_category_prompt_str,
+    get_ai_supported_mime, SORTER_SYSTEM_PROMPT,
     INBOX_ID, HISTORY_SHEET_ID, CONFIG_PATH, ID_TO_PATH,
 )
 
@@ -493,10 +494,18 @@ def run(args):
                 save_state(state)
                 continue
 
-            context_hint = f"File in folder: {folder_path}. Created: {item.get('createdTime', '')}"
-            analysis, tokens = analyze_with_gemini(content, mime, name, folder_paths_str, context_hint, file_id=fid)
-            if tokens:
-                quota_manager.record_tokens(tokens)
+            context_hint = f"File in folder: {folder_path}. Created: {item.get('createdTime', '')}. Filename: {name}"
+            full_prompt = SORTER_SYSTEM_PROMPT.format(
+                context_hint=context_hint,
+                folder_paths=folder_paths_str
+            )
+            analysis, reasoning, tokens = call_json_llm(
+                task_type='automation',
+                prompt=full_prompt,
+                content_bytes=content,
+                mime_type=mime,
+                filename=name
+            )
 
             new_name   = generate_new_name(analysis, name, item.get('createdTime', ''))
             confidence = analysis.get('confidence', 'Low')
@@ -546,7 +555,6 @@ def run(args):
     state['last_run'] = datetime.now(timezone.utc).isoformat()
     save_state(state)
 
-    quota_manager.log_cost('backfill', processed, tokens_used)
     logger.info(f"Run complete: {processed} processed, {moved} moved, {renamed} renamed, {errors} errors — {remaining_queue} remaining in queue")
 
     # Build Telegram summary

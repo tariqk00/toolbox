@@ -473,13 +473,18 @@ def _extract_items_llm(vendor: str, subject: str, body: str) -> dict:
     Returns {items: [{name, qty, price}], total, carrier, tracking, estimated_delivery}.
     Falls back to empty dict on failure.
     """
-    from toolbox.lib.llm import call_json
+    from toolbox.lib.llm_gateway import call_llm, _parse_json
     prompt = EXTRACT_PROMPT.format(
         vendor=vendor,
         subject=subject,
         body=_prep_for_llm(body)[:4000],
     )
-    return call_json(prompt)
+    try:
+        res = call_llm(task_type='high-stakes', prompt=prompt)
+        return _parse_json(res.get('text', ''))
+    except Exception as e:
+        logger.warning(f"  [Orders] LLM extraction failed: {e}")
+        return {}
 
 
 # ── Main processor ───────────────────────────────────────────────────────────

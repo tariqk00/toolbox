@@ -55,6 +55,58 @@ _SKIP_MIME_TYPES = [
     'application/vnd.google-apps.site'
 ]
 
+def get_ai_supported_mime(mime_type, filename=None):
+    """Returns a Gemini-supported MIME type or None if unsupported."""
+    # 1. Direct PDF/Image support
+    if 'pdf' in mime_type: return 'application/pdf'
+    if 'image' in mime_type: return 'image/jpeg' 
+    
+    # 2. Google Apps (exported by drive_utils)
+    if 'vnd.google-apps.document' in mime_type: return 'text/plain'
+    if 'vnd.google-apps.spreadsheet' in mime_type: return 'text/plain'
+    
+    # 3. Known Text types
+    supported_text = ['text/plain', 'text/csv', 'text/markdown', 'text/html', 'application/json']
+    if any(st in mime_type for st in supported_text):
+        return 'text/plain'
+        
+    # 4. Office Open XML formats (text extracted before sending)
+    if 'wordprocessingml.document' in mime_type:
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    if 'presentationml.presentation' in mime_type:
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
+    # 5. Handle octet-stream/unknown via extension
+    if mime_type == 'application/octet-stream' or '/' not in mime_type:
+        ext = os.path.splitext(filename or "")[1].lower()
+        if ext in ['.txt', '.csv', '.md', '.log']:
+            return 'text/plain'
+            
+    return None
+
+SORTER_SYSTEM_PROMPT = """
+You are a highly capable Personal Document Assistant. Your goal is to analyze the provided content (image or text) and categorize it for a long-term digital archive.
+
+CONTEXT: {context_hint}
+
+EXTRACT the following fields into a pure JSON object:
+- "doc_date": Use YYYY-MM-DD format. For travel documents (flights, hotels, car rentals, reservations), use the trip/travel/check-in date, NOT the booking or email date. For all other documents, use the actual document date. If not found, use the creation date provided in context or '0000-00-00'.
+- "entity": The primary organization, person, or vendor.
+    - CRITICAL: For bank statements or transaction lists, the entity MUST be the Institution (e.g., "Chase", "Verizon").
+    - CRITICAL: Do NOT pick a merchant from a random row in a spreadsheet as the entity.
+- "folder_path": Choose the most appropriate destination from this folder list:
+{folder_paths}
+Return the exact path string. Use the most specific subfolder that fits.
+- "summary": A concise 3-5 word description (e.g., "Monthly Internet Bill", "Property Tax Assessment").
+- "reasoning": A brief 1-sentence explanation of why you chose this folder/entity.
+- "confidence": "High", "Medium", or "Low".
+
+- "person": If this document is specifically for Dawn, Thomas, or Sofia, return their first name. Otherwise return null.
+
+RULES:
+1. Pure JSON only. No markdown formatting.
+"""
+
 def get_drive_service():
     auth = GoogleAuth(base_dir=BASE_DIR)
     # Creds in config/

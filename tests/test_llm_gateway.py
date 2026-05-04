@@ -150,8 +150,8 @@ def test_model_specific_cost_lookup(gateway, mocker):
     mock_provider.analyze.return_value = ("result", 100000)
     mocker.patch.object(gateway, '_get_provider_instance', return_value=mock_provider)
     
-    # gemini-1.5-pro is $1.25/1M in config
-    # 100k tokens * $1.25 / 1M = $0.125
+    # gemini-3.1-pro-preview is $2.00/1M in config
+    # 100k tokens * $2.00 / 1M = $0.20
     res = gateway.call("final", "high stakes")
-    assert res['model'] == 'gemini-1.5-pro'
-    assert res['cost'] == 0.125
+    assert res['model'] == 'gemini-3.1-pro-preview'
+    assert res['cost'] == 0.20

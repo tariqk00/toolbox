@@ -89,7 +89,7 @@ class UptownInquiryProcessor(CategoryProcessor):
         return 'inquiry'
 
     def process(self, email: dict, classification: dict) -> dict | None:
-        from toolbox.lib.llm import call, call_json
+        from toolbox.lib.llm_gateway import call_llm, _parse_json
         from toolbox.services.inbox_scanner.uptown_response_kb import build_prompt_examples
 
         body = _get_plain_body(email)
@@ -106,10 +106,14 @@ class UptownInquiryProcessor(CategoryProcessor):
         # Extract inquiry details
         extracted = {}
         try:
-            extracted = call_json(INQUIRY_EXTRACT_PROMPT.format(
-                subject=subject,
-                body=body[:5000],
-            ))
+            res_ext = call_llm(
+                task_type='automation',
+                prompt=INQUIRY_EXTRACT_PROMPT.format(
+                    subject=subject,
+                    body=body[:5000],
+                )
+            )
+            extracted = _parse_json(res_ext.get('text', ''))
         except Exception as e:
             logger.warning(f'Inquiry extraction failed: {e}')
 
@@ -130,12 +134,16 @@ class UptownInquiryProcessor(CategoryProcessor):
                 'questions': questions,
                 'body': body[:1500],
             })
-            shadow = call(SHADOW_RESPONSE_PROMPT.format(
-                examples=examples or 'No closely matching examples available.',
-                name=tenant or 'there',
-                questions=', '.join(questions) if questions else 'none specified',
-                body=body[:3000],
-            ), max_tokens=400)
+            res_shadow = call_llm(
+                task_type='final',
+                prompt=SHADOW_RESPONSE_PROMPT.format(
+                    examples=examples or 'No closely matching examples available.',
+                    name=tenant or 'there',
+                    questions=', '.join(questions) if questions else 'none specified',
+                    body=body[:3000],
+                )
+            )
+            shadow = res_shadow.get('text', '')
         except Exception as e:
             logger.warning(f'Shadow response generation failed: {e}')
 

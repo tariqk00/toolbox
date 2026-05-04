@@ -36,8 +36,9 @@ Email content:
 
 
 def _call_llm(text: str) -> list[dict]:
-    from toolbox.lib.llm import call
-    raw = call(EXTRACT_PROMPT.format(text=text[:8000]), max_tokens=1000)
+    from toolbox.lib.llm_gateway import call_llm
+    res = call_llm(task_type='automation', prompt=EXTRACT_PROMPT.format(text=text[:8000]))
+    raw = res.get('text', '')
     if not raw:
         return []
     try:

@@ -75,13 +75,18 @@ def _parse_date_and_subject(date_str, raw_subject):
 
 def _extract_details_llm(subject: str, date_str: str, text: str) -> dict:
     """Use LLM to extract summary, outline, and actionables."""
-    from toolbox.lib.llm import call_json
+    from toolbox.lib.llm_gateway import call_llm, _parse_json
     prompt = EXTRACT_PROMPT.format(
         subject=subject,
         date_str=date_str,
         text=text[:8000] # Increased context window slightly
     )
-    return call_json(prompt, max_tokens=1500)
+    try:
+        res = call_llm(task_type='automation', prompt=prompt)
+        return _parse_json(res.get('text', ''))
+    except Exception as e:
+        logger.warning(f"  [Plaud] LLM extraction failed: {e}")
+        return {}
 
 
 def _build_markdown(subject: str, date_str: str, details: dict, original_text: str) -> str:

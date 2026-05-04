@@ -202,8 +202,8 @@ def _trip_url(vendor: str, confirmation: str) -> str:
 
 
 def _extract_trip_details_llm(trip_type: str, vendor: str, subject: str, body: str) -> dict:
-    """Use Groq to extract type-specific itinerary details."""
-    from toolbox.lib.llm import call_json
+    """Use LLM Gateway to extract type-specific itinerary details."""
+    from toolbox.lib.llm_gateway import call_llm, _parse_json
     prompts = {
         'Flight': FLIGHT_PROMPT,
         'Hotel': HOTEL_PROMPT,
@@ -214,7 +214,12 @@ def _extract_trip_details_llm(trip_type: str, vendor: str, subject: str, body: s
     if not template:
         return {}
     prompt = template.format(vendor=vendor, subject=subject, body=body[:4000])
-    return call_json(prompt, max_tokens=300)
+    try:
+        res = call_llm(task_type='high-stakes', prompt=prompt)
+        return _parse_json(res.get('text', ''))
+    except Exception as e:
+        logger.warning(f"  [Trips] LLM extraction failed: {e}")
+        return {}
 
 
 def _build_return_section(details: dict) -> str:

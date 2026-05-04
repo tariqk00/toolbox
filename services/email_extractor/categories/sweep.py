@@ -42,9 +42,17 @@ Return ONLY valid JSON: {{"category": "...", "reason": "one sentence", "vendor":
 
 
 def _classify_email(sender: str, subject: str, body: str) -> dict:
-    from toolbox.lib.llm import call_json
-    result = call_json(CLASSIFY_PROMPT.format(sender=sender, subject=subject, body=body[:1500]))
-    return result if result else {'category': 'unknown', 'reason': 'LLM unavailable', 'vendor': sender}
+    from toolbox.lib.llm_gateway import call_llm, _parse_json
+    try:
+        res = call_llm(
+            task_type='automation',
+            prompt=CLASSIFY_PROMPT.format(sender=sender, subject=subject, body=body[:1500])
+        )
+        result = _parse_json(res.get('text', ''))
+        return result if result else {'category': 'unknown', 'reason': 'Empty LLM response', 'vendor': sender}
+    except Exception as e:
+        logger.warning(f"  [Sweep] LLM classification failed for {sender}: {e}")
+        return {'category': 'unknown', 'reason': str(e), 'vendor': sender}
 
 
 def _collect_known_senders(config: dict) -> set:

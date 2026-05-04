@@ -10,12 +10,16 @@ tiers:
         model: gemini-2.5-flash-lite
   efficiency:
     providers:
+      - name: deepseek
+        model: deepseek-chat
       - name: groq
         model: llama-3.3-70b-versatile
       - name: gemini-paid
         model: gemini-2.0-flash
   coding:
     providers:
+      - name: deepseek
+        model: deepseek-chat
       - name: groq
         model: llama-3.3-70b-versatile
   long-context:
@@ -25,7 +29,7 @@ tiers:
   frontier:
     providers:
       - name: gemini-paid
-        model: gemini-1.5-pro
+        model: gemini-3.1-pro-preview
 
 routes:
   heartbeat: cheapest
@@ -49,10 +53,12 @@ thresholds:
 costs:
   ollama: 0.0
   gemini-free: 0.0
+  deepseek: 0.15
   groq: 0.15
   gemini-paid: 0.10
   gemini-2.5-flash-lite: 0.0
   gemini-2.0-flash: 0.10
+  gemini-3.1-pro-preview: 2.00
   gemini-1.5-pro: 1.25
 
 token_caps:
