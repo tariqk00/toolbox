@@ -23,68 +23,6 @@ GOOD_JSON = (
     '"folder_path":"01 - Second Brain","summary":"Test note","confidence":"High"}'
 )
 
-class TestGatewayRouting(unittest.TestCase):
-    def setUp(self):
-        # Reset gateway instance to ensure clean state
-        llm_gateway._gateway = None
-
-    def _run_analyze(self, content_bytes, mime_type, prompt="Test prompt", task_type="automation",
-                     groq_side_effect=None, gemini_side_effect=None):
-        groq_captured = {}
-        gemini_captured = {}
-
-        def fake_groq_analyze(self_inner, cb, mt, p):
-            groq_captured['called'] = True
-            groq_captured['mime'] = mt
-            if groq_side_effect:
-                if isinstance(groq_side_effect, Exception):
-                    raise groq_side_effect
-                return groq_side_effect
-            return GOOD_JSON, 10
-
-        def fake_gemini_analyze(self_inner, cb, mt, p):
-            gemini_captured['called'] = True
-            gemini_captured['mime'] = mt
-            if gemini_side_effect:
-                if isinstance(gemini_side_effect, Exception):
-                    raise gemini_side_effect
-                return gemini_side_effect
-            return GOOD_JSON, 15
-
-        def fake_groq_supports(self_inner, mt):
-            return mt == 'text/plain'
-            
-        def fake_gemini_supports(self_inner, mt):
-            return True
-
-        with patch('toolbox.lib.llm_gateway.quota_manager.get_total_usd_used', return_value=0.0), \
-             patch('toolbox.lib.llm_gateway.quota_manager.record_llm_usage'), \
-             patch.dict('os.environ', {'GEMINI_API_KEY': 'fake', 'GEMINI_FREE_API_KEY': 'fake', 'DEEPSEEK_API_KEY': 'fake', 'GROQ_API_KEY': 'fake'}), \
-             patch.object(GroqProvider, 'analyze', fake_groq_analyze, create=True), \
-             patch.object(GroqProvider, 'supports', fake_groq_supports, create=True), \
-             patch.object(GeminiProvider, 'analyze', fake_gemini_analyze, create=True), \
-             patch.object(GeminiProvider, 'supports', fake_gemini_supports, create=True), \
-             patch('time.sleep'):
-             
-            try:
-                result, reasoning, tokens = llm_gateway.call_json_llm(
-                    task_type=task_type,
-                    prompt=prompt,
-                    content_bytes=content_bytes,
-                    mime_type=mime_type
-                )
-            except Exception as e:
-                result, reasoning, tokens = None, str(e), 0
-
-        return result, tokens, groq_captured, gemini_captured
-
-    def test_text_plain_goes_to_groq(self):
-        # We assume 'automation' tier maps to groq first (or deepseek). We'll test standard routing.
-        # Note: If deepseek is first in the automation tier, groq might not be called if deepseek succeeds.
-        # For the sake of this mock test, let's just make sure it passes the pipeline without legacy ai_engine errors.
-        # We mock get_provider_instance to force groq
-        pass
-
 class TestAiEngineRoutingAndFallbacks(unittest.TestCase):
     def setUp(self):
         llm_gateway._gateway = None
