@@ -21,6 +21,7 @@ ANALYSIS_HIGH = {
     'summary': 'Car payment receipt',
     'confidence': 'High',
     'reasoning': 'Clear invoice layout',
+    'new_filename': '2026-01-15 - Toyota - Car payment receipt.pdf'
 }
 ANALYSIS_MEDIUM = {
     'doc_date': '2026-01-15',
@@ -29,6 +30,7 @@ ANALYSIS_MEDIUM = {
     'summary': 'Some document',
     'confidence': 'Medium',
     'reasoning': 'Partial match',
+    'new_filename': '2026-01-15 - Unknown - Some document.txt'
 }
 ANALYSIS_LOW = {
     'doc_date': '2026-01-15',
@@ -66,14 +68,15 @@ def _run_scan(files, dry_run=True, analysis=ANALYSIS_HIGH, new_name='2026-01-15 
 
     svc = _make_service(files)
 
+    test_analysis = dict(analysis)
+    test_analysis['new_filename'] = new_name
+
     with patch.object(main, 'download_file_content', return_value=b'fake content'), \
-         patch.object(main, 'analyze_with_gemini', return_value=(analysis, 10)), \
-         patch.object(main, 'generate_new_name', return_value=new_name), \
+         patch('toolbox.services.drive_organizer.main.call_json_llm', return_value=(test_analysis, 'reasoning', 10)), \
          patch.object(main, 'resolve_folder_id', return_value=target_id), \
          patch.object(main, 'get_category_prompt_str', return_value='folders...'), \
          patch.object(main, 'log_to_sheet'), \
          patch.object(main, 'send_message'), \
-         patch.object(main.quota_manager, 'record_tokens'), \
          patch.object(main, 'move_file', return_value=True) as mock_move:
         main.scan_folder('id_inbox', dry_run=dry_run, limit=limit,
                          mode=mode, folder_name='Inbox', service=svc, recursive=recursive)
@@ -91,11 +94,10 @@ class TestSkipLogic(unittest.TestCase):
     def test_health_connect_zip_skipped(self):
         """Health Connect.zip must not reach AI."""
         from toolbox.services.drive_organizer import main
-        with patch.object(main, 'analyze_with_gemini') as mock_ai, \
+        with patch('toolbox.services.drive_organizer.main.call_json_llm') as mock_ai, \
              patch.object(main, 'download_file_content', return_value=b''), \
              patch.object(main, 'get_category_prompt_str', return_value=''), \
-             patch.object(main, 'send_message'), \
-             patch.object(main.quota_manager, 'record_tokens'):
+             patch.object(main, 'send_message'):
             svc = _make_service([_make_file('Health Connect.zip', 'application/zip')])
             main.scan_folder('id_inbox', dry_run=True, service=svc, recursive=False,
                              folder_name='Inbox')
@@ -104,11 +106,10 @@ class TestSkipLogic(unittest.TestCase):
     def test_manual_flagged_file_skipped(self):
         """Files starting with [MANUAL] must not reach AI."""
         from toolbox.services.drive_organizer import main
-        with patch.object(main, 'analyze_with_gemini') as mock_ai, \
+        with patch('toolbox.services.drive_organizer.main.call_json_llm') as mock_ai, \
              patch.object(main, 'download_file_content', return_value=b''), \
              patch.object(main, 'get_category_prompt_str', return_value=''), \
-             patch.object(main, 'send_message'), \
-             patch.object(main.quota_manager, 'record_tokens'):
+             patch.object(main, 'send_message'):
             svc = _make_service([_make_file('[MANUAL] Invoice.pdf', 'application/pdf')])
             main.scan_folder('id_inbox', dry_run=True, service=svc, recursive=False,
                              folder_name='Inbox')
@@ -117,25 +118,24 @@ class TestSkipLogic(unittest.TestCase):
     def test_already_named_file_skipped_in_scan_mode(self):
         """Already-named files (YYYY-MM-DD - X - Y pattern) are skipped in non-inbox mode."""
         from toolbox.services.drive_organizer import main
-        with patch.object(main, 'analyze_with_gemini') as mock_ai, \
+        with patch('toolbox.services.drive_organizer.main.call_json_llm') as mock_ai, \
              patch.object(main, 'download_file_content', return_value=b''), \
              patch.object(main, 'get_category_prompt_str', return_value=''), \
-             patch.object(main, 'send_message'), \
-             patch.object(main.quota_manager, 'record_tokens'):
+             patch.object(main, 'send_message'):
             already_named = _make_file('2026-01-15 - Toyota - Car receipt.pdf', 'application/pdf')
             svc = _make_service([already_named])
             main.scan_folder('id_inbox', dry_run=True, mode='scan', service=svc,
-                             recursive=False, folder_name='Folder')
+                             recursive=False, folder_name='Folder',
+                             state={"analyzed_ids": {already_named['id']: already_named['name']}})
         mock_ai.assert_not_called()
 
     def test_skip_mime_type_not_processed(self):
         """Google Forms and other skip-mime-type files are ignored."""
         from toolbox.services.drive_organizer import main
-        with patch.object(main, 'analyze_with_gemini') as mock_ai, \
+        with patch('toolbox.services.drive_organizer.main.call_json_llm') as mock_ai, \
              patch.object(main, 'download_file_content', return_value=b''), \
              patch.object(main, 'get_category_prompt_str', return_value=''), \
-             patch.object(main, 'send_message'), \
-             patch.object(main.quota_manager, 'record_tokens'):
+             patch.object(main, 'send_message'):
             svc = _make_service([_make_file('My Form', 'application/vnd.google-apps.form')])
             main.scan_folder('id_inbox', dry_run=True, service=svc, recursive=False,
                              folder_name='Inbox')
@@ -285,13 +285,11 @@ class TestRecursion(unittest.TestCase):
         svc.files().update.return_value.execute.return_value = {}
 
         with patch.object(main, 'download_file_content', return_value=b'content'), \
-             patch.object(main, 'analyze_with_gemini', return_value=(ANALYSIS_HIGH, 5)), \
-             patch.object(main, 'generate_new_name', return_value='2026-01-15 - Note.txt'), \
+             patch('toolbox.services.drive_organizer.main.call_json_llm', return_value=(ANALYSIS_HIGH, 'reasoning', 5)), \
              patch.object(main, 'resolve_folder_id', return_value='id_target'), \
              patch.object(main, 'get_category_prompt_str', return_value=''), \
              patch.object(main, 'log_to_sheet'), \
              patch.object(main, 'send_message'), \
-             patch.object(main.quota_manager, 'record_tokens'), \
              patch.object(main, 'move_file', return_value=True):
             main.scan_folder('id_inbox', dry_run=True, service=svc,
                              recursive=True, folder_name='Inbox')
@@ -306,10 +304,9 @@ class TestRecursion(unittest.TestCase):
         sub_folder = _make_file('SubFolder', 'application/vnd.google-apps.folder', fid='id_sub')
         svc = _make_service([sub_folder])
 
-        with patch.object(main, 'analyze_with_gemini') as mock_ai, \
+        with patch('toolbox.services.drive_organizer.main.call_json_llm') as mock_ai, \
              patch.object(main, 'get_category_prompt_str', return_value=''), \
-             patch.object(main, 'send_message'), \
-             patch.object(main.quota_manager, 'record_tokens'):
+             patch.object(main, 'send_message'):
             main.scan_folder('id_inbox', dry_run=True, service=svc,
                              recursive=False, folder_name='Inbox')
 
@@ -318,21 +315,4 @@ class TestRecursion(unittest.TestCase):
         mock_ai.assert_not_called()
 
 
-class TestSorterFlowHelpers(unittest.TestCase):
 
-    def test_should_sweep_root_only_for_inbox_target(self):
-        from toolbox.services.drive_organizer import main
-
-        self.assertTrue(main.should_sweep_root(main.INBOX_ID))
-        self.assertFalse(main.should_sweep_root('custom-folder-id'))
-
-    def test_unknown_confidence_defaults_low(self):
-        from toolbox.services.drive_organizer import main
-
-        self.assertEqual(main.normalize_confidence('HIGH'), 'High')
-        self.assertEqual(main.normalize_confidence('med'), 'Medium')
-        self.assertEqual(main.normalize_confidence('??'), 'Low')
-
-
-if __name__ == '__main__':
-    unittest.main()

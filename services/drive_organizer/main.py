@@ -205,7 +205,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             
             new_name = analysis.get('new_filename', name)
             folder_path = analysis.get('folder_path', '')
-            confidence = analysis.get('confidence', 'Low')
+            confidence = str(analysis.get('confidence', 'Low')).strip().capitalize()
 
             print(f"  [AI] {name} -> {new_name} ({confidence})")
             log("FILE_ANALYZED", "SUCCESS", f"Analyzed {name}", data={
