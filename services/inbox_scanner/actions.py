@@ -81,7 +81,7 @@ Email:
 def handle_monitored_inquiry(email: dict, classification: dict, monitor_config: dict,
                               telegram_service: str) -> None:
     """Structured extraction + dedicated Drive log + immediate Telegram alert for monitored senders."""
-    from toolbox.lib.llm import call_json
+    from toolbox.lib.llm_gateway import call_llm, _parse_json
     from toolbox.services.email_extractor.scanner import html_to_text
     from toolbox.services.email_extractor.writers import append_to_memory
 
@@ -98,7 +98,11 @@ def handle_monitored_inquiry(email: dict, classification: dict, monitor_config: 
     # LLM extraction
     extracted = {}
     if text and len(text) > 50:
-        extracted = call_json(PROPERTY_INQUIRY_PROMPT.format(text=text[:5000]))
+        res = call_llm(
+            task_type='automation',
+            prompt=PROPERTY_INQUIRY_PROMPT.format(text=text[:5000])
+        )
+        extracted = _parse_json(res.get('text', ''))
 
     tenant = extracted.get('prospective_tenant')
     move_in = extracted.get('move_in_date')

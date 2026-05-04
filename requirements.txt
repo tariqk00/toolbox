@@ -3,6 +3,7 @@ google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.2.0
 google-genai>=1.0.0
 groq
+openai
 pypdf
 python-docx
 python-pptx

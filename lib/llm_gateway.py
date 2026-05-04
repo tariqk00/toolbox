@@ -8,6 +8,7 @@ import logging
 import time
 import random
 import json
+import re
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 
@@ -15,6 +16,7 @@ from toolbox.lib import log_manager, quota_manager
 from toolbox.lib.providers.groq import GroqProvider
 from toolbox.lib.providers.ollama import OllamaProvider
 from toolbox.lib.providers.gemini import GeminiProvider
+from toolbox.lib.providers.deepseek import DeepSeekProvider
 from toolbox.lib.providers.base import ProviderSkip, RateLimitError
 
 logger = logging.getLogger("toolbox.llm_gateway")
@@ -42,6 +44,7 @@ class LLMGateway:
         # Gemini keys
         self.gemini_free_key = self._load_secret('gemini_ai_studio_secret', 'GEMINI_FREE_API_KEY')
         self.gemini_paid_key = self._load_secret('gemini_secret', 'GEMINI_API_KEY')
+        self.deepseek_key = os.getenv('DEEPSEEK_API_KEY')
 
     def _load_secret(self, filename: str, env_var: str) -> Optional[str]:
         val = os.getenv(env_var)
@@ -60,6 +63,10 @@ class LLMGateway:
             return OllamaProvider(model_name=model)
         elif name == 'groq':
             return GroqProvider(model_name=model)
+        elif name == 'deepseek':
+            if not self.deepseek_key:
+                raise ValueError("DeepSeek key missing (DEEPSEEK_API_KEY in config/secrets.env)")
+            return DeepSeekProvider(model_name=model, api_key=self.deepseek_key)
         elif name == 'gemini-free':
             if not self.gemini_free_key:
                 raise ValueError("Gemini Free key missing (config/gemini_ai_studio_secret)")
@@ -71,9 +78,10 @@ class LLMGateway:
         else:
             raise ValueError(f"Unknown provider: {name}")
 
-    def call(self, task_type: str, prompt: str, content_bytes: bytes = b'', mime_type: str = 'text/plain', **kwargs) -> Dict[str, Any]:
+    def call(self, task_type: str, prompt: str, content_bytes: bytes = b'', mime_type: str = 'text/plain', require_json: bool = False, **kwargs) -> Dict[str, Any]:
         """
         Unified entry point for LLM calls with routing and budget enforcement.
+        If require_json is True, malformed JSON will trigger fallback to next provider.
         """
         # 1. Routing logic
         # Estimate tokens (rough: 4 chars per token)
@@ -153,6 +161,17 @@ class LLMGateway:
                         result_text, actual_tokens = provider.analyze(data_to_send, mime_type, prompt)
                         latency = time.time() - start_time
                         
+                        # --- JSON Validation (if requested) ---
+                        parsed_json = None
+                        if require_json:
+                            try:
+                                parsed_json = _parse_json(result_text)
+                            except Exception as e:
+                                logger.warning(f"Provider {provider_name} returned invalid JSON: {e}")
+                                attempts_chain.append({"provider": provider_name, "model": model_name, "result": "json_error", "error": str(e)})
+                                self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, 0, "json_error", str(e), attempt+1, latency, prompt_tokens)
+                                break # Fail this provider, try next one in tier (outer loop)
+
                         # Calculate actual cost
                         cost = (actual_tokens * cost_per_m) / 1_000_000
                         
@@ -171,6 +190,7 @@ class LLMGateway:
                         
                         return {
                             "text": result_text,
+                            "json": parsed_json,
                             "tokens": actual_tokens,
                             "cost": cost,
                             "provider": provider_name,
@@ -239,8 +259,32 @@ class LLMGateway:
 # Global instance for easy access
 _gateway = None
 
-def call_llm(task_type: str, prompt: str, **kwargs) -> Dict[str, Any]:
+def call_llm(task_type: str, prompt: str, require_json: bool = False, **kwargs) -> Dict[str, Any]:
     global _gateway
     if _gateway is None:
         _gateway = LLMGateway()
-    return _gateway.call(task_type, prompt, **kwargs)
+    return _gateway.call(task_type, prompt, require_json=require_json, **kwargs)
+
+def _parse_json(text: str) -> dict:
+    """Robustly extract JSON from LLM markdown-wrapped text."""
+    try:
+        return json.loads(text)
+    except:
+        clean = re.sub(r'^```(?:json)?\s*', '', text, flags=re.MULTILINE)
+        clean = re.sub(r'\s*```$', '', clean, flags=re.MULTILINE)
+        try:
+            return json.loads(clean)
+        except:
+            match = re.search(r'(\{.*\})', clean, re.DOTALL)
+            if match:
+                return json.loads(match.group(1))
+    raise ValueError("No valid JSON found in response")
+
+def call_json_llm(task_type: str, prompt: str, **kwargs) -> tuple[dict, str, int]:
+    """Helper for legacy scripts expecting (json_dict, reasoning, tokens).
+    Leverages native gateway JSON fallback for resilience.
+    """
+    res = call_llm(task_type, prompt, require_json=True, **kwargs)
+    data = res['json']
+    reasoning = data.get('reasoning', '') or res['text'][:200]
+    return data, reasoning, res['tokens']

@@ -26,7 +26,7 @@ if os.path.dirname(BASE_DIR) not in sys.path:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(message)s')
 logger = logging.getLogger('ReadwiseDigest')
 
-from toolbox.lib.llm import call as call_groq
+from toolbox.lib.llm_gateway import call_llm
 from toolbox.lib.telegram import send_message, escape
 
 KEY_PATH = os.path.join(BASE_DIR, 'config', 'readwise_api_secret')
@@ -148,8 +148,13 @@ def _summarize(article: dict) -> str:
         summary=existing[:500] if existing else 'None provided',
         url=article.get('url', ''),
     )
-    result = call_groq(prompt)
-    return result if result else (existing[:200] if existing else 'No summary available.')
+    try:
+        res = call_llm(task_type='automation', prompt=prompt)
+        result = res.get('text', '')
+        return result if result else (existing[:200] if existing else 'No summary available.')
+    except Exception as e:
+        logger.warning(f"  [Readwise] LLM summary failed: {e}")
+        return existing[:200] if existing else 'No summary available.'
 
 
 def _format_message(articles: list[dict], summaries: list[str]) -> str:

@@ -10,7 +10,7 @@ import argparse
 from google.genai import types
 from google import genai
 from toolbox.lib.drive_utils import get_drive_service
-from toolbox.lib.ai_engine import load_api_key, SECRET_PATH
+from toolbox.lib.llm_gateway import call_llm
 
 # --- CONFIG ---
 # Folder IDs from discovery
@@ -54,21 +54,13 @@ def get_gemini_folder_id(service, parent_id):
         return folder.get('id')
 
 def process_transcript(transcript):
-    """Uses Gemini to process the transcript into a journal entry."""
-    api_key = load_api_key()
-    if not api_key:
-        print("Error: Gemini API key not found.")
-        sys.exit(1)
-        
-    client = genai.Client(api_key=api_key)
-    
-    print("Processing transcript with Gemini...")
-    response = client.models.generate_content(
-        model='gemini-2.0-flash',
-        contents=[JOURNAL_PROMPT.format(transcript=transcript)]
+    """Uses LLM Gateway to process the transcript into a journal entry."""
+    print("Processing transcript with LLM Gateway...")
+    res = call_llm(
+        task_type='automation',
+        prompt=JOURNAL_PROMPT.format(transcript=transcript)
     )
-    
-    return response.text
+    return res.get('text', '')
 
 def upload_to_drive(content, title):
     """Uploads the journal entry to Google Drive."""
