@@ -1,0 +1,5 @@
+✅ **Phase 3 Complete: Tier 1 Optimizations & Quota Manager**
+- **Legacy Assumptions Removed:** Removed all tests for the deprecated `SORTER_RESERVED` budget constraints and the deprecated `ai_engine.analyze_with_gemini` truncation tests.
+- **Replacement Behavior:** Updated all tests to use the new `is_exhausted()` and `is_rpd_exhausted()` APIs (with the 1400 call limit correctly asserted). Replaced the `ai_engine` truncation tests with targeted tests against `LLMGateway.call` to ensure long text context is truncated exactly at the `token_cap` threshold before being sent to the provider.
+
+Moving to Phase 4.

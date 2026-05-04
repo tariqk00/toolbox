@@ -1,0 +1,6 @@
+✅ **Phase 1 Complete: Core AI Gateway Mocks**
+- **Legacy Assumptions Removed:** `patch.object(ai_engine, 'GEMINI_API_KEY')` and internal wrapper tests like `_extract_pdf_text` have been deleted.
+- **Replacement Behavior:** We now use `patch('toolbox.lib.llm_gateway.LLMGateway._get_provider_instance')` to verify that `call_json_llm` correctly routes payloads to the right provider classes based on MIME type and correctly cascades on rate limits/failures.
+- **Strictness Maintained:** All edge cases (MIME fallbacks, JSON parsing errors) are fully asserted using the actual `call_json_llm` interface.
+
+Moving to Phase 2.

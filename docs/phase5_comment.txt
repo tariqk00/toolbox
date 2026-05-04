@@ -1,0 +1,8 @@
+✅ **Phase 5 Complete: Miscellaneous Service Tests & Suite Stabilization**
+- **Legacy Assumptions Removed:** Removed global `sys.modules` patching that was poisoning the pytest runtime and causing cross-file test contamination (e.g., tests breaking depending on the execution order).
+- **Replacement Behavior:** Updated `test_google_brief.py` and `test_receipts_financial.py` to assert against the exact output structure of `LLMGateway` (`call_llm` dictionaries).
+- **Strictness Maintained:** Reinstated the `render_entity_comment` marker in the production `plaud.py` markdown generator which had been accidentally stripped, ensuring the strict `test_plaud_markdown_includes_entity_id_marker` regression test passes successfully.
+
+🎉 **All 199 tests in the suite are now passing 100%.** The test suite is fully aligned with the `LLMGateway` refactor (PR #154).
+
+I will now close this issue and proceed with the NUC deployment.

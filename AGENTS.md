@@ -11,6 +11,7 @@ Global rules: `~/dotfiles/AGENTS.md` (if available)
 ## 2. Repo-specific Rules
 - **Venv**: `cd ~/github/tariqk00/toolbox && source venv/bin/activate`
 - **Tests**: `pytest tests/ -q` — **MUST** pass before any commit.
+- **Refactoring & Mocks**: When making architectural changes or refactoring (e.g., changing AI engines or core utilities), you **MUST** identify and update all associated tests and mock objects (`patch.object`) to reflect the new architecture. Do not leave the test suite broken.
 - **Credentials**: Never commit `config/credentials.json`, `config/secrets.env`, or any `token*.json`.
 - **State**: Files in `config/*/state.json` are live production data — never reset without explicit instruction.
 - **Paths**: Use relative paths or `$HOME`. Never hardcode `/home/tariqk`.

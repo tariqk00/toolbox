@@ -9,34 +9,7 @@ REPO_ROOT = os.path.dirname(TEST_DIR)
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-_MOCKED_MODULES = [
-    'google',
-    'google.oauth2',
-    'google.oauth2.credentials',
-    'google.oauth2.service_account',
-    'google_auth_oauthlib',
-    'google_auth_oauthlib.flow',
-    'googleapiclient',
-    'googleapiclient.discovery',
-    'googleapiclient.http',
-    'googleapiclient.errors',
-    'toolbox.lib.llm',
-    'toolbox.lib.google_api',
-    'toolbox.lib.drive_utils',
-    'toolbox.lib.task_utils',
-]
-_ORIGINAL_MODULES = {name: sys.modules.get(name) for name in _MOCKED_MODULES}
-
-for name in _MOCKED_MODULES:
-    sys.modules[name] = MagicMock()
-
 from services.email_extractor.categories import plaud
-
-for name, original in _ORIGINAL_MODULES.items():
-    if original is None:
-        sys.modules.pop(name, None)
-    else:
-        sys.modules[name] = original
 
 def test_parse_logic():
     print("Testing date and subject parsing...")

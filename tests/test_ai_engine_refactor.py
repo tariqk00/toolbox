@@ -10,12 +10,6 @@ REPO_ROOT = TEST_DIR.parent
 if str(REPO_ROOT.parent) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT.parent))
 
-# Mock providers and libraries
-sys.modules['google'] = MagicMock()
-sys.modules['google.genai'] = MagicMock()
-sys.modules['groq'] = MagicMock()
-sys.modules['requests'] = MagicMock()
-
 from toolbox.lib import ai_engine, llm, gemini
 
 def test_wrappers_redirect():

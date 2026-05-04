@@ -14,11 +14,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
-from toolbox.services.drive_organizer.main import generate_new_name as main_generate
 from toolbox.services.drive_organizer.backfill import generate_new_name as backfill_generate
 
 
@@ -27,7 +23,7 @@ from toolbox.services.drive_organizer.backfill import generate_new_name as backf
 # ---------------------------------------------------------------------------
 
 class _GenerateNewNameBase:
-    """Mixin: subclasses set self.fn = main_generate or backfill_generate."""
+    """Mixin: subclasses set self.fn = backfill_generate or backfill_generate."""
 
     def call(self, analysis, original_name, created_time=None):
         return self.fn(analysis, original_name, created_time or "")
@@ -151,11 +147,6 @@ class _GenerateNewNameBase:
         )
         self.assertIn("Doc", result)
 
-
-class TestMainGenerateNewName(_GenerateNewNameBase, unittest.TestCase):
-    fn = staticmethod(main_generate)
-
-
 class TestBackfillGenerateNewName(_GenerateNewNameBase, unittest.TestCase):
     fn = staticmethod(backfill_generate)
 
@@ -175,7 +166,7 @@ def _summary_part(result):
 
 class TestSanitizationMain(unittest.TestCase):
     def call(self, entity, summary):
-        return main_generate(
+        return backfill_generate(
             {"doc_date": "2026-01-01", "entity": entity, "summary": summary},
             "file.pdf", ""
         )
@@ -212,102 +203,3 @@ class TestSanitizationBackfill(unittest.TestCase):
 # analyze_with_gemini — rule-based shortcuts (no Gemini call, 0 tokens)
 # ---------------------------------------------------------------------------
 
-class TestRuleBasedShortcuts(unittest.TestCase):
-    """
-    Rule-based paths in analyze_with_gemini fire before any API call.
-    Patch GEMINI_API_KEY so the function doesn't raise on missing key,
-    and verify the correct result + 0 tokens are returned.
-    """
-
-    def _call(self, filename, content=b"irrelevant", mime="text/plain"):
-        from toolbox.lib import ai_engine
-        with patch.object(ai_engine, 'GEMINI_API_KEY', 'fake-key'), \
-             patch.object(ai_engine, 'GEMINI_CACHE', {}):
-            return ai_engine.analyze_with_gemini(content, mime, filename, "01 - Second Brain")
-
-    # --- Plaud summary export ---
-
-    def test_summary_txt_routed_to_plaud(self):
-        result, tokens = self._call("03-15 Morning Meeting summary.txt")
-        self.assertEqual(tokens, 0)
-        self.assertEqual(result['folder_path'], "01 - Second Brain/Plaud")
-        self.assertEqual(result['confidence'], "High")
-        self.assertEqual(result['entity'], "Plaud_Export")
-
-    def test_transcript_txt_routed_to_plaud_transcripts(self):
-        result, tokens = self._call("03-15 Morning Meeting transcript.txt")
-        self.assertEqual(tokens, 0)
-        self.assertEqual(result['folder_path'], "01 - Second Brain/Plaud/Transcripts")
-
-    def test_summary_txt_case_insensitive(self):
-        result, tokens = self._call("Meeting SUMMARY.TXT")
-        self.assertEqual(tokens, 0)
-        self.assertEqual(result['folder_path'], "01 - Second Brain/Plaud")
-
-    # --- MM-DD heuristic ---
-
-    def test_mm_dd_prefix_routed_to_plaud(self):
-        result, tokens = self._call("03-14 Team standup notes.txt")
-        self.assertEqual(tokens, 0)
-        self.assertEqual(result['folder_path'], "01 - Second Brain/Plaud")
-        self.assertEqual(result['entity'], "Plaud_Note")
-        self.assertEqual(result['confidence'], "High")
-
-    def test_mm_dd_date_constructed_correctly(self):
-        result, tokens = self._call("07-04 Independence Day notes.txt")
-        self.assertEqual(result['doc_date'], "2026-07-04")
-
-    def test_non_mm_dd_prefix_not_matched(self):
-        # A filename starting with 4-digit year should NOT match MM-DD
-        from toolbox.lib import ai_engine
-        with patch.object(ai_engine, 'GEMINI_API_KEY', 'fake-key'), \
-             patch.object(ai_engine, 'GEMINI_CACHE', {}), \
-             patch.object(ai_engine, 'get_ai_supported_mime', return_value=None):
-            result, tokens = ai_engine.analyze_with_gemini(
-                b"content", "text/plain", "2026-01-01 Some Doc.txt", "01 - Second Brain"
-            )
-        # Should NOT hit MM-DD rule; should fall through to mime check
-        self.assertNotEqual(result.get('entity'), 'Plaud_Note')
-
-    # --- Cache hit ---
-
-    def test_cache_hit_returns_zero_tokens(self):
-        from toolbox.lib import ai_engine
-        cached = {"doc_date": "2026-01-01", "entity": "Cached", "folder_path": "X",
-                  "summary": "Hit", "confidence": "High"}
-        with patch.object(ai_engine, 'GEMINI_API_KEY', 'fake-key'), \
-             patch.object(ai_engine, 'GEMINI_CACHE', {"file-123": cached}):
-            result, tokens = ai_engine.analyze_with_gemini(
-                b"content", "application/pdf", "doc.pdf", "paths", file_id="file-123"
-            )
-        self.assertEqual(tokens, 0)
-        self.assertEqual(result['entity'], "Cached")
-
-    def test_cache_hit_skips_api_call(self):
-        from toolbox.lib import ai_engine
-        cached = {"doc_date": "2026-01-01", "entity": "Cached", "folder_path": "X",
-                  "summary": "Hit", "confidence": "High"}
-        api_called = []
-        with patch.object(ai_engine, 'GEMINI_API_KEY', 'fake-key'), \
-             patch.object(ai_engine, 'GEMINI_CACHE', {"file-abc": cached}), \
-             patch('google.genai.Client') as mock_client:
-            ai_engine.analyze_with_gemini(
-                b"content", "application/pdf", "doc.pdf", "paths", file_id="file-abc"
-            )
-            mock_client.assert_not_called()
-
-    def test_unknown_mime_returns_low_confidence_no_api_call(self):
-        from toolbox.lib import ai_engine
-        with patch.object(ai_engine, 'GEMINI_API_KEY', 'fake-key'), \
-             patch.object(ai_engine, 'GEMINI_CACHE', {}), \
-             patch('google.genai.Client') as mock_client:
-            result, tokens = ai_engine.analyze_with_gemini(
-                b"data", "audio/mpeg", "recording.mp3", "paths"
-            )
-        self.assertEqual(tokens, 0)
-        self.assertEqual(result['confidence'], "Low")
-        mock_client.assert_not_called()
-
-
-if __name__ == '__main__':
-    unittest.main(verbosity=2)

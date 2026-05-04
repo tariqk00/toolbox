@@ -1,0 +1,6 @@
+✅ **Phase 2 Complete: Drive Organizer Mocks**
+- **Legacy Assumptions Removed:** Removed all mocks and tests for deprecated helpers like `generate_new_name`, `should_sweep_root`, and `normalize_confidence`. 
+- **Replacement Behavior:** Centralized all AI mocking to the single gateway boundary: `patch('toolbox.services.drive_organizer.main.call_json_llm')`. The return shape was updated to the proper `(data_dict, reasoning_string, token_count)` tuple.
+- **Strictness Maintained & Regression Caught:** By testing the actual integrated behavior without restoring compatibility wrappers, I caught a regression in production `main.py`: `normalize_confidence` was removed in PR #154, causing `"high"` (lowercase) confidence to fail the strict `['High', 'Medium']` check. I fixed this regression directly in `main.py` (`str(confidence).strip().capitalize()`), keeping the tests strict.
+
+Moving to Phase 3.
