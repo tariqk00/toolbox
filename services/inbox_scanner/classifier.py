@@ -32,15 +32,20 @@ Return ONLY valid JSON: {{"category": "...", "reason": "one sentence", "priority
 
 def classify_email(sender: str, subject: str, body: str) -> dict:
     from toolbox.lib.llm_gateway import call_llm, _parse_json
-    res = call_llm(
-        task_type='automation',
-        prompt=CLASSIFY_PROMPT.format(
-            sender=sender,
-            subject=subject,
-            body=body[:2000],
+    try:
+        res = call_llm(
+            task_type='automation',
+            prompt=CLASSIFY_PROMPT.format(
+                sender=sender,
+                subject=subject,
+                body=body[:2000],
+            )
         )
-    )
-    raw = res.get('text', '')
+        raw = res.get('text', '')
+    except Exception as e:
+        logger.warning(f'LLM Gateway call failed for {sender}: {e}')
+        return {'category': 'skip', 'reason': f'LLM Gateway error: {e}', 'priority': 'normal'}
+
     if not raw:
         return {'category': 'skip', 'reason': 'LLM Gateway unavailable', 'priority': 'normal'}
     try:

@@ -27,8 +27,8 @@ Email Body:
 
 def _extract_brief_details(body: str) -> dict:
     from toolbox.lib.llm_gateway import call_llm, _parse_json
-    res = call_llm(task_type='automation', prompt=BRIEF_EXTRACT_PROMPT.format(body=body[:5000]))
     try:
+        res = call_llm(task_type='automation', prompt=BRIEF_EXTRACT_PROMPT.format(body=body[:5000]))
         return _parse_json(res.get('text', ''))
     except Exception as e:
         logger.warning(f"  [Brief] LLM extraction failed: {e}")

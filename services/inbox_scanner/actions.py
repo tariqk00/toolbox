@@ -98,11 +98,15 @@ def handle_monitored_inquiry(email: dict, classification: dict, monitor_config: 
     # LLM extraction
     extracted = {}
     if text and len(text) > 50:
-        res = call_llm(
-            task_type='automation',
-            prompt=PROPERTY_INQUIRY_PROMPT.format(text=text[:5000])
-        )
-        extracted = _parse_json(res.get('text', ''))
+        try:
+            res = call_llm(
+                task_type='automation',
+                prompt=PROPERTY_INQUIRY_PROMPT.format(text=text[:5000])
+            )
+            extracted = _parse_json(res.get('text', ''))
+        except Exception as e:
+            logger.warning(f"  [Actions] LLM extraction failed: {e}")
+            extracted = {}
 
     tenant = extracted.get('prospective_tenant')
     move_in = extracted.get('move_in_date')
