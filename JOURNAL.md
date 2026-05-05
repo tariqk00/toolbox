@@ -1,5 +1,9 @@
 # Project Journal
 
+- 2026-05-05: fix: stabilized PR #165, resolving test fallout from LLMGateway refactor (#162).
+  - **Fix:** Restored the `SORTER_SYSTEM_PROMPT` template in the `ai_engine.analyze_with_gemini` shim to ensure proper JSON responses from LLM providers.
+  - **Verification:** Verified 202/202 tests passing, including AI smoke tests.
+  - **Status:** PR #165 is ready to merge; Issue #162 can be closed.
 - 2026-05-04: feat: integrated LLMGateway across all production automation paths (#154).
   - **Migration:** Replaced legacy `ai_engine.py` and `llm.py` calls with `LLMGateway` in `drive_organizer`, `email_extractor`, `inbox_scanner`, and `readwise_digest`.
   - **Shims:** Converted `lib/ai_engine.py`, `lib/llm.py`, and `lib/gemini.py` into shims with deprecation warnings to prevent production bypasses.

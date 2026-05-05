@@ -24,7 +24,11 @@ def analyze_file(filename: str, content_bytes: bytes, mime_type: str, prompt: st
 def analyze_with_gemini(content_bytes: bytes, mime_type: str, filename: str, folder_paths_str: str, context_hint: str = "", file_id: str = ""):
     """Old signature used by backfill.py"""
     warnings.warn("toolbox.lib.ai_engine.analyze_with_gemini is deprecated.", DeprecationWarning, stacklevel=2)
-    full_prompt = f"{folder_paths_str}\n\nCONTEXT: {context_hint}\nFILENAME: {filename}"
+    from .drive_utils import SORTER_SYSTEM_PROMPT
+    full_prompt = SORTER_SYSTEM_PROMPT.format(
+        context_hint=f"{context_hint}\nFILENAME: {filename}",
+        folder_paths=folder_paths_str
+    )
     data, reasoning, tokens = analyze_file(filename, content_bytes, mime_type, full_prompt)
     return data, tokens
 
