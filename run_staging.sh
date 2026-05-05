@@ -4,12 +4,15 @@
 # Usage: ./run_staging.sh [--dry-run]
 
 # Check for dry-run
-PYTHON_BIN="/home/takhan/github/tariqk00/toolbox/google-drive/venv/bin/python3"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+REPO_ROOT="$SCRIPT_DIR"
+PYTHON_BIN="$REPO_ROOT/venv/bin/python3"
+TARGET_SCRIPT="$REPO_ROOT/google-drive/drive_organizer.py"
 
 if [ "$1" == "--dry-run" ]; then
     echo "Running in DRY-RUN mode..."
-    $PYTHON_BIN /home/takhan/github/tariqk00/toolbox/google-drive/drive_organizer.py --staging
+    "$PYTHON_BIN" "$TARGET_SCRIPT" --staging
 else
     echo "Running in EXECUTE mode..."
-    $PYTHON_BIN /home/takhan/github/tariqk00/toolbox/google-drive/drive_organizer.py --staging --execute
+    "$PYTHON_BIN" "$TARGET_SCRIPT" --staging --execute
 fi
