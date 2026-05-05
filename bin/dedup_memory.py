@@ -8,7 +8,7 @@ Handles:
   - Memory/Receipts/*.md     (dedup key: date + amount; fallback: date + vendor)
 
 Run from toolbox root:
-  source google-drive/venv/bin/activate
+  source venv/bin/activate
   PYTHONPATH=/home/tariqk/github/tariqk00 python3 bin/dedup_memory.py [--dry-run]
 
 Outputs a summary of duplicates removed per file.

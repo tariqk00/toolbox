@@ -6,7 +6,7 @@ These tests make REAL Drive API calls and require valid credentials at
 ~/github/tariqk00/toolbox/config/token.json.
 
 Run from repo root:
-    source google-drive/venv/bin/activate
+    source venv/bin/activate
     PYTHONPATH=/home/tariqk/github/tariqk00 pytest --smoke tests/smoke/ -v
 """
 import pytest

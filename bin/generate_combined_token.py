@@ -2,8 +2,8 @@
 Generate a combined token with both Drive and Gmail scopes.
 Run this in YOUR terminal (not via agent) so the browser redirect works:
 
-  /home/tariqk/repos/personal/toolbox/google-drive/venv/bin/python3 \\
-    /home/tariqk/repos/personal/toolbox/bin/generate_combined_token.py
+  $HOME/github/tariqk00/toolbox/venv/bin/python3 \\
+    $HOME/github/tariqk00/toolbox/bin/generate_combined_token.py
 """
 from google_auth_oauthlib.flow import InstalledAppFlow
 import os

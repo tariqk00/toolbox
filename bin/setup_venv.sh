@@ -7,6 +7,7 @@ set -e
 VENV_PATH=${1:-"./venv"}
 EXTRA_REQS=$2
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+SHARED_VENV="$REPO_ROOT/venv"
 
 echo "--- Setting up venv at $VENV_PATH ---"
 
@@ -26,8 +27,8 @@ if [ -f "$REPO_ROOT/requirements.txt" ]; then
     "$VENV_PATH/bin/pip" install -r "$REPO_ROOT/requirements.txt"
 fi
 
-# Install dev requirements if this is the main toolbox venv or explicitly requested
-if [[ "$VENV_PATH" == *"google-drive/venv"* ]] || [ -n "$EXTRA_REQS" ]; then
+# Install dev requirements for the shared toolbox runtime or explicitly requested extras.
+if [ "$(realpath "$VENV_PATH")" = "$(realpath "$SHARED_VENV")" ] || [ -n "$EXTRA_REQS" ]; then
     echo "Installing dev dependencies..."
     "$VENV_PATH/bin/pip" install -r "$REPO_ROOT/requirements-dev.txt"
 fi
