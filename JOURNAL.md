@@ -1,5 +1,10 @@
 # Project Journal
 
+- 2026-05-05: feat: added OpenAI-compatible LLMGateway proxy (#154).
+  - **Implementation:** Created `bin/llm_gateway_proxy.py` using Python `http.server` to provide an OpenAI-standard endpoint (`/v1/chat/completions`).
+  - **Mapping:** Implemented `gateway/*` model mapping to `LLMGateway` task types (`automation`, `heartbeat`, `coding`, `frontier`).
+  - **Testing:** Added `tests/test_llm_gateway_proxy.py` with integration tests for model mapping and OpenAI-style response formatting.
+  - **Status:** Proxy ready for deployment as a systemd service to enable OpenClaw delegation.
 - 2026-05-05: fix: stabilized PR #165, resolving test fallout from LLMGateway refactor (#162).
   - **Fix:** Restored the `SORTER_SYSTEM_PROMPT` template in the `ai_engine.analyze_with_gemini` shim to ensure proper JSON responses from LLM providers.
   - **Verification:** Verified 202/202 tests passing, including AI smoke tests.
