@@ -17,10 +17,11 @@ import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Dict, Any, List
 
-# Add repo root to sys.path
+# Add repo root and its parent to sys.path
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
+PARENT_DIR = os.path.dirname(BASE_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
 
 from toolbox.lib.llm_gateway import call_llm
 
