@@ -43,6 +43,18 @@ def test_markdown_build():
     assert "Original transcript text." in md
     print("Markdown generation tests passed!\n")
 
+
+def test_standard_folder_path():
+    assert plaud._standard_folder_path("Work", "2026-04-26") == "Plaud/Work/2026"
+
+
+def test_category_fallback_to_other_on_invalid_llm_result(monkeypatch):
+    monkeypatch.setattr(
+        "toolbox.lib.llm_gateway.call_llm",
+        lambda **kwargs: {"text": '{"category":"Bogus"}'},
+    )
+    assert plaud._categorize_recording("Project Sync", "notes") == "Other"
+
 if __name__ == "__main__":
     try:
         test_parse_logic()

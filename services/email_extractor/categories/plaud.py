@@ -89,6 +89,50 @@ def _extract_details_llm(subject: str, date_str: str, text: str) -> dict:
         return {}
 
 
+def _categorize_recording(subject: str, text: str) -> str:
+    """Route Plaud notes into a stable top-level category."""
+    from toolbox.lib.llm_gateway import call_llm, _parse_json
+
+    prompt = """\
+Categorize this voice recording transcript into exactly one of these categories:
+- Work: Professional tasks, software engineering, business meetings.
+- Personal: Family, hobbies, household errands, general life.
+- Finance: Banking, investment, spending, taxes, Uptown Edenton management.
+- Health: Fitness, medical, sleep, nutrition.
+- Other: Anything that doesn't fit the above.
+
+Subject: {subject}
+Content:
+{text}
+
+Return ONLY valid JSON:
+{{
+  "category": "Work" | "Personal" | "Finance" | "Health" | "Other",
+  "rationale": "one sentence explanation"
+}}
+"""
+    valid = {"Work", "Personal", "Finance", "Health", "Other"}
+    try:
+        res = call_llm(
+            task_type='automation',
+            prompt=prompt.format(subject=subject, text=text[:4000]),
+        )
+        category = _parse_json(res.get('text', '')).get('category', 'Other')
+        return category if category in valid else 'Other'
+    except Exception as e:
+        logger.warning(f"  [Plaud] Category extraction failed: {e}")
+        return 'Other'
+
+
+def _standard_folder_path(category: str, doc_date: str) -> str:
+    """Return the standardized folder path under Memory/Plaud."""
+    try:
+        year = doc_date.split('-', 1)[0]
+    except Exception:
+        year = datetime.now().strftime('%Y')
+    return f"Plaud/{category}/{year}"
+
+
 def _build_markdown(subject: str, date_str: str, details: dict, original_text: str) -> str:
     from toolbox.lib.entity_ids import plaud_entity_id, render_entity_comment
     eid = plaud_entity_id(subject, date_str)
@@ -156,9 +200,8 @@ def process(email: dict, state: dict, service=None) -> dict | None:
     details = _extract_details_llm(subject, doc_date, full_text)
     
     # 2. Categorize and Determine Standardized Path
-    from toolbox.bin.standardize_plaud import get_category, get_standard_path
-    category = get_category(subject, full_text)
-    folder_path = get_standard_path(category, doc_date)
+    category = _categorize_recording(subject, full_text)
+    folder_path = _standard_folder_path(category, doc_date)
     
     # 3. Build and save markdown
     # Format: 01 - Second Brain/Plaud/[Category]/[Year]/YYYY-MM-DD - Subject.md

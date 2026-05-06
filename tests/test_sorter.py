@@ -315,4 +315,22 @@ class TestRecursion(unittest.TestCase):
         mock_ai.assert_not_called()
 
 
+class TestCliCompatibility(unittest.TestCase):
+
+    def test_legacy_execute_flag_enables_run_mode(self):
+        from toolbox.services.drive_organizer import main
+
+        args = main.parse_args(["--execute"])
+
+        self.assertFalse(args.run)
+        self.assertTrue(args.execute)
+
+    def test_legacy_inbox_flag_is_accepted(self):
+        from toolbox.services.drive_organizer import main
+
+        args = main.parse_args(["--inbox", "--execute"])
+
+        self.assertTrue(args.inbox)
+        self.assertTrue(args.execute)
+
 

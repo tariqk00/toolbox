@@ -285,12 +285,26 @@ def sweep_drive_root(dry_run=True, service=None, state=None):
                 move_file(service, fid, INBOX_ID, name)
                 stats.swept += 1
 
-def run():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Drive AI Sorter")
     parser.add_argument("--run", action="store_true", help="Actually execute moves/renames")
     parser.add_argument("--limit", type=int, help="Limit number of files to process")
     parser.add_argument("--recursive", action="store_true", help="Scan subfolders of Inbox")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--inbox",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    return parser.parse_args(argv)
+
+
+def run(argv=None):
+    args = parse_args(argv)
 
     global stats
     stats = RunStats()
@@ -299,12 +313,13 @@ def run():
     service = get_drive_service()
 
     # 1. Sweep Root -> Inbox
-    sweep_drive_root(dry_run=not args.run, service=service, state=state)
+    execute = args.run or args.execute
+    sweep_drive_root(dry_run=not execute, service=service, state=state)
 
     # 2. Scan Inbox
     scan_folder(
         INBOX_ID, 
-        dry_run=not args.run, 
+        dry_run=not execute,
         limit=args.limit, 
         mode='inbox', 
         service=service, 
@@ -316,7 +331,7 @@ def run():
     summary = stats.get_summary()
     print(f"\n{summary}")
     
-    if not (not args.run): # i.e. if args.run is True
+    if execute:
         save_state(state)
         if stats.moved > 0 or stats.renamed > 0 or stats.swept > 0 or stats.errors > 0:
             send_message(stats.get_notification(), service="ai-sorter")
