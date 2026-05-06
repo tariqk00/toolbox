@@ -55,3 +55,4 @@ feat(sorter): improved AI categorization, added Google Doc support, and global l
 2026-02-16 feat: optimized OpenClaw on NUC to use Gemini 2.0 Flash for improved performance
 - 2026-02-16: docs: created BACKLOG.md in toolbox/docs and added IDE optimization tasks.
 2026-04-11: feat: Implement Shadow AI testing with parallel Gemma 2B calls and Telegram notifications across Drive, Plaud, and Readwise workflows.
+- 2026-05-06: chore: add ai_sorter_state.json to .gitignore (#177)
