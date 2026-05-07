@@ -443,7 +443,7 @@ def run(args):
     if quota_manager.is_backfill_budget_exhausted():
         msg = f"Daily quota exhausted ({quota_manager.load()['total_tokens_used']:,} tokens used). Skipping run."
         logger.info(msg)
-        send_message(msg, service="ai-sorter-backfill")
+        send_message(msg, service="ai-sorter-backfill", category="notification")
         return
 
     # Build queue if empty — try delta first, fall back to full crawl
@@ -459,7 +459,7 @@ def run(args):
         if not state['pending']:
             msg = "Backfill complete — no files left to process."
             logger.info(msg)
-            send_message(msg, service="ai-sorter-backfill")
+            send_message(msg, service="ai-sorter-backfill", category="notification")
             return
 
     limit = args.limit or quota_manager.load().get('files_per_run', quota_manager.FILES_PER_RUN)
@@ -580,7 +580,7 @@ def run(args):
     if len(detail_lines) > MAX:
         lines.append(f"  ... and {len(detail_lines) - MAX} more")
 
-    send_message("\n".join(lines), service="ai-sorter-backfill")
+    send_message("\n".join(lines), service="ai-sorter-backfill", category="notification")
 
 
 def parse_args():

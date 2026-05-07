@@ -107,7 +107,8 @@ def process(email: dict, known_senders: dict, raw_senders: dict = None) -> bool:
                 f'From: {escape(from_header)}\n'
                 f'Subject: {escape(subject)}\n\n'
                 f'Reply with the source name to add it to the pipeline, or ignore to skip.',
-                service='email-extractor'
+                service='email-extractor',
+                category='notification',
             )
             logger.info(f'Unknown digest sender, flagged: {from_header}')
         return False

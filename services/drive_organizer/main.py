@@ -128,7 +128,11 @@ def _maybe_flag_new_trip(folder_path, filename, fid):
     """If AI thinks it's a trip but we don't have the folder, notify."""
     if 'Trips/' in folder_path:
         # Trip folder doesn't exist yet
-        send_message(f"New Trip detected? Folder missing for: <code>{folder_path}</code>\nFile: {drive_file_link(fid, filename)}", service="ai-sorter")
+        send_message(
+            f"New Trip detected? Folder missing for: <code>{folder_path}</code>\nFile: {drive_file_link(fid, filename)}",
+            service="ai-sorter",
+            category="warning",
+        )
 
 def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan', folder_name="Inbox", service=None, recursive=True, state=None):
     if not service:
@@ -223,7 +227,11 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                     manual_name = f'[MANUAL] {name}'
                     service.files().update(fileId=fid, body={'name': manual_name}).execute()
                     log("FILE_FLAGGED", "WARNING", f"Flagged {name} for manual review", data={"file_id": fid}, app_name=stats.app_name)
-                    send_message(f"Manual review needed: {drive_file_link(fid, name)}\nCould not parse as PDF.", service="ai-sorter")
+                    send_message(
+                        f"Manual review needed: {drive_file_link(fid, name)}\nCould not parse as PDF.",
+                        service="ai-sorter",
+                        category="warning",
+                    )
                     stats.processed += 1
                     continue
 
@@ -334,7 +342,7 @@ def run(argv=None):
     if execute:
         save_state(state)
         if stats.moved > 0 or stats.renamed > 0 or stats.swept > 0 or stats.errors > 0:
-            send_message(stats.get_notification(), service="ai-sorter")
+            send_message(stats.get_notification(), service="ai-sorter", category="notification")
 
 if __name__ == '__main__':
     run()

@@ -48,16 +48,51 @@ DEDUP_WINDOW_SECONDS = 30 * 60
 
 _config_cache = None
 
+_ERROR_CATEGORIES = {'error', 'critical', 'warning'}
+_NOTIFICATION_CATEGORIES = {'notification', 'info', 'success'}
+
 def _load_config():
     global _config_cache
     if _config_cache is not None:
         return _config_cache
 
     # Try environment first (secrets.env)
-    env_token = os.getenv('TELEGRAM_BOT_TOKEN')
-    env_chat = os.getenv('TELEGRAM_CHAT_ID')
-    if env_token and env_chat:
-        _config_cache = {'bot_token': env_token, 'chat_id': env_chat}
+    env_keys = [
+        'TELEGRAM_BOT_TOKEN',
+        'TELEGRAM_CHAT_ID',
+        'TELEGRAM_BOT_TOKEN_ERRORS',
+        'TELEGRAM_CHAT_ID_ERRORS',
+        'TELEGRAM_BOT_TOKEN_NOTIFICATIONS',
+        'TELEGRAM_CHAT_ID_NOTIFICATIONS',
+        'TELEGRAM_BOT_TOKEN_ALERTS',
+        'TELEGRAM_CHAT_ID_ALERTS',
+        'TELEGRAM_BOT_TOKEN_SERVICES',
+        'TELEGRAM_CHAT_ID_SERVICES',
+    ]
+    env_config = {key.lower(): os.getenv(key) for key in env_keys if os.getenv(key)}
+    if env_config:
+        config = {}
+        if env_config.get('telegram_bot_token'):
+            config['bot_token'] = env_config['telegram_bot_token']
+        if env_config.get('telegram_chat_id'):
+            config['chat_id'] = env_config['telegram_chat_id']
+        if env_config.get('telegram_bot_token_errors'):
+            config['bot_token_errors'] = env_config['telegram_bot_token_errors']
+        if env_config.get('telegram_chat_id_errors'):
+            config['chat_id_errors'] = env_config['telegram_chat_id_errors']
+        if env_config.get('telegram_bot_token_notifications'):
+            config['bot_token_notifications'] = env_config['telegram_bot_token_notifications']
+        if env_config.get('telegram_chat_id_notifications'):
+            config['chat_id_notifications'] = env_config['telegram_chat_id_notifications']
+        if env_config.get('telegram_bot_token_alerts'):
+            config['bot_token_alerts'] = env_config['telegram_bot_token_alerts']
+        if env_config.get('telegram_chat_id_alerts'):
+            config['chat_id_alerts'] = env_config['telegram_chat_id_alerts']
+        if env_config.get('telegram_bot_token_services'):
+            config['bot_token_services'] = env_config['telegram_bot_token_services']
+        if env_config.get('telegram_chat_id_services'):
+            config['chat_id_services'] = env_config['telegram_chat_id_services']
+        _config_cache = config
         return _config_cache
 
     try:
@@ -134,9 +169,33 @@ def _should_send(text: str, service: str | None, window_seconds: int | None = No
     return True
 
 
-def send_message(text: str, service: str = None, parse_mode: str = 'HTML') -> bool:
+def _route_bucket(category: str | None) -> str:
+    normalized = (category or 'notification').strip().lower()
+    if normalized in _ERROR_CATEGORIES:
+        return 'errors'
+    if normalized in _NOTIFICATION_CATEGORIES:
+        return 'notifications'
+    return normalized
+
+
+def _resolve_destination(config: dict, category: str | None) -> tuple[str | None, str | None]:
+    bucket = _route_bucket(category)
+    token = config.get(f'bot_token_{bucket}')
+    chat_id = config.get(f'chat_id_{bucket}')
+
+    if bucket == 'errors':
+        token = token or config.get('bot_token_alerts')
+        chat_id = chat_id or config.get('chat_id_alerts')
+    elif bucket == 'notifications':
+        token = token or config.get('bot_token_services')
+        chat_id = chat_id or config.get('chat_id_services')
+
+    return token or config.get('bot_token'), chat_id or config.get('chat_id')
+
+
+def send_message(text: str, service: str = None, parse_mode: str = 'HTML', category: str = 'notification') -> bool:
     """
-    Send a message to the configured ops channel.
+    Send a message to the configured Telegram channel for the given category.
     If service is provided, prepends "[service] " to the message.
     Returns True on success, False on failure (never raises).
     """
@@ -144,10 +203,9 @@ def send_message(text: str, service: str = None, parse_mode: str = 'HTML') -> bo
     if not config:
         return False
 
-    bot_token = config.get('bot_token')
-    chat_id = config.get('chat_id')
+    bot_token, chat_id = _resolve_destination(config, category)
     if not bot_token or not chat_id:
-        logger.error("Telegram config missing bot_token or chat_id.")
+        logger.error("Telegram config missing bot_token or chat_id for category=%s.", category)
         return False
 
     if service:

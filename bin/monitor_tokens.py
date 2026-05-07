@@ -74,7 +74,7 @@ def main():
     if errors:
         alert_msg = "⚠️ <b>Google OAuth Token Alert</b>\n\nThe following tokens have expired or are invalid. Please run <code>refresh_all_tokens.py</code> via SSH to fix them:\n\n" + "\n".join(errors)
         log("TOKEN_MONITOR", "ALERT", "Sending Telegram alert for broken tokens")
-        send_message(alert_msg)
+        send_message(alert_msg, category="error")
     else:
         log("TOKEN_MONITOR", "SUCCESS", "All tokens are valid")
 
