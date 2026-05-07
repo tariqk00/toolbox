@@ -195,7 +195,8 @@ def main():
     spend = _weekly_spend_summary()
     send_message(
         f"<b>Drive tree refreshed:</b> {len(path_to_id)} folders across {len(roots)} roots\n{escape(spend)}",
-        service="drive-tree-refresh"
+        service="drive-tree-refresh",
+        category="notification",
     )
 
     logger.info("=== Running Memory Deduplication ===")
@@ -204,7 +205,11 @@ def main():
         subprocess.run([sys.executable, os.path.join(current_dir, 'dedup_memory.py')], check=True)
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to run dedup_memory.py: {e}")
-        send_message(f"<b>Error:</b> dedup_memory.py failed with exit code {e.returncode}", service="weekly-ops")
+        send_message(
+            f"<b>Error:</b> dedup_memory.py failed with exit code {e.returncode}",
+            service="weekly-ops",
+            category="error",
+        )
 
     # Print top-level summary
     top_level = sorted(k for k in path_to_id if '/' not in k)

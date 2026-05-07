@@ -114,7 +114,7 @@ def run(args):
     if not dry_run:
         if saved:
             lines = [f"<b>{saved} session{'s' if saved > 1 else ''} saved ({elapsed}s)</b>"] + [escape(d) for d in saved_details]
-            send_message("\n".join(lines), service="workout-extract")
+            send_message("\n".join(lines), service="workout-extract", category="notification")
 
 
 def run_with_error_reporting(args):
@@ -126,6 +126,7 @@ def run_with_error_reporting(args):
             f"<b>workout-extract failed</b>\n{escape(type(e).__name__)}: {escape(str(e))}\n"
             f"{monit_link('Check Monit')} · <code>journalctl --user -u workout-extract -n 50</code>",
             service="workout-extract",
+            category="error",
         )
 
 

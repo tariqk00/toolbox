@@ -666,7 +666,11 @@ def main():
     logger.info("=== Sync complete: %d activities processed ===", total_synced)
     if not args.dry_run:
         date_str = target_date.strftime("%Y-%m-%d")
-        send_message(f"Sync complete: {total_synced} activit{'y' if total_synced == 1 else 'ies'} for {date_str}", service="garmin-sync")
+        send_message(
+            f"Sync complete: {total_synced} activit{'y' if total_synced == 1 else 'ies'} for {date_str}",
+            service="garmin-sync",
+            category="notification",
+        )
 
     # Auto-generate summary for the month of the target date
     generate_monthly_summary(

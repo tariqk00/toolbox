@@ -295,7 +295,7 @@ def main():
     # Send rich telegram message (spam deduped by skipping if 0 removed)
     if total_removed > 0 and not args.dry_run:
         html_body = "\n".join(html_lines)
-        send_message(html_body, service="memory-dedup")
+        send_message(html_body, service="memory-dedup", category="notification")
 
 
 if __name__ == '__main__':

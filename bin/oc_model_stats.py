@@ -76,7 +76,7 @@ def main():
     logs = fetch_logs(YESTERDAY)
     model_counts, fallback_counts = parse_usage(logs)
     msg = format_message(model_counts, fallback_counts, YESTERDAY)
-    ok = send_message(msg, service="oc-model-stats")
+    ok = send_message(msg, service="oc-model-stats", category="notification")
     if not ok:
         print(msg)
         sys.exit(1)

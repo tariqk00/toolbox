@@ -106,7 +106,8 @@ def generate_report():
         logger.info(f"Report uploaded successfully: {report_name}")
         send_message(
             f"Monthly report generated: {total_actions} actions ({moves} moves, {renames} renames)",
-            service="ai-sorter-review"
+            service="ai-sorter-review",
+            category="notification",
         )
     except Exception as e:
         logger.error(f"Error uploading report: {e}")

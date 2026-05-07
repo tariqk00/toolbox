@@ -85,13 +85,18 @@ def backup_workspace():
         
         send_message(
             f"OpenClaw workspace backup complete: {drive_filename}",
-            service="nuc-ops"
+            service="nuc-ops",
+            category='notification',
         )
         print(f"Backup uploaded: {uploaded['name']} (id: {uploaded['id']})")
         return uploaded['id']
         
     except Exception as e:
-        send_message(f"OpenClaw workspace backup FAILED: {e}", service="nuc-ops")
+        send_message(
+            f"OpenClaw workspace backup FAILED: {e}",
+            service="nuc-ops",
+            category='error',
+        )
         raise
 
 def _get_or_create_folder(service, path):

@@ -196,7 +196,7 @@ def run():
         logger.info(f'Summarized: {article.get("title", "?")[:60]}')
 
     msg = _format_message(selected, summaries)
-    send_message(msg, service='readwise-digest')
+    send_message(msg, service='readwise-digest', category='notification')
 
     # Record surfaced IDs
     today = date.today().isoformat()
