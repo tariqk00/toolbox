@@ -92,6 +92,24 @@ def test_send_message_routes_errors_to_error_chat(monkeypatch, tmp_path):
     assert payload['chat_id'] == 'errors-chat'
 
 
+def test_send_message_does_not_dedup_across_categories(monkeypatch, tmp_path):
+    telegram = _configure(monkeypatch, tmp_path)
+    telegram._config_cache = {
+        'bot_token': 'default-token',
+        'chat_id': 'default-chat',
+        'chat_id_errors': 'errors-chat',
+    }
+    sent = MagicMock(return_value=_FakeResponse())
+    monkeypatch.setattr(telegram.urllib.request, 'urlopen', sent)
+
+    assert telegram.send_message('same failure', service='svc', category='notification')
+    assert telegram.send_message('same failure', service='svc', category='error')
+
+    assert sent.call_count == 2
+    state = json.loads((tmp_path / 'dedup.json').read_text())
+    assert len(state) == 2
+
+
 def test_send_message_defaults_unknown_category_to_default_chat(monkeypatch, tmp_path):
     telegram = _configure(monkeypatch, tmp_path)
     telegram._config_cache = {

@@ -122,9 +122,9 @@ def _normalise_for_dedup(text: str) -> str:
     return text.strip().lower()
 
 
-def _dedup_key(text: str, service: str | None) -> str:
+def _dedup_key(text: str, service: str | None, category: str | None) -> str:
     import hashlib
-    payload = f'{service or ""}|{_normalise_for_dedup(text)}'
+    payload = f'{service or ""}|{_route_bucket(category)}|{_normalise_for_dedup(text)}'
     return hashlib.sha1(payload.encode()).hexdigest()
 
 
@@ -142,7 +142,12 @@ def _save_dedup_state(path: Path, state: dict) -> None:
     tmp.replace(path)
 
 
-def _should_send(text: str, service: str | None, window_seconds: int | None = None) -> bool:
+def _should_send(
+    text: str,
+    service: str | None,
+    category: str | None,
+    window_seconds: int | None = None,
+) -> bool:
     if os.getenv('TELEGRAM_DEDUP', '').lower() == 'off':
         return True
     if window_seconds is None:
@@ -153,7 +158,7 @@ def _should_send(text: str, service: str | None, window_seconds: int | None = No
     now = time.time()
     path = _dedup_state_path()
     state = _load_dedup_state(path)
-    key = _dedup_key(text, service)
+    key = _dedup_key(text, service, category)
     last_seen = float(state.get(key, 0) or 0)
     if last_seen and now - last_seen < window_seconds:
         logger.info("Suppressing duplicate Telegram alert for service=%s", service or "default")
@@ -211,7 +216,7 @@ def send_message(text: str, service: str = None, parse_mode: str = 'HTML', categ
     if service:
         text = f"[{service}] {text}"
 
-    if not _should_send(text, service):
+    if not _should_send(text, service, category):
         return True
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
