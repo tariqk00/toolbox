@@ -16,7 +16,7 @@ if os.path.dirname(BASE_DIR) not in sys.path:
     sys.path.insert(0, os.path.dirname(BASE_DIR))
 
 from googleapiclient.http import MediaIoBaseUpload
-from toolbox.lib.drive_utils import get_drive_service
+from toolbox.lib.drive_utils import get_drive_service, escape_query_string
 from toolbox.lib.log_manager import LogManager
 
 # Initialize centralized logger
@@ -33,8 +33,9 @@ def _find_or_create_folder(service, name: str, parent_id: str) -> str:
     if cache_key in _folder_cache:
         return _folder_cache[cache_key]
 
+    safe_name = escape_query_string(name)
     query = (
-        f"'{parent_id}' in parents and name = '{name}' "
+        f"'{parent_id}' in parents and name = '{safe_name}' "
         f"and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     )
     results = service.files().list(q=query, fields='files(id)').execute()
@@ -65,7 +66,8 @@ def _resolve_path(service, path: str) -> str:
 
 def _get_file_in_folder(service, folder_id: str, filename: str) -> str | None:
     """Return file ID if filename exists in folder, else None."""
-    query = f"'{folder_id}' in parents and name = '{filename}' and trashed = false"
+    safe_filename = escape_query_string(filename)
+    query = f"'{folder_id}' in parents and name = '{safe_filename}' and trashed = false"
     results = service.files().list(q=query, fields='files(id)').execute()
     files = results.get('files', [])
     return files[0]['id'] if files else None

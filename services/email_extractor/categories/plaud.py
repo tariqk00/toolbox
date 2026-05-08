@@ -225,7 +225,6 @@ def process(email: dict, state: dict, service=None) -> dict | None:
             date_str=item.get('due_date') or doc_date,
             sync_to_google_tasks=True,
             entity_source=f"plaud:{subject}",
-            auto_route=True,
         ):
             created_tasks += 1
             

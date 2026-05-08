@@ -188,6 +188,10 @@ def download_file_content(service, file_id, mime_type):
         status, done = downloader.next_chunk()
     return fh.getvalue()
 
+def escape_query_string(s: str) -> str:
+    """Escapes single quotes for Google Drive API queries."""
+    return s.replace("'", "\\'")
+
 def _find_or_create_folder(service, name: str, parent_id: str) -> str:
     query = (
         f"'{parent_id}' in parents and name = '{name}' "
