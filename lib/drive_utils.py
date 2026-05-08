@@ -189,12 +189,13 @@ def download_file_content(service, file_id, mime_type):
     return fh.getvalue()
 
 def escape_query_string(s: str) -> str:
-    """Escapes single quotes for Google Drive API queries."""
-    return s.replace("'", "\\'")
+    """Escapes single quotes and backslashes for Google Drive API queries."""
+    return s.replace("\\", "\\\\").replace("'", "\\'")
 
 def _find_or_create_folder(service, name: str, parent_id: str) -> str:
+    safe_name = escape_query_string(name)
     query = (
-        f"'{parent_id}' in parents and name = '{name}' "
+        f"'{parent_id}' in parents and name = '{safe_name}' "
         f"and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     )
     results = service.files().list(q=query, fields='files(id)').execute()
@@ -217,7 +218,8 @@ def _resolve_path(service, path: str) -> str:
     return parent_id
 
 def _get_file_in_folder(service, folder_id: str, filename: str) -> str | None:
-    query = f"'{folder_id}' in parents and name = '{filename}' and trashed = false"
+    safe_filename = escape_query_string(filename)
+    query = f"'{folder_id}' in parents and name = '{safe_filename}' and trashed = false"
     results = service.files().list(q=query, fields='files(id)').execute()
     files = results.get('files', [])
     return files[0]['id'] if files else None
