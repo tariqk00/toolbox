@@ -1,5 +1,15 @@
 # Project Journal
 
+- 2026-05-09: feat: Drive Sorter Spec V2 rollout (#133).
+  - **Classification:** Updated `SORTER_SYSTEM_PROMPT` for deterministic naming and confidence scoring.
+  - **Routing:** Implemented automatic `00 - Staging/Review` routing for low-confidence files.
+  - **Memory:** Integrated `EntityMemory` API for automatic chronological metadata updates.
+  - **Deduplication:** Added independent MD5 checksum and name-based deduplication logic.
+  - **Verification:** 220/220 tests passing in local development environment.
+- 2026-05-08: fix: project-wide Drive API escaping and Plaud service stabilization (#182, #179).
+  - **Drive Fix:** Implemented `escape_query_string` in `lib/drive_utils.py` (handling apostrophes and backslashes) and applied it to all Drive search queries.
+  - **Plaud Fix:** Removed unsupported `auto_route` argument from `add_task` call in `plaud.py`.
+  - **Testing:** Added `tests/test_drive_utils_queries.py` for query escaping verification.
 - 2026-05-05: feat: added OpenAI-compatible LLMGateway proxy (#154).
   - **Implementation:** Created `bin/llm_gateway_proxy.py` using Python `http.server` to provide an OpenAI-standard endpoint (`/v1/chat/completions`).
   - **Mapping:** Implemented `gateway/*` model mapping to `LLMGateway` task types (`automation`, `heartbeat`, `coding`, `frontier`).
