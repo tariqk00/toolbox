@@ -25,12 +25,13 @@ from toolbox.lib.drive_utils import (
     get_drive_service, download_file_content, move_file,
     resolve_folder_id, get_category_prompt_str,
     INBOX_ID, ID_TO_PATH, _ALREADY_NAMED, _SKIP_MIME_TYPES,
-    SORTER_SYSTEM_PROMPT
+    SORTER_SYSTEM_PROMPT, escape_query_string
 )
 from toolbox.lib.telegram import send_message, drive_file_link
 from toolbox.lib.llm_gateway import call_json_llm
 from toolbox.lib import quota_manager
-from toolbox.lib.entity_ids import render_entity_comment, order_entity_id, travel_entity_id, build_entity_id
+from toolbox.lib.entity_ids import render_entity_comment, order_entity_id, travel_entity_id, build_entity_id, canonicalize_key
+from toolbox.lib.entity_memory import EntityMemory
 
 # --- CONFIG ---
 stats = None # Global stats placeholder
@@ -134,6 +135,63 @@ def _maybe_flag_new_trip(folder_path, filename, fid):
             category="warning",
         )
 
+def check_duplicate(service, target_folder_id, filename, checksum=None):
+    """Check if a file with same name or same MD5 exists in the target folder."""
+    # 1. Check by Checksum (if binary) - Detects same content with different names
+    if checksum:
+        q_hash = f"md5Checksum = '{checksum}' and '{target_folder_id}' in parents and trashed = false"
+        res_hash = service.files().list(q=q_hash, fields="files(id, name)").execute()
+        files_hash = res_hash.get('files', [])
+        if files_hash:
+            return files_hash[0]['id'], "hash_match"
+
+    # 2. Check by Name - Catch Workspace files or different versions
+    safe_name = escape_query_string(filename)
+    q_name = f"name = '{safe_name}' and '{target_folder_id}' in parents and trashed = false"
+    res_name = service.files().list(q=q_name, fields="files(id)").execute()
+    files_name = res_name.get('files', [])
+    if files_name:
+        return files_name[0]['id'], "name_match"
+
+    return None, None
+
+def post_process_memory(analysis, final_name, fid):
+    """Update entity memory with organized file metadata."""
+    entity = analysis.get('entity', 'Unknown')
+    doc_date = analysis.get('doc_date', '0000-00-00')
+    folder_path = analysis.get('folder_path', '')
+    
+    if entity == 'Unknown' or not entity:
+        return
+
+    # Map folder_path to Memory category
+    category = "General"
+    if "Finance" in folder_path: category = "Finance"
+    elif "Health" in folder_path: category = "Health"
+    elif "Travel" in folder_path: category = "Travel"
+    elif "Career" in folder_path: category = "Work"
+    elif "Personal" in folder_path: category = "Personal"
+
+    mem_filename = f"{entity}.md"
+    try:
+        mem = EntityMemory.load_from_drive(category, mem_filename)
+        
+        # Add entity ID if missing
+        if not mem.entity_id:
+            mem.entity_id = build_entity_id(category.lower(), canonicalize_key(entity))
+            
+        # Append timeline event
+        event = f"[Document Organized] {final_name}"
+        mem.add_timeline_event(event, date=doc_date)
+        
+        # Add source
+        mem.add_source(f"Drive: {drive_file_link(fid, final_name)}")
+        
+        mem.save_to_drive(category, mem_filename)
+        logger.info(f"Updated memory for entity: {entity} ({category})")
+    except Exception as e:
+        logger.error(f"Failed to update memory for {entity}: {e}")
+
 def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=None, mode='scan', folder_name="Inbox", service=None, recursive=True, state=None):
     if not service:
         service = get_drive_service()
@@ -222,42 +280,53 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
 
             # --- ACTION LOGIC ---
             if not dry_run:
-                # Flag unresolvable files
-                if analysis.get('summary') == 'Invalid_PDF' and not name.startswith('[MANUAL] '):
-                    manual_name = f'[MANUAL] {name}'
-                    service.files().update(fileId=fid, body={'name': manual_name}).execute()
-                    log("FILE_FLAGGED", "WARNING", f"Flagged {name} for manual review", data={"file_id": fid}, app_name=stats.app_name)
-                    send_message(
-                        f"Manual review needed: {drive_file_link(fid, name)}\nCould not parse as PDF.",
-                        service="ai-sorter",
-                        category="warning",
-                    )
-                    stats.processed += 1
-                    continue
+                # 1. Handle Low Confidence or Unresolvable Routing
+                if confidence == 'Low' or not folder_path or folder_path == 'Unknown':
+                    folder_path = '00 - Staging/Review'
+                    logger.info(f"  [Routing] Low confidence or unknown; routing to Review: {name}")
 
-                # Rename if High or Medium
+                target_id = resolve_folder_id(folder_path)
+                if not target_id:
+                    folder_path = '00 - Staging/Review'
+                    target_id = resolve_folder_id(folder_path)
+                    logger.warning(f"  [Routing] Target path unresolvable; routing to Review: {folder_path}")
+
+                # 2. Rename (High/Medium only, otherwise keep name for review)
                 final_name = name
                 if new_name != name and confidence in ['High', 'Medium']:
-                    service.files().update(fileId=fid, body={'name': new_name}).execute()
-                    stats.renamed += 1
-                    log("FILE_RENAMED", "SUCCESS", f"Renamed {name} -> {new_name}", data={"file_id": fid}, app_name=stats.app_name)
-                    final_name = new_name
+                    try:
+                        service.files().update(fileId=fid, body={'name': new_name}).execute()
+                        stats.renamed += 1
+                        log("FILE_RENAMED", "SUCCESS", f"Renamed {name} -> {new_name}", data={"file_id": fid}, app_name=stats.app_name)
+                        final_name = new_name
+                    except Exception as ren_err:
+                        logger.error(f"  [Rename Error] {name}: {ren_err}")
 
-                # Move ONLY if High confidence
-                target_id = resolve_folder_id(folder_path)
-                if confidence == 'High' and target_id and target_id != folder_id:
-                    if move_file(service, fid, target_id, final_name):
-                        stats.moved += 1
-                        stats._moved_fids.add(fid)
-                        full_path = ID_TO_PATH.get(target_id, folder_path)
-                        stats.move_details.append((name, final_name, full_path, fid))
-                        log("FILE_MOVED", "SUCCESS", f"Moved {final_name} to {full_path}", data={
-                            "file_id": fid,
-                            "target_id": target_id,
-                            "target_path": full_path
-                        }, app_name=stats.app_name)
-                
-                # Update state cache so we don't re-analyze this file at this name
+                # 3. Deduplication Check
+                if target_id and target_id != folder_id:
+                    dup_id, dup_type = check_duplicate(service, target_id, final_name, checksum)
+                    if dup_id:
+                        logger.info(f"  [Dedup] Duplicate found in target ({dup_type}): {final_name}")
+                        stats.swept += 1
+                        log("FILE_SKIPPED", "INFO", f"Skipped duplicate {final_name}", data={"file_id": fid, "dup_id": dup_id}, app_name=stats.app_name)
+                    else:
+                        # 4. Move
+                        if move_file(service, fid, target_id, final_name):
+                            stats.moved += 1
+                            stats._moved_fids.add(fid)
+                            full_path = ID_TO_PATH.get(target_id, folder_path)
+                            stats.move_details.append((name, final_name, full_path, fid))
+                            log("FILE_MOVED", "SUCCESS", f"Moved {final_name} to {full_path}", data={
+                                "file_id": fid,
+                                "target_id": target_id,
+                                "target_path": full_path
+                            }, app_name=stats.app_name)
+                            
+                            # 5. Memory Integration (High/Medium only)
+                            if confidence in ['High', 'Medium']:
+                                post_process_memory(analysis, final_name, fid)
+
+                # Update state cache
                 state["analyzed_ids"][fid] = final_name
 
             stats.processed += 1
