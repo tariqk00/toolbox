@@ -15,11 +15,13 @@ The `secrets.env` file contains all API keys, passwords, and static tokens.
 - **Telegram**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
 
 ### Google OAuth Tokens: `token_*.json`
-Google tokens are granularly named to prevent confusion:
-- `token_gmail_plaud.json`: Primary Gmail scope for Plaud/Ingestion.
-- `token_full_drive.json`: Full Drive access for AI Sorter.
-- `token_tasks.json`: Google Tasks access.
-- `token_combined.json`: Legacy combined scopes (deprecated).
+Google tokens are granularly named and centrally managed via `setup/refresh_all_tokens.py`:
+- `token_gmail_plaud.json`: Gmail scope (readonly/modify) for Plaud ingestion.
+- `token_drive_sorter.json`: Drive scope for the AI Sorter service.
+- `token_full_drive.json`: Full Drive access for manual or administrative tasks.
+- `token_gmail_uptown.json`: Gmail scope for Uptown Edenton processing.
+- `token_tasks.json`: Google Tasks scope.
+- `token_combined.json`: **Legacy/Stale**. Deprecated and excluded from the managed inventory. (See setup#68).
 
 ## 2. Portability & Symlinks
 
