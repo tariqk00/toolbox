@@ -41,3 +41,29 @@ def test_auth_related_bin_scripts_import_cleanly():
     for filename, module_name in targets:
         module = _load_module(BIN_ROOT / filename, module_name)
         assert module is not None
+
+
+def test_atomic_credential_write_uses_unique_tempfile(monkeypatch, tmp_path):
+    from toolbox.lib import google_api
+
+    target = tmp_path / "token_gmail_plaud.json"
+    target.write_text("{}")
+
+    mkstemp_calls = []
+    real_mkstemp = google_api.tempfile.mkstemp
+
+    def fake_mkstemp(*, dir=None, prefix="", suffix=""):
+        mkstemp_calls.append((dir, prefix, suffix))
+        return real_mkstemp(dir=dir, prefix=prefix, suffix=suffix)
+
+    monkeypatch.setattr(google_api.tempfile, "mkstemp", fake_mkstemp)
+
+    google_api._atomic_write_text(str(target), '{"access_token": "abc"}')
+
+    assert target.read_text() == '{"access_token": "abc"}'
+    assert mkstemp_calls, "Expected atomic writes to allocate a unique temp file"
+    temp_dir, prefix, suffix = mkstemp_calls[0]
+    assert temp_dir == str(tmp_path)
+    assert prefix == ".token_gmail_plaud.json."
+    assert suffix == ".tmp"
+    assert not any(path.name.endswith(".tmp") for path in tmp_path.iterdir() if path.name != target.name)
