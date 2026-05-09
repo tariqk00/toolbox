@@ -63,7 +63,7 @@ class LLMGatewayProxyHandler(BaseHTTPRequestHandler):
             self.send_error_json(400, "Invalid JSON")
             return
 
-        model = request_json.get('model')
+        model = request_json.get('model', '')
         messages = request_json.get('messages', [])
         stream = request_json.get('stream', False)
 
@@ -71,9 +71,12 @@ class LLMGatewayProxyHandler(BaseHTTPRequestHandler):
             self.send_error_json(400, "Streaming is not supported yet.")
             return
 
-        task_type = MODEL_MAP.get(model)
+        # Robust model mapping: try exact match first, then base name
+        base_model = model.split('/')[-1]
+        task_type = MODEL_MAP.get(model) or MODEL_MAP.get(base_model)
+        
         if not task_type:
-            self.send_error_json(400, f"Unsupported model: {model}. Supported: {list(MODEL_MAP.keys())}")
+            self.send_error_json(400, f"Unsupported model: {model}. Supported tasks: {list(MODEL_MAP.values())}")
             return
 
         # Convert messages to prompt
