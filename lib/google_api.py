@@ -5,6 +5,7 @@ Headless-safe: will never call input() in non-TTY environments.
 """
 import os
 import sys
+import tempfile
 import time
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -13,6 +14,25 @@ from googleapiclient.discovery import build
 
 MAX_REFRESH_RETRIES = 3
 RETRY_BACKOFF_BASE = 2  # seconds
+
+
+def _atomic_write_text(path, contents):
+    """Write text atomically using a unique temp file in the target directory."""
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+
+    fd, tmp_path = tempfile.mkstemp(
+        dir=directory,
+        prefix=f".{os.path.basename(path)}.",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(contents)
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 class GoogleAuth:
@@ -113,10 +133,7 @@ class GoogleAuth:
 
             # Atomic Save
             try:
-                tmp_path = token_path + ".tmp"
-                with open(tmp_path, 'w') as token:
-                    token.write(creds.to_json())
-                os.rename(tmp_path, token_path)
+                _atomic_write_text(token_path, creds.to_json())
                 log("AUTH_SAVE", "SUCCESS", "Credentials saved via atomic write.", {"path": token_path})
             except Exception as e:
                 log("AUTH_SAVE", "FAILURE", f"Failed to save credentials: {e}", {"path": token_path}, level="ERROR")
