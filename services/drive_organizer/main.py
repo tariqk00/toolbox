@@ -137,17 +137,22 @@ def _maybe_flag_new_trip(folder_path, filename, fid):
 
 def check_duplicate(service, target_folder_id, filename, checksum=None):
     """Check if a file with same name or same MD5 exists in the target folder."""
+    # 1. Check by Checksum (if binary) - Detects same content with different names
+    if checksum:
+        q_hash = f"md5Checksum = '{checksum}' and '{target_folder_id}' in parents and trashed = false"
+        res_hash = service.files().list(q=q_hash, fields="files(id, name)").execute()
+        files_hash = res_hash.get('files', [])
+        if files_hash:
+            return files_hash[0]['id'], "hash_match"
+
+    # 2. Check by Name - Catch Workspace files or different versions
     safe_name = escape_query_string(filename)
-    q = f"'{target_folder_id}' in parents and name = '{safe_name}' and trashed = false"
-    res = service.files().list(q=q, fields="files(id, md5Checksum)").execute()
-    files = res.get('files', [])
-    
-    if files:
-        if checksum:
-            for f in files:
-                if f.get('md5Checksum') == checksum:
-                    return f['id'], "hash_match"
-        return files[0]['id'], "name_match"
+    q_name = f"name = '{safe_name}' and '{target_folder_id}' in parents and trashed = false"
+    res_name = service.files().list(q=q_name, fields="files(id)").execute()
+    files_name = res_name.get('files', [])
+    if files_name:
+        return files_name[0]['id'], "name_match"
+
     return None, None
 
 def post_process_memory(analysis, final_name, fid):

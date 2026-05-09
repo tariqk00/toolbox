@@ -294,6 +294,23 @@ class TestNewFeaturesV2(unittest.TestCase):
         self.assertEqual(fid, 'id_dup')
         self.assertEqual(dtype, 'hash_match')
 
+    def test_check_duplicate_different_name_hash_match(self):
+        """check_duplicate should detect content duplicate even if filename differs."""
+        from toolbox.services.drive_organizer import main
+        svc = MagicMock()
+        # Mock first call (checksum) to return a hit, second call (name) would be skipped
+        svc.files().list().execute.side_effect = [
+            {'files': [{'id': 'id_existing', 'name': 'old_name.pdf'}]}
+        ]
+        
+        fid, dtype = main.check_duplicate(svc, 'id_target', 'new_name.pdf', checksum='hash123')
+        self.assertEqual(fid, 'id_existing')
+        self.assertEqual(dtype, 'hash_match')
+        
+        # Verify the query used md5Checksum
+        args, kwargs = svc.files().list.call_args
+        self.assertIn("md5Checksum = 'hash123'", kwargs['q'])
+
     @patch('toolbox.services.drive_organizer.main.EntityMemory')
     @patch('toolbox.services.drive_organizer.main.build_entity_id')
     def test_post_process_memory_calls_save(self, mock_build, mock_em):
