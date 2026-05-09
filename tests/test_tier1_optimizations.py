@@ -90,6 +90,23 @@ class TestQuotaManager(unittest.TestCase):
         self.assertEqual(len(lines), 2)
         self.assertEqual(json.loads(lines[1])['run_type'], 'backfill')
 
+    def test_record_llm_usage_appends_source_metadata(self):
+        self._qm.record_llm_usage(1234, 0.012345, metadata={
+            "source": "openclaw",
+            "task_type": "heartbeat",
+            "provider": "gemini-free",
+            "model": "gemini-3.1-pro-preview",
+        })
+
+        with open(self._qm.COST_LOG_PATH) as f:
+            record = json.loads(f.readline())
+
+        self.assertEqual(record["source"], "openclaw")
+        self.assertEqual(record["task_type"], "heartbeat")
+        self.assertEqual(record["provider"], "gemini-free")
+        self.assertEqual(record["model"], "gemini-3.1-pro-preview")
+        self.assertEqual(record["tokens_used"], 1234)
+
 
 # ---------------------------------------------------------------------------
 # 3, 5, 6, 7 — File size limits and bytes logging
