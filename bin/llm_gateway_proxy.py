@@ -36,14 +36,14 @@ logger = logging.getLogger("llm_gateway_proxy")
 HOST = os.getenv('LLM_GATEWAY_PROXY_HOST', '127.0.0.1')
 PORT = int(os.getenv('LLM_GATEWAY_PROXY_PORT', '8081'))
 
-# Model to Task Mapping
+# Model to Task Mapping (using bare task names)
 MODEL_MAP = {
-    "gateway/automation": "automation",
-    "gateway/heartbeat": "heartbeat",
-    "gateway/coding": "coding",
-    "gateway/frontier": "frontier",
-    "gateway/efficiency": "efficiency",
-    "gateway/cheapest": "cheapest"
+    "automation": "automation",
+    "heartbeat": "heartbeat",
+    "coding": "coding",
+    "frontier": "frontier",
+    "efficiency": "efficiency",
+    "cheapest": "cheapest"
 }
 
 class LLMGatewayProxyHandler(BaseHTTPRequestHandler):
@@ -71,12 +71,12 @@ class LLMGatewayProxyHandler(BaseHTTPRequestHandler):
             self.send_error_json(400, "Streaming is not supported yet.")
             return
 
-        # Robust model mapping: try exact match first, then base name
-        base_model = model.split('/')[-1]
-        task_type = MODEL_MAP.get(model) or MODEL_MAP.get(base_model)
+        # Robust model mapping: strip provider prefix (e.g., 'llm_gateway/automation' -> 'automation')
+        task_name = model.split('/')[-1]
+        task_type = MODEL_MAP.get(task_name)
         
         if not task_type:
-            self.send_error_json(400, f"Unsupported model: {model}. Supported tasks: {list(MODEL_MAP.values())}")
+            self.send_error_json(400, f"Unsupported model: {model}. Supported tasks: {list(MODEL_MAP.keys())}")
             return
 
         # Convert messages to prompt
