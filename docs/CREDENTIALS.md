@@ -19,7 +19,7 @@ Google tokens are granularly named to prevent confusion:
 - `token_gmail_plaud.json`: Primary Gmail scope for Plaud/Ingestion.
 - `token_full_drive.json`: Full Drive access for AI Sorter.
 - `token_tasks.json`: Google Tasks access.
-- `token_combined.json`: Legacy combined scopes (deprecated).
+- `token_combined.json`: Legacy combined scopes helper output. Deprecated and not part of the active managed token inventory.
 
 ## 2. Portability & Symlinks
 

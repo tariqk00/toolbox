@@ -1,5 +1,10 @@
 """
-Generate a combined token with both Drive and Gmail scopes.
+Legacy helper for one-off recovery of a combined Drive + Gmail token.
+
+This exists only for manual recovery of older workflows. It is not part of the
+active token inventory, and token_combined.json should not be used by current
+services.
+
 Run this in YOUR terminal (not via agent) so the browser redirect works:
 
   $HOME/github/tariqk00/toolbox/venv/bin/python3 \\
@@ -20,7 +25,8 @@ CREDENTIALS_FILE = os.path.join(CONFIG_DIR, 'credentials.json')
 TOKEN_FILE = os.path.join(CONFIG_DIR, 'token_combined.json')
 
 def main():
-    print(f"Generating combined token with scopes: {SCOPES}")
+    print("WARNING: token_combined.json is deprecated and legacy-only.")
+    print(f"Generating legacy combined token with scopes: {SCOPES}")
     flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
     creds = flow.run_local_server(port=0, access_type='offline', prompt='consent')
 
