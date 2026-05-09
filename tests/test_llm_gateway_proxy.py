@@ -51,6 +51,7 @@ class TestLLMGatewayProxy(unittest.TestCase):
         args, kwargs = mock_call_llm.call_args
         self.assertEqual(kwargs['task_type'], 'automation')
         self.assertIn("USER: Hi", kwargs['prompt'])
+        self.assertEqual(kwargs['source'], 'openclaw')
 
     @patch('toolbox.bin.llm_gateway_proxy.call_llm')
     def test_unsupported_model(self, mock_call_llm):

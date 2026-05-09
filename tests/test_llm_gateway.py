@@ -140,6 +140,23 @@ def test_text_plain_content_preservation(gateway, mocker):
     args, _ = mock_provider.analyze.call_args
     assert args[0] == content
 
+def test_source_metadata_is_forwarded_to_usage_log(gateway, mocker):
+    mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    record_usage = mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
+
+    mock_provider = MagicMock()
+    mock_provider.supports.return_value = True
+    mock_provider.analyze.return_value = ("result", 10)
+    mocker.patch.object(gateway, '_get_provider_instance', return_value=mock_provider)
+
+    gateway.call("heartbeat", "ping", source="openclaw")
+
+    args, kwargs = record_usage.call_args
+    assert args[0] == 10
+    assert args[1] >= 0.0
+    assert kwargs["metadata"]["source"] == "openclaw"
+    assert kwargs["metadata"]["task_type"] == "heartbeat"
+
 def test_model_specific_cost_lookup(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
     mocker.patch('toolbox.lib.quota_manager.record_llm_usage')

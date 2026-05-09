@@ -9,7 +9,9 @@ import time
 import random
 import json
 import re
+import inspect
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
 from toolbox.lib import log_manager, quota_manager
@@ -78,12 +80,33 @@ class LLMGateway:
         else:
             raise ValueError(f"Unknown provider: {name}")
 
-    def call(self, task_type: str, prompt: str, content_bytes: bytes = b'', mime_type: str = 'text/plain', require_json: bool = False, **kwargs) -> Dict[str, Any]:
+    def _resolve_source(self, source: Optional[str]) -> str:
+        if source:
+            return source
+
+        current_file = os.path.abspath(__file__)
+        frame = inspect.currentframe()
+        try:
+            frame = frame.f_back.f_back.f_back if frame and frame.f_back and frame.f_back.f_back and frame.f_back.f_back.f_back else None
+            while frame:
+                filename = os.path.abspath(frame.f_code.co_filename)
+                if filename != current_file:
+                    if filename.startswith(BASE_DIR):
+                        rel = os.path.splitext(os.path.relpath(filename, BASE_DIR))[0]
+                        return rel.replace(os.sep, '/')
+                    return Path(filename).stem
+                frame = frame.f_back
+        finally:
+            del frame
+        return "unknown"
+
+    def call(self, task_type: str, prompt: str, content_bytes: bytes = b'', mime_type: str = 'text/plain', require_json: bool = False, source: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """
         Unified entry point for LLM calls with routing and budget enforcement.
         If require_json is True, malformed JSON will trigger fallback to next provider.
         """
         # 1. Routing logic
+        source = self._resolve_source(source)
         # Estimate tokens (rough: 4 chars per token)
         prompt_tokens = len(prompt) // 4
         
@@ -111,7 +134,7 @@ class LLMGateway:
         if current_usd >= daily_usd_limit:
             msg = f"Daily LLM budget exceeded: ${current_usd:.4f} >= ${daily_usd_limit:.4f}"
             logger.error(msg)
-            self._log_routing(task_type, tier_name, {}, prompt_tokens, 0, "blocked", msg)
+            self._log_routing(task_type, tier_name, {}, prompt_tokens, 0, "blocked", msg, source=source)
             raise RuntimeError(msg)
 
         # 3. Context / Token Caps (Enforce Hard Truncation)
@@ -169,7 +192,7 @@ class LLMGateway:
                             except Exception as e:
                                 logger.warning(f"Provider {provider_name} returned invalid JSON: {e}")
                                 attempts_chain.append({"provider": provider_name, "model": model_name, "result": "json_error", "error": str(e)})
-                                self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, 0, "json_error", str(e), attempt+1, latency, prompt_tokens)
+                                self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, 0, "json_error", str(e), attempt+1, latency, prompt_tokens, source=source)
                                 last_exception = e
                                 break # Fail this provider, try next one in tier (outer loop)
 
@@ -180,14 +203,23 @@ class LLMGateway:
                         if cost > per_task_usd_limit:
                             msg = f"Actual task cost ${cost:.4f} exceeded limit ${per_task_usd_limit:.4f}"
                             logger.error(msg)
-                            self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, cost, "blocked", msg, attempt+1, latency, prompt_tokens)
+                            self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, cost, "blocked", msg, attempt+1, latency, prompt_tokens, source=source)
                             raise RuntimeError(msg)
 
                         # Record usage
-                        quota_manager.record_llm_usage(actual_tokens, cost)
+                        quota_manager.record_llm_usage(
+                            actual_tokens,
+                            cost,
+                            metadata={
+                                "source": source,
+                                "task_type": task_type,
+                                "provider": provider_name,
+                                "model": model_name,
+                            },
+                        )
                         
                         # Log success
-                        self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, cost, "success", "", attempt+1, latency, prompt_tokens)
+                        self._log_routing(task_type, tier_name, provider_cfg, actual_tokens, cost, "success", "", attempt+1, latency, prompt_tokens, source=source)
                         
                         return {
                             "text": result_text,
@@ -201,7 +233,7 @@ class LLMGateway:
                     except RateLimitError as e:
                         latency = time.time() - start_time
                         logger.warning(f"Provider {provider_name} rate limited: {e}")
-                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "rate_limit", str(e), attempt+1, latency, prompt_tokens)
+                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "rate_limit", str(e), attempt+1, latency, prompt_tokens, source=source)
                         if attempt < 2: # Continue to next retry in inner loop
                             continue
                         else:
@@ -211,14 +243,14 @@ class LLMGateway:
                         latency = time.time() - start_time
                         logger.warning(f"Provider {provider_name} skipped: {e}")
                         attempts_chain.append({"provider": provider_name, "model": model_name, "result": "skipped", "error": str(e)})
-                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "skipped", str(e), attempt+1, latency, prompt_tokens)
+                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "skipped", str(e), attempt+1, latency, prompt_tokens, source=source)
                         break # Try next provider in tier
                     except Exception as e:
                         latency = time.time() - start_time
                         last_exception = e
                         err_msg = str(e).upper()
                         attempts_chain.append({"provider": provider_name, "model": model_name, "result": "error", "error": str(e)})
-                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "error", str(e), attempt+1, latency, prompt_tokens)
+                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "error", str(e), attempt+1, latency, prompt_tokens, source=source)
                         
                         # Retry only on very specific transient errors NOT already caught by RateLimitError
                         if any(x in err_msg for x in ["TIMEOUT", "CONNECTION_ERROR"]):
@@ -232,12 +264,13 @@ class LLMGateway:
                 
         # 5. Final Failure
         err_msg = str(last_exception) or "No valid providers available."
-        self._log_routing(task_type, tier_name, {}, prompt_tokens, 0, "failure", f"Attempts: {attempts_chain}. Error: {err_msg}")
+        self._log_routing(task_type, tier_name, {}, prompt_tokens, 0, "failure", f"Attempts: {attempts_chain}. Error: {err_msg}", source=source)
         raise RuntimeError(f"All providers in tier {tier_name} failed. Last error: {err_msg}")
 
-    def _log_routing(self, task_type: str, tier: str, provider: Dict, tokens: int, cost: float, result: str, error: str = "", attempt: int = 1, latency: float = 0, est_tokens: int = 0):
+    def _log_routing(self, task_type: str, tier: str, provider: Dict, tokens: int, cost: float, result: str, error: str = "", attempt: int = 1, latency: float = 0, est_tokens: int = 0, source: str = "unknown"):
         log_entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": source,
             "task_type": task_type,
             "tier": tier,
             "provider": provider.get('name', 'N/A'),
@@ -260,11 +293,11 @@ class LLMGateway:
 # Global instance for easy access
 _gateway = None
 
-def call_llm(task_type: str, prompt: str, require_json: bool = False, **kwargs) -> Dict[str, Any]:
+def call_llm(task_type: str, prompt: str, require_json: bool = False, source: Optional[str] = None, **kwargs) -> Dict[str, Any]:
     global _gateway
     if _gateway is None:
         _gateway = LLMGateway()
-    return _gateway.call(task_type, prompt, require_json=require_json, **kwargs)
+    return _gateway.call(task_type, prompt, require_json=require_json, source=source, **kwargs)
 
 def _parse_json(text: str) -> dict:
     """Robustly extract JSON from LLM markdown-wrapped text."""

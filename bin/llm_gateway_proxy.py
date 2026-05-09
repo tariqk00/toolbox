@@ -82,7 +82,7 @@ class LLMGatewayProxyHandler(BaseHTTPRequestHandler):
         try:
             logger.info(f"Proxying {model} -> task_type={task_type}")
             # We don't support multi-modal via proxy yet, so content_bytes=b''
-            result = call_llm(task_type=task_type, prompt=prompt)
+            result = call_llm(task_type=task_type, prompt=prompt, source="openclaw")
             
             response = self.format_openai_response(model, result)
             self.send_response(200)

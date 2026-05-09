@@ -66,12 +66,27 @@ def record_tokens(tokens: int) -> dict:
     return state
 
 
-def record_llm_usage(tokens: int, usd_cost: float) -> dict:
+def record_llm_usage(tokens: int, usd_cost: float, metadata: dict | None = None) -> dict:
     """Record both tokens and USD cost for a single LLM call."""
     state = load()
     state["total_tokens_used"] = state.get("total_tokens_used", 0) + tokens
     state["total_usd_used"] = state.get("total_usd_used", 0.0) + usd_cost
     save(state)
+
+    record = {
+        "timestamp": datetime.now().isoformat(),
+        "tokens_used": tokens,
+        "cost_usd_est": round(usd_cost, 6),
+    }
+    if metadata:
+        record.update({k: v for k, v in metadata.items() if v is not None})
+    os.makedirs(os.path.dirname(COST_LOG_PATH), exist_ok=True)
+    try:
+        with open(COST_LOG_PATH, 'a') as f:
+            f.write(json.dumps(record) + '\n')
+    except Exception as e:
+        logger.error(f"Failed to append Gemini usage record to cost_log.jsonl: {e}")
+
     return state
 
 
