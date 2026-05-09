@@ -77,6 +77,8 @@ def _run_scan(files, dry_run=True, analysis=ANALYSIS_HIGH, new_name='2026-01-15 
          patch.object(main, 'get_category_prompt_str', return_value='folders...'), \
          patch.object(main, 'log_to_sheet'), \
          patch.object(main, 'send_message'), \
+         patch.object(main, 'check_duplicate', return_value=(None, None)), \
+         patch.object(main, 'post_process_memory'), \
          patch.object(main, 'move_file', return_value=True) as mock_move:
         main.scan_folder('id_inbox', dry_run=dry_run, limit=limit,
                          mode=mode, folder_name='Inbox', service=svc, recursive=recursive)
@@ -219,22 +221,23 @@ class TestExecuteMediumConfidence(unittest.TestCase):
         from toolbox.services.drive_organizer import main
         main.stats = main.RunStats()
 
-    def test_medium_confidence_renames_no_move(self):
-        """Medium confidence → rename only, no move."""
+    def test_medium_confidence_renames_and_moves(self):
+        """Medium confidence → rename and move (Spec V2)."""
         files = [_make_file('doc.txt', fid='id_doc')]
         svc, mock_move = _run_scan(files, dry_run=False, analysis=ANALYSIS_MEDIUM,
                                    new_name='2026-01-15 - Unknown - Some document.txt',
-                                   target_id='id_brain')
+                                   target_id='id_finance')
         svc.files().update.assert_called()
-        mock_move.assert_not_called()
+        mock_move.assert_called_once()
 
     def test_medium_confidence_stats(self):
         from toolbox.services.drive_organizer import main
         files = [_make_file('doc.txt', fid='id_doc')]
         _run_scan(files, dry_run=False, analysis=ANALYSIS_MEDIUM,
-                  new_name='2026-01-15 - Unknown - Some document.txt')
+                  new_name='2026-01-15 - Unknown - Some document.txt',
+                  target_id='id_finance')
         self.assertEqual(main.stats.renamed, 1)
-        self.assertEqual(main.stats.moved, 0)
+        self.assertEqual(main.stats.moved, 1)
 
 
 class TestExecuteLowConfidence(unittest.TestCase):
@@ -243,13 +246,74 @@ class TestExecuteLowConfidence(unittest.TestCase):
         from toolbox.services.drive_organizer import main
         main.stats = main.RunStats()
 
-    def test_low_confidence_no_action(self):
-        """Low confidence → no rename, no move."""
-        files = [_make_file('mystery.pdf', 'application/pdf', fid='id_mystery')]
-        svc, mock_move = _run_scan(files, dry_run=False, analysis=ANALYSIS_LOW,
-                                   new_name='mystery.pdf')  # same name
-        svc.files().update.assert_not_called()
-        mock_move.assert_not_called()
+    def test_low_confidence_moves_to_review(self):
+        """Low confidence must move to Review folder (Spec V2)."""
+        f = _make_file('mystery.pdf', fid='id_mystery')
+        from toolbox.services.drive_organizer import main
+        
+        svc = _make_service([f])
+        
+        with patch.object(main, 'download_file_content', return_value=b''), \
+             patch('toolbox.services.drive_organizer.main.call_json_llm', return_value=(ANALYSIS_LOW, 'reasoning', 10)), \
+             patch.object(main, 'resolve_folder_id', side_effect=lambda p: 'id_review' if 'Review' in p else 'id_target'), \
+             patch.object(main, 'get_category_prompt_str', return_value=''), \
+             patch.object(main, 'check_duplicate', return_value=(None, None)), \
+             patch.object(main, 'post_process_memory'), \
+             patch.object(main, 'move_file', return_value=True) as mock_move:
+            
+            main.scan_folder('id_inbox', dry_run=False, service=svc)
+
+        # Move to review
+        mock_move.assert_called_once_with(svc, 'id_mystery', 'id_review', 'mystery.pdf')
+        self.assertEqual(main.stats.moved, 1)
+
+
+class TestNewFeaturesV2(unittest.TestCase):
+
+    def setUp(self):
+        from toolbox.services.drive_organizer import main
+        main.stats = main.RunStats()
+
+    def test_check_duplicate_name_match(self):
+        """check_duplicate should return file ID on name match."""
+        from toolbox.services.drive_organizer import main
+        svc = MagicMock()
+        svc.files().list().execute.return_value = {'files': [{'id': 'id_dup', 'md5Checksum': 'abc'}]}
+        
+        fid, dtype = main.check_duplicate(svc, 'id_target', 'existing.pdf')
+        self.assertEqual(fid, 'id_dup')
+        self.assertEqual(dtype, 'name_match')
+
+    def test_check_duplicate_hash_match(self):
+        """check_duplicate should return file ID and hash_match on checksum match."""
+        from toolbox.services.drive_organizer import main
+        svc = MagicMock()
+        svc.files().list().execute.return_value = {'files': [{'id': 'id_dup', 'md5Checksum': 'abc'}]}
+        
+        fid, dtype = main.check_duplicate(svc, 'id_target', 'existing.pdf', checksum='abc')
+        self.assertEqual(fid, 'id_dup')
+        self.assertEqual(dtype, 'hash_match')
+
+    @patch('toolbox.services.drive_organizer.main.EntityMemory')
+    @patch('toolbox.services.drive_organizer.main.build_entity_id')
+    def test_post_process_memory_calls_save(self, mock_build, mock_em):
+        """post_process_memory should load, update, and save entity memory."""
+        from toolbox.services.drive_organizer import main
+        analysis = {
+            'entity': 'Chase',
+            'doc_date': '2026-05-01',
+            'folder_path': '02 - Finance/Banking'
+        }
+        
+        mem_instance = mock_em.load_from_drive.return_value
+        mem_instance.entity_id = None
+        
+        main.post_process_memory(analysis, '2026-05-01 - Chase - Statement.pdf', 'id_file')
+        
+        mock_em.load_from_drive.assert_called_once_with('Finance', 'Chase.md')
+        mem_instance.add_timeline_event.assert_called_once()
+        mem_instance.add_source.assert_called_once()
+        mem_instance.save_to_drive.assert_called_once_with('Finance', 'Chase.md')
 
 
 class TestRecursion(unittest.TestCase):
