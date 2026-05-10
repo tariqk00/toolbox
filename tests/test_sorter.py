@@ -278,17 +278,37 @@ class TestNewFeaturesV2(unittest.TestCase):
         """check_duplicate should return file ID on name match."""
         from toolbox.services.drive_organizer import main
         svc = MagicMock()
-        svc.files().list().execute.return_value = {'files': [{'id': 'id_dup', 'name': 'existing.pdf', 'md5Checksum': 'abc'}]}
+        svc.files().list().execute.return_value = {
+            'nextPageToken': None,
+            'files': [{'id': 'id_dup', 'name': 'existing.pdf', 'md5Checksum': 'abc'}]
+        }
         
         fid, dtype = main.check_duplicate(svc, 'id_target', 'existing.pdf')
         self.assertEqual(fid, 'id_dup')
         self.assertEqual(dtype, 'name_match')
 
+    def test_check_duplicate_pagination(self):
+        """check_duplicate should page through results."""
+        from toolbox.services.drive_organizer import main
+        svc = MagicMock()
+        svc.files().list.return_value.execute.side_effect = [
+            {'nextPageToken': 'token2', 'files': [{'id': 'id1', 'name': 'other.pdf'}]},
+            {'nextPageToken': None, 'files': [{'id': 'id_dup', 'name': 'existing.pdf'}]}
+        ]
+        
+        fid, dtype = main.check_duplicate(svc, 'id_target', 'existing.pdf')
+        self.assertEqual(fid, 'id_dup')
+        self.assertEqual(dtype, 'name_match')
+        self.assertEqual(svc.files().list.call_count, 2)
+
     def test_check_duplicate_hash_match(self):
         """check_duplicate should return file ID and hash_match on checksum match."""
         from toolbox.services.drive_organizer import main
         svc = MagicMock()
-        svc.files().list().execute.return_value = {'files': [{'id': 'id_dup', 'name': 'existing.pdf', 'md5Checksum': 'abc'}]}
+        svc.files().list().execute.return_value = {
+            'nextPageToken': None,
+            'files': [{'id': 'id_dup', 'name': 'existing.pdf', 'md5Checksum': 'abc'}]
+        }
         
         fid, dtype = main.check_duplicate(svc, 'id_target', 'existing.pdf', checksum='abc')
         self.assertEqual(fid, 'id_dup')

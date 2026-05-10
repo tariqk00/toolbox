@@ -141,17 +141,27 @@ def check_duplicate(service, target_folder_id, filename, checksum=None):
     # Note: md5Checksum is NOT a searchable field in Drive API 'q' parameter.
     try:
         q = f"'{target_folder_id}' in parents and trashed = false"
-        res = service.files().list(q=q, fields="files(id, name, md5Checksum)").execute()
-        files = res.get('files', [])
-        
-        for f in files:
-            # 1. Check by Checksum (if binary) - Detects same content with different names
-            if checksum and f.get('md5Checksum') == checksum:
-                return f['id'], "hash_match"
+        page_token = None
+        while True:
+            res = service.files().list(
+                q=q,
+                fields="nextPageToken, files(id, name, md5Checksum)",
+                pageToken=page_token
+            ).execute()
+            files = res.get('files', [])
             
-            # 2. Check by Name
-            if f['name'] == filename:
-                return f['id'], "name_match"
+            for f in files:
+                # 1. Check by Checksum (if binary) - Detects same content with different names
+                if checksum and f.get('md5Checksum') == checksum:
+                    return f['id'], "hash_match"
+                
+                # 2. Check by Name
+                if f['name'] == filename:
+                    return f['id'], "name_match"
+            
+            page_token = res.get('nextPageToken')
+            if not page_token:
+                break
                 
     except Exception as e:
         logger.error(f"  [Dedup Error] Failed to list target folder {target_folder_id}: {e}")
