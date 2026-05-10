@@ -1,16 +1,16 @@
-import yaml
+import json
 import os
 from pathlib import Path
 
 def test_token_inventory_schema():
     """Verify the token inventory exists and has valid schema."""
     repo_root = Path(__file__).resolve().parent.parent
-    inventory_path = repo_root / "config" / "token_inventory.yaml"
+    inventory_path = repo_root / "config" / "token_inventory.json"
     
     assert inventory_path.exists(), f"Inventory missing at {inventory_path}"
     
     with open(inventory_path, "r") as f:
-        inventory = yaml.safe_load(f)
+        inventory = json.load(f)
     
     assert "tokens" in inventory, "Inventory missing 'tokens' key"
     assert len(inventory["tokens"]) >= 5, f"Expected at least 5 tokens, found {len(inventory['tokens'])}"
@@ -24,10 +24,10 @@ def test_token_inventory_schema():
 def test_all_managed_tokens_present_in_config():
     """Verify all tokens in inventory actually exist as specs/paths."""
     repo_root = Path(__file__).resolve().parent.parent
-    inventory_path = repo_root / "config" / "token_inventory.yaml"
+    inventory_path = repo_root / "config" / "token_inventory.json"
     
     with open(inventory_path, "r") as f:
-        inventory = yaml.safe_load(f)
+        inventory = json.load(f)
     
     config_dir = repo_root / "config"
     for token in inventory["tokens"]:

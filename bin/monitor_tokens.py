@@ -7,7 +7,6 @@ import os
 import sys
 import json
 import datetime
-import yaml
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
@@ -49,10 +48,10 @@ def main():
     log("TOKEN_MONITOR", "START", "Checking token validity")
     
     # Load canonical inventory
-    inventory_path = os.path.join(repo_root, 'config', 'token_inventory.yaml')
+    inventory_path = os.path.join(repo_root, 'config', 'token_inventory.json')
     try:
         with open(inventory_path, 'r') as f:
-            inventory = yaml.safe_load(f)
+            inventory = json.load(f)
         tokens_to_check = [t['filename'] for t in inventory.get('tokens', [])]
     except Exception as e:
         log("TOKEN_MONITOR", "ERROR", f"Failed to load inventory: {e}")
