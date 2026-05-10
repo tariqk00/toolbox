@@ -1,0 +1,43 @@
+# Canonical Google OAuth Token Inventory
+# This file is the single source of truth for managed tokens.
+# Both refresh_all_tokens.py and monitor_tokens.py consume this inventory.
+
+tokens:
+  - name: "Gmail (Plaud)"
+    filename: "token_gmail_plaud.json"
+    scopes:
+      - "https://www.googleapis.com/auth/gmail.readonly"
+      - "https://www.googleapis.com/auth/gmail.modify"
+    description: "Gmail access for Plaud recording ingestion."
+    recovery: "Run refresh_all_tokens.py on Chromebook."
+
+  - name: "Google Drive (AI Sorter)"
+    filename: "token_drive_sorter.json"
+    scopes:
+      - "https://www.googleapis.com/auth/drive"
+    description: "Drive access for the automated document sorter."
+    recovery: "Run refresh_all_tokens.py on Chromebook."
+
+  - name: "Google Drive (Full)"
+    filename: "token_full_drive.json"
+    scopes:
+      - "https://www.googleapis.com/auth/drive"
+      - "https://www.googleapis.com/auth/gmail.readonly"
+      - "https://www.googleapis.com/auth/gmail.modify"
+    description: "Broad Drive + Gmail access for administrative tasks."
+    recovery: "Run refresh_all_tokens.py on Chromebook."
+
+  - name: "Uptown Edenton"
+    filename: "token_gmail_uptown.json"
+    scopes:
+      - "https://www.googleapis.com/auth/gmail.readonly"
+      - "https://www.googleapis.com/auth/gmail.modify"
+    description: "Gmail access for Uptown Edenton inquiry processing."
+    recovery: "Run refresh_all_tokens.py on Chromebook."
+
+  - name: "Google Tasks"
+    filename: "token_tasks.json"
+    scopes:
+      - "https://www.googleapis.com/auth/tasks"
+    description: "Access to Google Tasks for automated task creation."
+    recovery: "Run refresh_all_tokens.py on Chromebook."
