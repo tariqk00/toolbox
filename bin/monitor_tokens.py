@@ -46,12 +46,17 @@ def check_token(token_file):
 
 def main():
     log("TOKEN_MONITOR", "START", "Checking token validity")
-    tokens_to_check = [
-        "token_gmail_plaud.json",
-        "token_full_drive.json",
-        "token_gmail_uptown.json",
-        "token_tasks.json"
-    ]
+    
+    # Load canonical inventory
+    inventory_path = os.path.join(repo_root, 'config', 'token_inventory.json')
+    try:
+        with open(inventory_path, 'r') as f:
+            inventory = json.load(f)
+        tokens_to_check = [t['filename'] for t in inventory.get('tokens', [])]
+    except Exception as e:
+        log("TOKEN_MONITOR", "ERROR", f"Failed to load inventory: {e}")
+        send_message(f"🚨 <b>Token Monitor Error</b>\nFailed to load canonical inventory: <code>{e}</code>", category="error")
+        return
     
     metadata_path = os.path.join(CONFIG_DIR, "token_metadata.json")
     metadata = {}
