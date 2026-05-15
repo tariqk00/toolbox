@@ -278,17 +278,37 @@ class TestNewFeaturesV2(unittest.TestCase):
         """check_duplicate should return file ID on name match."""
         from toolbox.services.drive_organizer import main
         svc = MagicMock()
-        svc.files().list().execute.return_value = {'files': [{'id': 'id_dup', 'md5Checksum': 'abc'}]}
+        svc.files().list().execute.return_value = {
+            'nextPageToken': None,
+            'files': [{'id': 'id_dup', 'name': 'existing.pdf', 'md5Checksum': 'abc'}]
+        }
         
         fid, dtype = main.check_duplicate(svc, 'id_target', 'existing.pdf')
         self.assertEqual(fid, 'id_dup')
         self.assertEqual(dtype, 'name_match')
 
+    def test_check_duplicate_pagination(self):
+        """check_duplicate should page through results."""
+        from toolbox.services.drive_organizer import main
+        svc = MagicMock()
+        svc.files().list.return_value.execute.side_effect = [
+            {'nextPageToken': 'token2', 'files': [{'id': 'id1', 'name': 'other.pdf'}]},
+            {'nextPageToken': None, 'files': [{'id': 'id_dup', 'name': 'existing.pdf'}]}
+        ]
+        
+        fid, dtype = main.check_duplicate(svc, 'id_target', 'existing.pdf')
+        self.assertEqual(fid, 'id_dup')
+        self.assertEqual(dtype, 'name_match')
+        self.assertEqual(svc.files().list.call_count, 2)
+
     def test_check_duplicate_hash_match(self):
         """check_duplicate should return file ID and hash_match on checksum match."""
         from toolbox.services.drive_organizer import main
         svc = MagicMock()
-        svc.files().list().execute.return_value = {'files': [{'id': 'id_dup', 'md5Checksum': 'abc'}]}
+        svc.files().list().execute.return_value = {
+            'nextPageToken': None,
+            'files': [{'id': 'id_dup', 'name': 'existing.pdf', 'md5Checksum': 'abc'}]
+        }
         
         fid, dtype = main.check_duplicate(svc, 'id_target', 'existing.pdf', checksum='abc')
         self.assertEqual(fid, 'id_dup')
@@ -298,18 +318,16 @@ class TestNewFeaturesV2(unittest.TestCase):
         """check_duplicate should detect content duplicate even if filename differs."""
         from toolbox.services.drive_organizer import main
         svc = MagicMock()
-        # Mock first call (checksum) to return a hit, second call (name) would be skipped
-        svc.files().list().execute.side_effect = [
-            {'files': [{'id': 'id_existing', 'name': 'old_name.pdf'}]}
-        ]
+        svc.files().list().execute.return_value = {'files': [{'id': 'id_existing', 'name': 'old_name.pdf', 'md5Checksum': 'hash123'}]}
         
         fid, dtype = main.check_duplicate(svc, 'id_target', 'new_name.pdf', checksum='hash123')
         self.assertEqual(fid, 'id_existing')
         self.assertEqual(dtype, 'hash_match')
         
-        # Verify the query used md5Checksum
+        # Verify the query lists the folder
         args, kwargs = svc.files().list.call_args
-        self.assertIn("md5Checksum = 'hash123'", kwargs['q'])
+        self.assertIn("'id_target' in parents", kwargs['q'])
+        self.assertNotIn("md5Checksum", kwargs['q'])
 
     @patch('toolbox.services.drive_organizer.main.EntityMemory')
     @patch('toolbox.services.drive_organizer.main.build_entity_id')
