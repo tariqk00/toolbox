@@ -85,7 +85,11 @@ class LLMGatewayProxyHandler(BaseHTTPRequestHandler):
             logger.info(f"Proxying {model} -> task_type={task_type}")
             # We don't support multi-modal via proxy yet, so content_bytes=b''
             result = call_llm(task_type=task_type, prompt=prompt, source="openclaw")
-            
+
+            if stream:
+                self.send_stream_response(model, result)
+                return
+
             response = self.format_openai_response(model, result)
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -155,6 +159,49 @@ class LLMGatewayProxyHandler(BaseHTTPRequestHandler):
             }
         }
         self.wfile.write(json.dumps(error_response).encode('utf-8'))
+
+    def send_stream_response(self, model: str, gateway_result: Dict[str, Any]):
+        """Send a minimal OpenAI-compatible SSE response for stream=true clients."""
+        completion_id = f"chatcmpl-{uuid.uuid4()}"
+        created_time = int(time.time())
+        text = gateway_result.get('text', '')
+        chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created_time,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "role": "assistant",
+                        "content": text,
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        }
+        final_chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created_time,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode('utf-8'))
+        self.wfile.write(f"data: {json.dumps(final_chunk)}\n\n".encode('utf-8'))
+        self.wfile.write(b"data: [DONE]\n\n")
 
     def log_message(self, format, *args):
         # Override to use our logger instead of stderr

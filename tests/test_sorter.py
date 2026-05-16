@@ -491,6 +491,37 @@ class TestNewFeaturesV2(unittest.TestCase):
         self.assertIn("'id_target' in parents", kwargs['q'])
         self.assertNotIn("md5Checksum", kwargs['q'])
 
+    def test_check_duplicate_listing_failure_raises(self):
+        """Dedup lookup failures should not be converted into a safe-to-move result."""
+        from toolbox.services.drive_organizer import main
+        svc = MagicMock()
+        svc.files().list().execute.side_effect = RuntimeError("quota exceeded")
+
+        with self.assertRaises(RuntimeError):
+            main.check_duplicate(svc, 'id_target', 'existing.pdf')
+
+    def test_scan_folder_dedup_failure_does_not_move(self):
+        """A failed dedup lookup should enter normal failure handling and skip the move."""
+        from toolbox.services.drive_organizer import main
+
+        fid = 'id_invoice'
+        state = {"analyzed_ids": {}, "failed_ids": {}}
+        svc = _make_service([_make_file('invoice.pdf', 'application/pdf', fid=fid)])
+
+        with patch.object(main, 'download_file_content', return_value=b'fake content'), \
+             patch('toolbox.services.drive_organizer.main.call_json_llm', return_value=(ANALYSIS_HIGH, 'reasoning', 10)), \
+             patch.object(main, 'resolve_folder_id', return_value='id_finance'), \
+             patch.object(main, 'get_category_prompt_str', return_value='folders...'), \
+             patch.object(main, 'check_duplicate', side_effect=RuntimeError("quota exceeded")), \
+             patch.object(main, 'post_process_memory'), \
+             patch.object(main, 'move_file', return_value=True) as mock_move, \
+             patch.object(main, 'send_message'):
+            main.scan_folder('id_inbox', dry_run=False, service=svc, recursive=False, state=state)
+
+        mock_move.assert_not_called()
+        self.assertEqual(main.stats.errors, 1)
+        self.assertIn(fid, state["failed_ids"])
+
     @patch('toolbox.services.drive_organizer.main.EntityMemory')
     @patch('toolbox.services.drive_organizer.main.build_entity_id')
     def test_post_process_memory_calls_save(self, mock_build, mock_em):
