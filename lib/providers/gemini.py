@@ -103,9 +103,13 @@ class GeminiProvider(AIProvider):
             
         except Exception as e:
             msg = str(e).upper()
-            if "RESOURCE_EXHAUSTED" in msg:
+            # Distinguish Billing/Monthly Cap from transient Rate Limits
+            # Persistent errors (trip circuit breaker)
+            if any(x in msg for x in ["QUOTA EXCEEDED", "BILLING", "MONTHLY", "LIMIT: 0"]):
                 raise QuotaExhaustedError(f"Gemini quota exhausted: {e}")
-            if "429" in msg:
+            
+            # Transient errors (retry with backoff)
+            if any(x in msg for x in ["429", "RESOURCE_EXHAUSTED", "RATE_LIMIT", "REQUESTS PER MINUTE"]):
                 raise RateLimitError(f"Gemini {model} rate limited: {e}")
             raise
 
@@ -132,8 +136,10 @@ class GeminiProvider(AIProvider):
             return text, tokens
         except Exception as e:
             msg = str(e).upper()
-            if "RESOURCE_EXHAUSTED" in msg:
+            # Distinguish Billing/Monthly Cap from transient Rate Limits
+            if any(x in msg for x in ["QUOTA EXCEEDED", "BILLING", "MONTHLY", "LIMIT: 0"]):
                 raise QuotaExhaustedError(f"Gemini quota exhausted: {e}")
-            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                
+            if any(x in msg for x in ["429", "RESOURCE_EXHAUSTED", "RATE_LIMIT", "REQUESTS PER MINUTE"]):
                 raise RateLimitError(f"Gemini rate limited: {e}")
             raise
