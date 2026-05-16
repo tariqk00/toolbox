@@ -49,6 +49,7 @@ def _make_file(name, mime='text/plain', fid=None):
         'name': name,
         'mimeType': mime,
         'createdTime': '2026-01-15T10:00:00Z',
+        'modifiedTime': '2026-01-15T10:00:00Z',
     }
 
 
@@ -118,6 +119,7 @@ class TestSkipLogic(unittest.TestCase):
                     "checksum": "",
                     "error_class": "provider_exhausted",
                     "failure_count": 3,
+                    "modified_time": "2026-01-15T10:00:00Z",
                     "next_retry_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                 }
             },
@@ -144,6 +146,7 @@ class TestSkipLogic(unittest.TestCase):
                     "checksum": "",
                     "error_class": "provider_exhausted",
                     "failure_count": 3,
+                    "modified_time": "2026-01-15T10:00:00Z",
                     "next_retry_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                 }
             },
@@ -241,6 +244,61 @@ class TestDryRun(unittest.TestCase):
         self.assertIn(b'Extracted PDF text', kwargs['content_bytes'])
         self.assertIn(b'Wells Fargo statement', kwargs['content_bytes'])
 
+    def test_pdf_text_extraction_caps_payload_for_text_fallback(self):
+        from toolbox.services.drive_organizer import main
+
+        content, mime = main.prepare_content_for_llm(
+            b'%PDF fake',
+            'application/pdf',
+            'large.pdf',
+        )
+
+        # Without patching, fake PDF falls back to application/pdf.
+        self.assertEqual(mime, 'application/pdf')
+
+        with patch.object(main, 'extract_pdf_text', return_value='x' * (main.MAX_EXTRACTED_PDF_TEXT_CHARS + 5000)):
+            content, mime = main.prepare_content_for_llm(
+                b'%PDF fake',
+                'application/pdf',
+                'large.pdf',
+            )
+
+        self.assertEqual(mime, 'text/plain')
+        self.assertLessEqual(
+            len(content.decode('utf-8')),
+            main.MAX_EXTRACTED_PDF_TEXT_CHARS + len('Filename: large.pdf\n\nExtracted PDF text:\n')
+        )
+
+    def test_checksumless_file_modified_time_change_retries_ai(self):
+        from toolbox.services.drive_organizer import main
+
+        fid = 'id_doc'
+        state = {
+            "analyzed_ids": {},
+            "failed_ids": {
+                fid: {
+                    "name": "Doc",
+                    "checksum": "",
+                    "modified_time": "2026-01-15T10:00:00Z",
+                    "error_class": "provider_exhausted",
+                    "failure_count": 3,
+                    "next_retry_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                }
+            },
+        }
+        changed_file = _make_file('Doc', 'application/vnd.google-apps.document', fid=fid)
+        changed_file['modifiedTime'] = '2026-01-15T11:00:00Z'
+
+        with patch.object(main, 'download_file_content', return_value=b'fake content'), \
+             patch('toolbox.services.drive_organizer.main.call_json_llm', return_value=(ANALYSIS_HIGH, 'reasoning', 10)) as mock_ai, \
+             patch.object(main, 'resolve_folder_id', return_value='id_target'), \
+             patch.object(main, 'get_category_prompt_str', return_value='folders...'), \
+             patch.object(main, 'send_message'):
+            svc = _make_service([changed_file])
+            main.scan_folder('id_inbox', dry_run=True, service=svc, recursive=False,
+                             folder_name='Inbox', state=state)
+        mock_ai.assert_called_once()
+
 
 class TestExecuteHighConfidence(unittest.TestCase):
 
@@ -278,6 +336,7 @@ class TestExecuteHighConfidence(unittest.TestCase):
                 fid: {
                     "name": "invoice.pdf",
                     "checksum": "",
+                    "modified_time": "2026-01-15T10:00:00Z",
                     "failure_count": 2,
                     "next_retry_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
                 }

@@ -38,6 +38,7 @@ from toolbox.lib.entity_memory import EntityMemory
 stats = None # Global stats placeholder
 STATE_PATH = os.path.join(BASE_DIR, 'config', 'ai_sorter_state.json')
 MIN_EXTRACTED_PDF_TEXT_CHARS = 80
+MAX_EXTRACTED_PDF_TEXT_CHARS = 12000
 FAILURE_COOLDOWN_MAX_HOURS = 24
 
 class RunStats:
@@ -125,19 +126,24 @@ def _parse_state_time(value):
     except ValueError:
         return None
 
-def _file_signature(name, checksum):
-    return {"name": name, "checksum": checksum or ""}
+def _file_signature(name, checksum, modified_time=""):
+    return {
+        "name": name,
+        "checksum": checksum or "",
+        "modified_time": modified_time or "",
+    }
 
-def _is_same_failure_subject(failure, name, checksum):
+def _is_same_failure_subject(failure, name, checksum, modified_time=""):
     return (
         failure.get("name") == name
         and failure.get("checksum", "") == (checksum or "")
+        and failure.get("modified_time", "") == (modified_time or "")
     )
 
-def should_skip_failed_file(state, fid, name, checksum, now=None):
+def should_skip_failed_file(state, fid, name, checksum, modified_time="", now=None):
     """Return (skip, reason) for files still inside a retry cooldown."""
     failure = state.setdefault("failed_ids", {}).get(fid)
-    if not failure or not _is_same_failure_subject(failure, name, checksum):
+    if not failure or not _is_same_failure_subject(failure, name, checksum, modified_time):
         return False, ""
 
     retry_at = _parse_state_time(failure.get("next_retry_at"))
@@ -160,15 +166,15 @@ def _classify_error(error):
         return "pdf_text_extraction"
     return error.__class__.__name__
 
-def record_file_failure(state, fid, name, checksum, error, now=None):
+def record_file_failure(state, fid, name, checksum, modified_time, error, now=None):
     failures = state.setdefault("failed_ids", {})
     existing = failures.get(fid, {})
-    same_subject = _is_same_failure_subject(existing, name, checksum)
+    same_subject = _is_same_failure_subject(existing, name, checksum, modified_time)
     failure_count = (existing.get("failure_count", 0) if same_subject else 0) + 1
     cooldown_hours = min(FAILURE_COOLDOWN_MAX_HOURS, 2 ** min(failure_count - 1, 4))
     now = now or _now_utc()
     failures[fid] = {
-        **_file_signature(name, checksum),
+        **_file_signature(name, checksum, modified_time),
         "error_class": _classify_error(error),
         "error": str(error),
         "failure_count": failure_count,
@@ -210,6 +216,13 @@ def prepare_content_for_llm(content, mime, name):
             f"  [PDF] {name}: extracted text too short ({len(extracted)} chars); using original PDF"
         )
         return content, mime
+
+    if len(extracted) > MAX_EXTRACTED_PDF_TEXT_CHARS:
+        logger.info(
+            f"  [PDF] {name}: truncating extracted text from "
+            f"{len(extracted)} to {MAX_EXTRACTED_PDF_TEXT_CHARS} chars"
+        )
+        extracted = extracted[:MAX_EXTRACTED_PDF_TEXT_CHARS]
 
     logger.info(f"  [PDF] {name}: extracted {len(extracted)} chars for text-provider fallback")
     text_payload = f"Filename: {name}\n\nExtracted PDF text:\n{extracted}".encode("utf-8")
@@ -325,7 +338,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
     
     results = service.files().list(
         q=f"'{folder_id}' in parents and trashed = false",
-        fields="files(id, name, mimeType, createdTime, md5Checksum)"
+        fields="files(id, name, mimeType, createdTime, modifiedTime, md5Checksum)"
     ).execute()
     files = results.get('files', [])
     
@@ -341,6 +354,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
         fid = f['id']
         mime = f['mimeType']
         checksum = f.get('md5Checksum', '')
+        modified_time = f.get('modifiedTime', '')
 
         # Recursion
         if mime == 'application/vnd.google-apps.folder':
@@ -363,7 +377,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
         if name.startswith('[MANUAL] '): continue
         if mime in _SKIP_MIME_TYPES: continue
 
-        skip_failed, skip_reason = should_skip_failed_file(state, fid, name, checksum)
+        skip_failed, skip_reason = should_skip_failed_file(state, fid, name, checksum, modified_time)
         if skip_failed:
             logger.info(f"  [Cooldown] Skipping {name}: {skip_reason}")
             stats.processed += 1
@@ -463,7 +477,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                 
         except Exception as e:
             logger.error(f"  [Error] {name}: {e}")
-            record_file_failure(state, fid, name, checksum, e)
+            record_file_failure(state, fid, name, checksum, modified_time, e)
             stats.errors += 1
             stats.error_details.append((name, str(e), fid))
 
