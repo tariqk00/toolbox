@@ -259,32 +259,28 @@ def check_duplicate(service, target_folder_id, filename, checksum=None):
     """Check if a file with same name or same MD5 exists in the target folder."""
     # List files in the target folder to perform in-memory check
     # Note: md5Checksum is NOT a searchable field in Drive API 'q' parameter.
-    try:
-        q = f"'{target_folder_id}' in parents and trashed = false"
-        page_token = None
-        while True:
-            res = service.files().list(
-                q=q,
-                fields="nextPageToken, files(id, name, md5Checksum)",
-                pageToken=page_token
-            ).execute()
-            files = res.get('files', [])
-            
-            for f in files:
-                # 1. Check by Checksum (if binary) - Detects same content with different names
-                if checksum and f.get('md5Checksum') == checksum:
-                    return f['id'], "hash_match"
-                
-                # 2. Check by Name
-                if f['name'] == filename:
-                    return f['id'], "name_match"
-            
-            page_token = res.get('nextPageToken')
-            if not page_token:
-                break
-                
-    except Exception as e:
-        logger.error(f"  [Dedup Error] Failed to list target folder {target_folder_id}: {e}")
+    q = f"'{target_folder_id}' in parents and trashed = false"
+    page_token = None
+    while True:
+        res = service.files().list(
+            q=q,
+            fields="nextPageToken, files(id, name, md5Checksum)",
+            pageToken=page_token
+        ).execute()
+        files = res.get('files', [])
+
+        for f in files:
+            # 1. Check by Checksum (if binary) - Detects same content with different names
+            if checksum and f.get('md5Checksum') == checksum:
+                return f['id'], "hash_match"
+
+            # 2. Check by Name
+            if f.get('name') == filename:
+                return f['id'], "name_match"
+
+        page_token = res.get('nextPageToken')
+        if not page_token:
+            break
         
     return None, None
 
@@ -384,6 +380,7 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
             continue
 
         try:
+            current_name = name
             try:
                 content = download_file_content(service, fid, mime)
             except Exception as dl_err:
@@ -435,31 +432,30 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                     logger.warning(f"  [Routing] Target path unresolvable; routing to Review: {folder_path}")
 
                 # 2. Rename (High/Medium only, otherwise keep name for review)
-                final_name = name
                 if new_name != name and confidence in ['High', 'Medium']:
                     try:
                         service.files().update(fileId=fid, body={'name': new_name}).execute()
                         stats.renamed += 1
                         log("FILE_RENAMED", "SUCCESS", f"Renamed {name} -> {new_name}", data={"file_id": fid}, app_name=stats.app_name)
-                        final_name = new_name
+                        current_name = new_name
                     except Exception as ren_err:
                         logger.error(f"  [Rename Error] {name}: {ren_err}")
 
                 # 3. Deduplication Check
                 if target_id and target_id != folder_id:
-                    dup_id, dup_type = check_duplicate(service, target_id, final_name, checksum)
+                    dup_id, dup_type = check_duplicate(service, target_id, current_name, checksum)
                     if dup_id:
-                        logger.info(f"  [Dedup] Duplicate found in target ({dup_type}): {final_name}")
+                        logger.info(f"  [Dedup] Duplicate found in target ({dup_type}): {current_name}")
                         stats.swept += 1
-                        log("FILE_SKIPPED", "INFO", f"Skipped duplicate {final_name}", data={"file_id": fid, "dup_id": dup_id}, app_name=stats.app_name)
+                        log("FILE_SKIPPED", "INFO", f"Skipped duplicate {current_name}", data={"file_id": fid, "dup_id": dup_id}, app_name=stats.app_name)
                     else:
                         # 4. Move
-                        if move_file(service, fid, target_id, final_name):
+                        if move_file(service, fid, target_id, current_name):
                             stats.moved += 1
                             stats._moved_fids.add(fid)
                             full_path = ID_TO_PATH.get(target_id, folder_path)
-                            stats.move_details.append((name, final_name, full_path, fid))
-                            log("FILE_MOVED", "SUCCESS", f"Moved {final_name} to {full_path}", data={
+                            stats.move_details.append((name, current_name, full_path, fid))
+                            log("FILE_MOVED", "SUCCESS", f"Moved {current_name} to {full_path}", data={
                                 "file_id": fid,
                                 "target_id": target_id,
                                 "target_path": full_path
@@ -467,19 +463,19 @@ def scan_folder(folder_id, dry_run=True, csv_path='sorter_dry_run.csv', limit=No
                             
                             # 5. Memory Integration (High/Medium only)
                             if confidence in ['High', 'Medium']:
-                                post_process_memory(analysis, final_name, fid)
+                                post_process_memory(analysis, current_name, fid)
 
                 # Update state cache
-                state["analyzed_ids"][fid] = final_name
+                state["analyzed_ids"][fid] = current_name
 
             clear_file_failure(state, fid)
             stats.processed += 1
                 
         except Exception as e:
-            logger.error(f"  [Error] {name}: {e}")
-            record_file_failure(state, fid, name, checksum, modified_time, e)
+            logger.error(f"  [Error] {current_name}: {e}")
+            record_file_failure(state, fid, current_name, checksum, modified_time, e)
             stats.errors += 1
-            stats.error_details.append((name, str(e), fid))
+            stats.error_details.append((current_name, str(e), fid))
 
 def sweep_drive_root(dry_run=True, service=None, state=None):
     """Special mode to only look at root and move obvious stuff to Inbox."""

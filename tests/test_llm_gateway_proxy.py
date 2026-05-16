@@ -65,7 +65,7 @@ class TestLLMGatewayProxy(unittest.TestCase):
         self.assertIn("Unsupported model", resp.json()['error']['message'])
 
     @patch('toolbox.bin.llm_gateway_proxy.call_llm')
-    def test_streaming_fallback_to_oneshot(self, mock_call_llm):
+    def test_streaming_returns_sse_chunks(self, mock_call_llm):
         mock_call_llm.return_value = {"text": "oneshot response", "tokens": 5}
         payload = {
             "model": "gateway/automation",
@@ -75,7 +75,17 @@ class TestLLMGatewayProxy(unittest.TestCase):
         
         resp = requests.post(f"http://127.0.0.1:{self.port}/v1/chat/completions", json=payload)
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()['choices'][0]['message']['content'], "oneshot response")
+        self.assertEqual(resp.headers['Content-Type'], 'text/event-stream')
+
+        lines = [line.removeprefix("data: ") for line in resp.text.splitlines() if line.startswith("data: ")]
+        self.assertGreaterEqual(len(lines), 3)
+        chunk = json.loads(lines[0])
+        final_chunk = json.loads(lines[1])
+        self.assertEqual(chunk['object'], "chat.completion.chunk")
+        self.assertEqual(chunk['choices'][0]['delta']['content'], "oneshot response")
+        self.assertIsNone(chunk['choices'][0]['finish_reason'])
+        self.assertEqual(final_chunk['choices'][0]['finish_reason'], "stop")
+        self.assertEqual(lines[-1], "[DONE]")
 
     @patch('toolbox.bin.llm_gateway_proxy.call_llm')
     def test_openai_response_shape(self, mock_call_llm):
