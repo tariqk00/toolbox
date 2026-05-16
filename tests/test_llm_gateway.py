@@ -124,6 +124,23 @@ def test_rate_limit_retry_behavior(gateway, mocker):
     assert res['text'] == "success after retries"
     assert mock_provider.analyze.call_count == 3
 
+def test_rate_limit_exhaustion_reports_last_provider_error(gateway, mocker):
+    mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('time.sleep')
+
+    mock_provider = MagicMock()
+    mock_provider.supports.return_value = True
+    mock_provider.analyze.side_effect = RateLimitError("429 RESOURCE_EXHAUSTED monthly cap")
+    mocker.patch.object(gateway, '_get_provider_instance', return_value=mock_provider)
+
+    with pytest.raises(RuntimeError) as exc:
+        gateway.call("heartbeat", "ping")
+
+    message = str(exc.value)
+    assert "All providers in tier cheapest failed" in message
+    assert "429 RESOURCE_EXHAUSTED monthly cap" in message
+    assert "Last error: None" not in message
+
 def test_text_plain_content_preservation(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
     mocker.patch('toolbox.lib.quota_manager.record_llm_usage')

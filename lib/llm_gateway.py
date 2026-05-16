@@ -167,6 +167,12 @@ class LLMGateway:
 
                 provider = self._get_provider_instance(provider_cfg)
                 if not provider.supports(mime_type):
+                    attempts_chain.append({
+                        "provider": provider_name,
+                        "model": model_name,
+                        "result": "unsupported_mime",
+                        "error": f"{mime_type} is not supported",
+                    })
                     continue
                 
                 # Retry loop (Exponential Backoff with Jitter)
@@ -232,6 +238,7 @@ class LLMGateway:
                         }
                     except RateLimitError as e:
                         latency = time.time() - start_time
+                        last_exception = e
                         logger.warning(f"Provider {provider_name} rate limited: {e}")
                         self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "rate_limit", str(e), attempt+1, latency, prompt_tokens, source=source)
                         if attempt < 2: # Continue to next retry in inner loop
@@ -263,7 +270,12 @@ class LLMGateway:
                 continue
                 
         # 5. Final Failure
-        err_msg = str(last_exception) or "No valid providers available."
+        if last_exception:
+            err_msg = str(last_exception)
+        elif attempts_chain:
+            err_msg = f"No provider completed successfully. Attempts: {attempts_chain}"
+        else:
+            err_msg = "No valid providers available."
         self._log_routing(task_type, tier_name, {}, prompt_tokens, 0, "failure", f"Attempts: {attempts_chain}. Error: {err_msg}", source=source)
         raise RuntimeError(f"All providers in tier {tier_name} failed. Last error: {err_msg}")
 
