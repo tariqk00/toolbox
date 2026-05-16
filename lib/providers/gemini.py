@@ -105,11 +105,12 @@ class GeminiProvider(AIProvider):
             msg = str(e).upper()
             # Distinguish Billing/Monthly Cap from transient Rate Limits
             # Persistent errors (trip circuit breaker)
-            if any(x in msg for x in ["QUOTA EXCEEDED", "BILLING", "MONTHLY", "LIMIT: 0"]):
-                raise QuotaExhaustedError(f"Gemini quota exhausted: {e}")
+            if any(x in msg for x in ["YOU EXCEEDED YOUR CURRENT QUOTA", "BILLING DETAILS", "MONTHLY CAP", "LIMIT: 0"]):
+                raise QuotaExhaustedError(f"Gemini billing quota exhausted: {e}")
             
             # Transient errors (retry with backoff)
-            if any(x in msg for x in ["429", "RESOURCE_EXHAUSTED", "RATE_LIMIT", "REQUESTS PER MINUTE"]):
+            if any(x in msg for x in ["429", "RESOURCE_EXHAUSTED", "RATE_LIMIT", "REQUESTS PER MINUTE", "QUOTA EXCEEDED"]):
+                # NOTE: RESOURCE_EXHAUSTED is used for transient RPM/TPM as well
                 raise RateLimitError(f"Gemini {model} rate limited: {e}")
             raise
 
@@ -137,9 +138,9 @@ class GeminiProvider(AIProvider):
         except Exception as e:
             msg = str(e).upper()
             # Distinguish Billing/Monthly Cap from transient Rate Limits
-            if any(x in msg for x in ["QUOTA EXCEEDED", "BILLING", "MONTHLY", "LIMIT: 0"]):
-                raise QuotaExhaustedError(f"Gemini quota exhausted: {e}")
+            if any(x in msg for x in ["YOU EXCEEDED YOUR CURRENT QUOTA", "BILLING DETAILS", "MONTHLY CAP", "LIMIT: 0"]):
+                raise QuotaExhaustedError(f"Gemini billing quota exhausted: {e}")
                 
-            if any(x in msg for x in ["429", "RESOURCE_EXHAUSTED", "RATE_LIMIT", "REQUESTS PER MINUTE"]):
+            if any(x in msg for x in ["429", "RESOURCE_EXHAUSTED", "RATE_LIMIT", "REQUESTS PER MINUTE", "QUOTA EXCEEDED"]):
                 raise RateLimitError(f"Gemini rate limited: {e}")
             raise

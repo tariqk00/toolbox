@@ -4,7 +4,7 @@ Low-cost efficiency workhorse.
 """
 import os
 import logging
-from .base import AIProvider, ProviderSkip, RateLimitError
+from .base import AIProvider, ProviderSkip, RateLimitError, QuotaExhaustedError
 
 logger = logging.getLogger("toolbox.providers.deepseek")
 
@@ -53,7 +53,9 @@ class DeepSeekProvider(AIProvider):
             logger.info(f"  [DeepSeek/{self.model_name}] tokens={tokens}")
             return text, tokens
         except Exception as e:
-            msg = str(e)
-            if '429' in msg or 'rate_limit' in msg.lower():
+            msg = str(e).lower()
+            if 'insufficient balance' in msg or '402' in msg:
+                raise QuotaExhaustedError(f"DeepSeek balance exhausted: {e}")
+            if '429' in msg or 'rate_limit' in msg:
                 raise RateLimitError(f"DeepSeek rate limited: {e}")
             raise
