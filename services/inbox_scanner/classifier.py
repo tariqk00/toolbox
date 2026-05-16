@@ -18,10 +18,10 @@ Body excerpt:
 Categories:
 - action_required: bills due, payment deadlines, form completions, appointment confirmations requiring action, legal/financial notices needing response
 - inquiry: from a real human (not automated) asking a question or starting a conversation that needs a reply
-- skip: newsletters, promotions, automated notifications, order/shipping updates, marketing, social alerts, anything not requiring action
+- skip: newsletters, promotions, automated notifications, system alerts, order/shipping updates, marketing, social alerts, anything not requiring action
 
 Rules:
-- If automated or system-generated, prefer skip over action_required unless there is a clear deadline or required action
+- If automated or system-generated (look for headers or footer tags like "origin:"), MUST use skip unless there is a critical government/bank alert
 - If from a real person asking something, prefer inquiry
 - Government renewal deadlines (passport, driver's license, REAL ID, visa, registration) → action_required regardless of whether the sender looks automated
 - Bank/credit card fraud or security alerts ("card not present", "unusual activity", "suspicious charge", "verify your identity") → action_required regardless of sender
@@ -32,6 +32,18 @@ Return ONLY valid JSON: {{"category": "...", "reason": "one sentence", "priority
 
 def classify_email(sender: str, subject: str, body: str) -> dict:
     from toolbox.lib.llm_gateway import call_llm, _parse_json
+    from toolbox.lib.telegram import is_automation_generated
+    
+    # 1. Immediate skip for known automation tags (feedback loop guard)
+    origin = is_automation_generated(body)
+    if origin:
+        return {
+            'category': 'skip',
+            'reason': f'Automation detected (origin: {origin})',
+            'priority': 'normal'
+        }
+
+    # 2. LLM Classification
     try:
         res = call_llm(
             task_type='automation',

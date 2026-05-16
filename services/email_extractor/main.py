@@ -234,7 +234,7 @@ def run():
     }, app_name="email-extractor")
     
     logger.info(msg)
-    send_message(msg, service='email-extractor · takhan', category='notification')
+    send_message(msg, service='email-extractor · takhan', category='notification', origin='email-extractor')
 
 
 if __name__ == '__main__':

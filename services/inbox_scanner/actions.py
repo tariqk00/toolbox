@@ -60,7 +60,7 @@ def send_immediate_alert(item: dict, telegram_service: str) -> None:
         f'From: {escape(item["sender"])}\n'
         f'Why: {escape(item["reason"])}'
     )
-    send_message(msg, service=telegram_service, category='notification')
+    send_message(msg, service=telegram_service, category='notification', origin='inbox-scanner')
 
 
 PROPERTY_INQUIRY_PROMPT = """You are processing a property rental inquiry email.
@@ -153,7 +153,7 @@ def handle_monitored_inquiry(email: dict, classification: dict, monitor_config: 
         alert_lines.append(detail_str)
     if questions:
         alert_lines.append(f'Questions: {escape(", ".join(str(q) for q in questions[:3]))}')
-    send_message('\n'.join(alert_lines), service=telegram_service, category='notification')
+    send_message('\n'.join(alert_lines), service=telegram_service, category='notification', origin='inbox-scanner')
 
 
 def send_uptown_inquiry_alert(item: dict, telegram_service: str) -> None:
@@ -183,12 +183,12 @@ def send_uptown_inquiry_alert(item: dict, telegram_service: str) -> None:
         for q in questions[:5]:
             lines.append(f'  • {escape(str(q))}')
     lines.append(f'\n<i>Subject: {escape(subject)}</i>')
-    send_message('\n'.join(lines), service=telegram_service, category='notification')
+    send_message('\n'.join(lines), service=telegram_service, category='notification', origin='inbox-scanner')
 
     # Message 2: shadow response draft
     if shadow:
         draft_msg = f'<b>Shadow response draft:</b>\n\n{escape(shadow)}'
-        send_message(draft_msg, service=telegram_service, category='notification')
+        send_message(draft_msg, service=telegram_service, category='notification', origin='inbox-scanner')
 
 
 def send_uptown_nudge(inquiry: dict, hours_old: int, telegram_service: str) -> None:
@@ -203,7 +203,7 @@ def send_uptown_nudge(inquiry: dict, hours_old: int, telegram_service: str) -> N
         f'Inquiry from <b>{escape(tenant)}</b> ({age_str} ago, {escape(date)})\n'
         f'Subject: {escape(subject)}'
     )
-    send_message(msg, service=telegram_service, category='notification')
+    send_message(msg, service=telegram_service, category='notification', origin='inbox-scanner')
 
 
 def send_uptown_missed_inquiry_alert(entry: dict, telegram_service: str) -> None:
@@ -225,7 +225,7 @@ def send_uptown_missed_inquiry_alert(entry: dict, telegram_service: str) -> None
         f'<b>Responses:</b> {response_count} detected (latest {last_response_date})',
         '\nThis inquiry was handled manually by Christina without a prior automation alert.',
     ]
-    send_message('\n'.join(lines), service=telegram_service, category='notification')
+    send_message('\n'.join(lines), service=telegram_service, category='notification', origin='inbox-scanner')
 
 
 def write_uptown_inquiries(items: list) -> None:
@@ -400,4 +400,4 @@ def send_run_summary(results: dict, errors: int, mailbox_email: str, telegram_se
         lines.append(f'\n<b>{errors} error{"s" if errors > 1 else ""}:</b>')
         lines.append(f'  {monit_link("Check Monit")} · <code>journalctl --user -u inbox-scanner -n 50</code>')
 
-    send_message('\n'.join(lines), service=telegram_service, category='notification')
+    send_message('\n'.join(lines), service=telegram_service, category='notification', origin='inbox-scanner')
