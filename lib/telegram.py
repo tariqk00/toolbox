@@ -198,11 +198,41 @@ def _resolve_destination(config: dict, category: str | None) -> tuple[str | None
     return token or config.get('bot_token'), chat_id or config.get('chat_id')
 
 
+# Invisible Tag Markers (Zero-Width Characters)
+# Start/End: U+200B (ZWSP)
+# Data 0: U+200C (ZWNJ)
+# Data 1: U+200D (ZWJ)
+ZWSP = "\u200b"
+ZWNJ = "\u200c"
+ZWJ  = "\u200d"
+
+
+def _encode_origin(origin: str) -> str:
+    """Encode origin name into a sequence of invisible characters."""
+    binary = "".join(format(ord(c), '08b') for c in origin)
+    encoded = "".join(ZWNJ if b == '0' else ZWJ for b in binary)
+    return f"{ZWSP}{encoded}{ZWSP}"
+
+
+def _decode_origin(text: str) -> str | None:
+    """Extract and decode origin name from invisible characters."""
+    match = re.search(f"{ZWSP}([{ZWNJ}{ZWJ}]+){ZWSP}", text)
+    if not match:
+        return None
+    encoded = match.group(1)
+    try:
+        binary_chunks = [encoded[i:i+8] for i in range(0, len(encoded), 8)]
+        chars = [chr(int("".join('0' if b == ZWNJ else '1' for b in chunk), 2)) for chunk in binary_chunks]
+        return "".join(chars)
+    except Exception:
+        return None
+
+
 def send_message(text: str, service: str = None, parse_mode: str = 'HTML', category: str = 'notification', origin: str = None) -> bool:
     """
     Send a message to the configured Telegram channel for the given category.
     If service is provided, prepends "[service] " to the message.
-    If origin is provided, appends a hidden HTML comment for automation tracking.
+    If origin is provided, appends hidden metadata for automation tracking.
     Returns True on success, False on failure (never raises).
     """
     config = _load_config()
@@ -217,9 +247,9 @@ def send_message(text: str, service: str = None, parse_mode: str = 'HTML', categ
     if service:
         text = f"[{service}] {text}"
 
-    # Origin tagging (hidden metadata)
+    # Origin tagging (hidden metadata via zero-width characters)
     tag_origin = origin or service or "toolbox"
-    text = f"{text}\n<!-- origin: {tag_origin} -->"
+    text = f"{text}{_encode_origin(tag_origin)}"
 
     if not _should_send(text, service, category):
         return True
@@ -249,9 +279,6 @@ def send_message(text: str, service: str = None, parse_mode: str = 'HTML', categ
 def is_automation_generated(text: str) -> str | None:
     """
     Returns the origin name if the text contains an automation tag, else None.
-    Example tag: <!-- origin: inbox-scanner -->
+    Uses hidden zero-width character decoding.
     """
-    if not text:
-        return None
-    match = re.search(r'<!-- origin:\s*([\w-]+)\s*-->', text)
-    return match.group(1) if match else None
+    return _decode_origin(text)
