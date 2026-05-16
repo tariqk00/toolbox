@@ -7,7 +7,7 @@ import logging
 import time
 from google import genai
 from google.genai import types
-from .base import AIProvider, ProviderSkip, RateLimitError
+from .base import AIProvider, ProviderSkip, RateLimitError, QuotaExhaustedError
 from .. import quota_manager
 
 logger = logging.getLogger("DriveSorter.AI.Gemini")
@@ -102,7 +102,10 @@ class GeminiProvider(AIProvider):
             return text, tokens
             
         except Exception as e:
-            if '429' in str(e):
+            msg = str(e).upper()
+            if "RESOURCE_EXHAUSTED" in msg:
+                raise QuotaExhaustedError(f"Gemini quota exhausted: {e}")
+            if "429" in msg:
                 raise RateLimitError(f"Gemini {model} rate limited: {e}")
             raise
 
@@ -129,6 +132,8 @@ class GeminiProvider(AIProvider):
             return text, tokens
         except Exception as e:
             msg = str(e).upper()
+            if "RESOURCE_EXHAUSTED" in msg:
+                raise QuotaExhaustedError(f"Gemini quota exhausted: {e}")
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
                 raise RateLimitError(f"Gemini rate limited: {e}")
             raise

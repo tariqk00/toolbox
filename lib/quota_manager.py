@@ -42,6 +42,8 @@ def load() -> dict:
         "daily_budget": DAILY_BUDGET,
         "files_per_run": FILES_PER_RUN,
         "sorter_calls_today": 0,
+        "degraded_providers": [],  # Providers that hit monthly caps today
+        "spend_by_task": {},       # Aggregate spend per task_type
     }
 
 
@@ -71,6 +73,14 @@ def record_llm_usage(tokens: int, usd_cost: float, metadata: dict | None = None)
     state = load()
     state["total_tokens_used"] = state.get("total_tokens_used", 0) + tokens
     state["total_usd_used"] = state.get("total_usd_used", 0.0) + usd_cost
+
+    # Aggregate by task type
+    if metadata and metadata.get("task_type"):
+        task = metadata["task_type"]
+        task_spend = state.get("spend_by_task", {})
+        task_spend[task] = task_spend.get(task, 0.0) + usd_cost
+        state["spend_by_task"] = task_spend
+
     save(state)
 
     record = {
@@ -88,6 +98,22 @@ def record_llm_usage(tokens: int, usd_cost: float, metadata: dict | None = None)
         logger.error(f"Failed to append Gemini usage record to cost_log.jsonl: {e}")
 
     return state
+
+
+def mark_provider_degraded(provider_name: str) -> None:
+    """Mark a provider as degraded (monthly cap hit) for the rest of the day."""
+    state = load()
+    degraded = set(state.get("degraded_providers", []))
+    if provider_name not in degraded:
+        degraded.add(provider_name)
+        state["degraded_providers"] = list(degraded)
+        save(state)
+        logger.warning(f"Provider {provider_name} marked as DEGRADED for today.")
+
+
+def get_degraded_providers() -> list[str]:
+    """Return list of providers currently degraded."""
+    return load().get("degraded_providers", [])
 
 
 def get_total_usd_used() -> float:
