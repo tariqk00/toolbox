@@ -14,5 +14,3 @@ A PR is incomplete without behavioral or structural verification.
 
 - **Automated Tests:** (Paste pytest/scripts output here)
 - **Manual Verification:** (Describe what you did to verify on NUC/Dev)
-
-@codex review
