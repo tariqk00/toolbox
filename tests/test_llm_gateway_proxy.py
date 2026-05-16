@@ -64,7 +64,9 @@ class TestLLMGatewayProxy(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Unsupported model", resp.json()['error']['message'])
 
-    def test_streaming_rejected(self):
+    @patch('toolbox.bin.llm_gateway_proxy.call_llm')
+    def test_streaming_fallback_to_oneshot(self, mock_call_llm):
+        mock_call_llm.return_value = {"text": "oneshot response", "tokens": 5}
         payload = {
             "model": "gateway/automation",
             "messages": [{"role": "user", "content": "Hi"}],
@@ -72,8 +74,8 @@ class TestLLMGatewayProxy(unittest.TestCase):
         }
         
         resp = requests.post(f"http://127.0.0.1:{self.port}/v1/chat/completions", json=payload)
-        self.assertEqual(resp.status_code, 400)
-        self.assertIn("Streaming is not supported", resp.json()['error']['message'])
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['choices'][0]['message']['content'], "oneshot response")
 
     @patch('toolbox.bin.llm_gateway_proxy.call_llm')
     def test_openai_response_shape(self, mock_call_llm):

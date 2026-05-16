@@ -68,8 +68,7 @@ class LLMGatewayProxyHandler(BaseHTTPRequestHandler):
         stream = request_json.get('stream', False)
 
         if stream:
-            self.send_error_json(400, "Streaming is not supported yet.")
-            return
+            logger.warning(f"Client requested streaming for {model}, but proxy only supports one-shot. Falling back to non-streamed response.")
 
         # Robust model mapping: strip provider prefix (e.g., 'llm_gateway/automation' -> 'automation')
         task_name = model.split('/')[-1]
