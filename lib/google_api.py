@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 from google.oauth2.credentials import Credentials
+from google.auth.exceptions import RefreshError
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -48,11 +49,29 @@ class GoogleAuth:
 
     def _refresh_with_retry(self, creds, log):
         """Refresh token with exponential backoff."""
+        from toolbox.lib.telegram import send_message
         for attempt in range(1, MAX_REFRESH_RETRIES + 1):
             try:
                 creds.refresh(Request())
                 log("AUTH_REFRESH", "SUCCESS", f"Token refreshed (attempt {attempt}).")
                 return True
+            except RefreshError as e:
+                msg = str(e).lower()
+                if "invalid_grant" in msg:
+                    alert = "OAuth Token Revoked (invalid_grant). Manual re-auth required on Chromebook."
+                    log("AUTH_REFRESH", "FATAL", alert, level="ERROR")
+                    send_message(alert, service="google_auth", category="error")
+                    raise
+                
+                if attempt < MAX_REFRESH_RETRIES:
+                    wait = RETRY_BACKOFF_BASE ** attempt
+                    log("AUTH_REFRESH", "RETRY", f"Refresh attempt {attempt} failed: {e}. Retrying in {wait}s...",
+                        level="WARNING")
+                    time.sleep(wait)
+                else:
+                    log("AUTH_REFRESH", "FAILURE", f"All {MAX_REFRESH_RETRIES} refresh attempts failed: {e}",
+                        level="ERROR")
+                    raise
             except Exception as e:
                 if attempt < MAX_REFRESH_RETRIES:
                     wait = RETRY_BACKOFF_BASE ** attempt
