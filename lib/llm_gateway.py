@@ -19,7 +19,7 @@ from toolbox.lib.providers.groq import GroqProvider
 from toolbox.lib.providers.ollama import OllamaProvider
 from toolbox.lib.providers.gemini import GeminiProvider
 from toolbox.lib.providers.deepseek import DeepSeekProvider
-from toolbox.lib.providers.base import ProviderSkip, RateLimitError
+from toolbox.lib.providers.base import ProviderSkip, RateLimitError, QuotaExhaustedError
 
 logger = logging.getLogger("toolbox.llm_gateway")
 
@@ -149,11 +149,20 @@ class LLMGateway:
         # 4. Try providers in tier (Fallback Chain)
         last_exception = None
         attempts_chain = []
+        degraded_providers = quota_manager.get_degraded_providers()
+
         for provider_cfg in tier['providers']:
             try:
                 # Pre-call Cost Estimation
                 model_name = provider_cfg['model']
                 provider_name = provider_cfg['name']
+
+                # Circuit Breaker: Skip degraded providers
+                if provider_name in degraded_providers:
+                    logger.info(f"Skipping degraded provider: {provider_name}")
+                    attempts_chain.append({"provider": provider_name, "model": model_name, "result": "degraded", "error": "Provider marked as degraded for today"})
+                    continue
+
                 cost_per_m = self.config.get('costs', {}).get(model_name)
                 if cost_per_m is None:
                     cost_per_m = self.config.get('costs', {}).get(provider_name, 0.10)
@@ -246,6 +255,13 @@ class LLMGateway:
                         else:
                             attempts_chain.append({"provider": provider_name, "model": model_name, "result": "rate_limit_exhausted", "error": str(e)})
                             break # Try next provider in outer loop
+                    except QuotaExhaustedError as e:
+                        latency = time.time() - start_time
+                        logger.error(f"Quota exhausted for {provider_name}: {e}. Tripping circuit breaker.")
+                        quota_manager.mark_provider_degraded(provider_name)
+                        attempts_chain.append({"provider": provider_name, "model": model_name, "result": "quota_exhausted", "error": str(e)})
+                        self._log_routing(task_type, tier_name, provider_cfg, 0, 0, "quota_exhausted", str(e), attempt+1, latency, prompt_tokens, source=source)
+                        break # Try next provider in tier (outer loop)
                     except ProviderSkip as e:
                         latency = time.time() - start_time
                         logger.warning(f"Provider {provider_name} skipped: {e}")

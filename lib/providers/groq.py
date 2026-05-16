@@ -4,7 +4,7 @@ Primary fallback when Ollama fails or is unreachable.
 """
 import os
 import logging
-from .base import AIProvider, ProviderSkip, RateLimitError
+from .base import AIProvider, ProviderSkip, RateLimitError, QuotaExhaustedError
 
 logger = logging.getLogger("DriveSorter.AI.Groq")
 
@@ -57,7 +57,9 @@ class GroqProvider(AIProvider):
             logger.info(f"  [Groq/{self.model_name}] tokens={tokens}")
             return text, tokens
         except Exception as e:
-            msg = str(e)
-            if '429' in msg or 'rate_limit' in msg.lower():
+            msg = str(e).lower()
+            if any(x in msg for x in ['blocked_api_access', 'insufficient_funds', 'organization_spend_limit']):
+                raise QuotaExhaustedError(f"Groq budget exhausted: {e}")
+            if '429' in msg or 'rate_limit' in msg:
                 raise RateLimitError(f"Groq rate limited: {e}")
             raise

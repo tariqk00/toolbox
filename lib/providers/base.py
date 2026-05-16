@@ -12,6 +12,10 @@ class RateLimitError(Exception):
     """Raised on 429 / RPM / TPM limits — signals the gateway to retry with backoff."""
 
 
+class QuotaExhaustedError(Exception):
+    """Raised when a provider's billing/monthly quota is exhausted (e.g. RESOURCE_EXHAUSTED)."""
+
+
 class AIProvider(ABC):
     name: str
 

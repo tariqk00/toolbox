@@ -7,7 +7,7 @@ import logging
 import time
 from google import genai
 from google.genai import types
-from .base import AIProvider, ProviderSkip, RateLimitError
+from .base import AIProvider, ProviderSkip, RateLimitError, QuotaExhaustedError
 from .. import quota_manager
 
 logger = logging.getLogger("DriveSorter.AI.Gemini")
@@ -102,7 +102,15 @@ class GeminiProvider(AIProvider):
             return text, tokens
             
         except Exception as e:
-            if '429' in str(e):
+            msg = str(e).upper()
+            # Distinguish Billing/Monthly Cap from transient Rate Limits
+            # Persistent errors (trip circuit breaker)
+            if any(x in msg for x in ["YOU EXCEEDED YOUR CURRENT QUOTA", "BILLING DETAILS", "MONTHLY CAP", "LIMIT: 0"]):
+                raise QuotaExhaustedError(f"Gemini billing quota exhausted: {e}")
+            
+            # Transient errors (retry with backoff)
+            if any(x in msg for x in ["429", "RESOURCE_EXHAUSTED", "RATE_LIMIT", "REQUESTS PER MINUTE", "QUOTA EXCEEDED"]):
+                # NOTE: RESOURCE_EXHAUSTED is used for transient RPM/TPM as well
                 raise RateLimitError(f"Gemini {model} rate limited: {e}")
             raise
 
@@ -129,6 +137,10 @@ class GeminiProvider(AIProvider):
             return text, tokens
         except Exception as e:
             msg = str(e).upper()
-            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+            # Distinguish Billing/Monthly Cap from transient Rate Limits
+            if any(x in msg for x in ["YOU EXCEEDED YOUR CURRENT QUOTA", "BILLING DETAILS", "MONTHLY CAP", "LIMIT: 0"]):
+                raise QuotaExhaustedError(f"Gemini billing quota exhausted: {e}")
+                
+            if any(x in msg for x in ["429", "RESOURCE_EXHAUSTED", "RATE_LIMIT", "REQUESTS PER MINUTE", "QUOTA EXCEEDED"]):
                 raise RateLimitError(f"Gemini rate limited: {e}")
             raise
