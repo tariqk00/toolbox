@@ -253,6 +253,7 @@ def _maybe_flag_new_trip(folder_path, filename, fid):
             f"New Trip detected? Folder missing for: <code>{folder_path}</code>\nFile: {drive_file_link(fid, filename)}",
             service="ai-sorter",
             category="warning",
+            origin="ai-sorter"
         )
 
 def check_duplicate(service, target_folder_id, filename, checksum=None):
@@ -552,7 +553,7 @@ def run(argv=None):
     if execute:
         save_state(state)
         if stats.moved > 0 or stats.renamed > 0 or stats.swept > 0 or stats.errors > 0:
-            send_message(stats.get_notification(), service="ai-sorter", category="notification")
+            send_message(stats.get_notification(), service="ai-sorter", category="notification", origin="ai-sorter")
 
 if __name__ == '__main__':
     run()

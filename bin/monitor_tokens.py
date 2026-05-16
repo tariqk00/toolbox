@@ -55,7 +55,7 @@ def main():
         tokens_to_check = [t['filename'] for t in inventory.get('tokens', [])]
     except Exception as e:
         log("TOKEN_MONITOR", "ERROR", f"Failed to load inventory: {e}")
-        send_message(f"🚨 <b>Token Monitor Error</b>\nFailed to load canonical inventory: <code>{e}</code>", category="error")
+        send_message(f"🚨 <b>Token Monitor Error</b>\nFailed to load canonical inventory: <code>{e}</code>", category="error", origin="token-monitor")
         return
     
     metadata_path = os.path.join(CONFIG_DIR, "token_metadata.json")
@@ -79,7 +79,7 @@ def main():
     if errors:
         alert_msg = "⚠️ <b>Google OAuth Token Alert</b>\n\nThe following tokens have expired or are invalid. Please run <code>refresh_all_tokens.py</code> via SSH to fix them:\n\n" + "\n".join(errors)
         log("TOKEN_MONITOR", "ALERT", "Sending Telegram alert for broken tokens")
-        send_message(alert_msg, category="error")
+        send_message(alert_msg, category="error", origin="token-monitor")
     else:
         log("TOKEN_MONITOR", "SUCCESS", "All tokens are valid")
 

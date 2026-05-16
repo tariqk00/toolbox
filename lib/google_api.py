@@ -60,7 +60,7 @@ class GoogleAuth:
                 if "invalid_grant" in msg:
                     alert = "OAuth Token Revoked (invalid_grant). Manual re-auth required on Chromebook."
                     log("AUTH_REFRESH", "FATAL", alert, level="ERROR")
-                    send_message(alert, service="google_auth", category="error")
+                    send_message(alert, service="google_auth", category="error", origin="google_auth")
                     raise
                 
                 if attempt < MAX_REFRESH_RETRIES:

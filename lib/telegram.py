@@ -198,10 +198,11 @@ def _resolve_destination(config: dict, category: str | None) -> tuple[str | None
     return token or config.get('bot_token'), chat_id or config.get('chat_id')
 
 
-def send_message(text: str, service: str = None, parse_mode: str = 'HTML', category: str = 'notification') -> bool:
+def send_message(text: str, service: str = None, parse_mode: str = 'HTML', category: str = 'notification', origin: str = None) -> bool:
     """
     Send a message to the configured Telegram channel for the given category.
     If service is provided, prepends "[service] " to the message.
+    If origin is provided, appends a hidden HTML comment for automation tracking.
     Returns True on success, False on failure (never raises).
     """
     config = _load_config()
@@ -215,6 +216,10 @@ def send_message(text: str, service: str = None, parse_mode: str = 'HTML', categ
 
     if service:
         text = f"[{service}] {text}"
+
+    # Origin tagging (hidden metadata)
+    tag_origin = origin or service or "toolbox"
+    text = f"{text}\n<!-- origin: {tag_origin} -->"
 
     if not _should_send(text, service, category):
         return True
@@ -239,3 +244,14 @@ def send_message(text: str, service: str = None, parse_mode: str = 'HTML', categ
     except Exception as e:
         logger.error(f"Telegram send failed: {e}")
         return False
+
+
+def is_automation_generated(text: str) -> str | None:
+    """
+    Returns the origin name if the text contains an automation tag, else None.
+    Example tag: <!-- origin: inbox-scanner -->
+    """
+    if not text:
+        return None
+    match = re.search(r'<!-- origin:\s*([\w-]+)\s*-->', text)
+    return match.group(1) if match else None
