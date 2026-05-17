@@ -23,7 +23,8 @@ def test_refresh_with_retry_invalid_grant(mock_send_message, mock_request):
     mock_send_message.assert_called_once_with(
         "OAuth Token Revoked (invalid_grant). Manual re-auth required on Chromebook.",
         service="google_auth",
-        category="error"
+        category="error",
+        origin="google_auth"
     )
 
 @patch("toolbox.lib.google_api.Request")
