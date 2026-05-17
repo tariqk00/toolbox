@@ -40,8 +40,9 @@ def test_pre_call_budget_block(gateway, mocker):
     # Patch config to have a very low per-task limit
     gateway.config['budgets']['per_task_usd'] = 0.000001
     
-    with pytest.raises(RuntimeError, match="All providers in tier coding failed"):
-        gateway.call("coding", "this should be too expensive")
+    # Use long-context tier as it does not have a gemini-free fallback
+    with pytest.raises(RuntimeError, match="All providers in tier long-context failed"):
+        gateway.call("automation", "x" * 900000) # This triggers long-context routing
 
 def test_token_cap_truncation(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
