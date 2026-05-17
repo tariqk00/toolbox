@@ -66,3 +66,4 @@ feat(sorter): improved AI categorization, added Google Doc support, and global l
 - 2026-02-16: docs: created BACKLOG.md in toolbox/docs and added IDE optimization tasks.
 2026-04-11: feat: Implement Shadow AI testing with parallel Gemma 2B calls and Telegram notifications across Drive, Plaud, and Readwise workflows.
 - 2026-05-06: chore: add ai_sorter_state.json to .gitignore (#177)
+- 2026-05-13: plan: Established execution sequence for Event Pipeline Stabilization Epic (#205). Sequence is #190 (Persistent Errors) -> #206 (Recursive Workflow Prevention) -> #204 (Stale Monitoring Cleanup). Roadmap posted to Issue #205.
