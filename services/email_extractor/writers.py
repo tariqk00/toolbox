@@ -155,6 +155,64 @@ def update_in_memory(category: str, filename: str, old_text: str, new_text: str)
     return True
 
 
+def render_financial_markdown(record: dict) -> str:
+    """Standardized Markdown entry for Memory/Receipts and Memory/Orders."""
+    date = record.get('date', 'Unknown')
+    amount = record.get('accounting', {}).get('total', record.get('type', 'Payment'))
+    vendor = record.get('vendor', 'Unknown')
+    
+    lines = [f'## {date} — {amount}']
+    
+    # Entity identity for cross-pipeline tracking
+    from toolbox.lib.entity_ids import build_entity_id, render_entity_comment
+    entity_key = f"{date}|{vendor}|{amount}"
+    entity_id = build_entity_id(record.get('category', 'receipts'), entity_key)
+    lines.append(render_entity_comment(entity_id))
+    
+    lines.append(f'**Merchant:** {vendor}')
+    lines.append(f'**Type:** [{record.get("type", "Receipt")}] {date}')
+    
+    # Payment info
+    pay = record.get('payment', {})
+    if pay.get('method'):
+        acc_str = f" ({pay['last_4']})" if pay.get('last_4') else ""
+        cardholder = f" [{pay['cardholder']}]" if pay.get('cardholder') else ""
+        lines.append(f'**Payment:** {pay["method"]}{acc_str}{cardholder}')
+    
+    # Financial Breakdown
+    acc = record.get('accounting', {})
+    breakdown = []
+    if acc.get('subtotal'): breakdown.append(f"Subtotal: {acc['subtotal']}")
+    if acc.get('tax'): breakdown.append(f"Tax: {acc['tax']}")
+    if acc.get('shipping_fees'): breakdown.append(f"Fees/Shipping: {acc['shipping_fees']}")
+    if acc.get('discounts'): breakdown.append(f"Discounts: {acc['discounts']}")
+    
+    if breakdown:
+        lines.append('**Financial Breakdown:** ' + ' | '.join(breakdown))
+    
+    # Items
+    items = record.get('line_items', [])
+    if items:
+        lines.append('\n**Items:**')
+        for item in items:
+            qty_str = f" ×{item['qty']}" if int(item.get('qty', 1)) > 1 else ""
+            price_str = f" — {item['unit_price']}" if item.get('unit_price') else ""
+            lines.append(f'- {item["name"]}{qty_str}{price_str}')
+            
+    # Metadata
+    meta = record.get('metadata', {})
+    if meta.get('order_number'):
+        lines.append(f'**Order Number:** {meta["order_number"]}')
+    if meta.get('tracking'):
+        carrier = f" ({meta['carrier']})" if meta.get('carrier') else ""
+        lines.append(f'**Tracking:** {meta["tracking"]}{carrier}')
+    if meta.get('estimated_delivery'):
+        lines.append(f'**Estimated Delivery:** {meta["estimated_delivery"]}')
+        
+    lines.append('---')
+    return "\n".join(lines)
+
+
 def append_to_memory(category: str, filename: str, new_content: str,
                       dedup_date: str = '', dedup_ids: tuple = ()) -> bool:
     """

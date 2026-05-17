@@ -261,6 +261,63 @@ def standard_footer(origin: str = None, cost: float = None) -> str:
     return f"\n--\n{' | '.join(parts)}"
 
 
+def render_financial_body(record: dict) -> str:
+    """Standardized Telegram body for financial records (Receipts/Orders)."""
+    lines = []
+    
+    # Header summary
+    amount = record.get('accounting', {}).get('total')
+    if amount:
+        lines.append(f"💰 <b>Total: {amount}</b>\n")
+    
+    # Line Items
+    items = record.get('line_items', [])
+    if items:
+        lines.append("📦 <b>Items:</b>")
+        for item in items[:8]:
+            qty_str = f" x{item['qty']}" if int(item.get('qty', 1)) > 1 else ""
+            price_str = f" — {item['unit_price']}" if item.get('unit_price') else ""
+            lines.append(f"• {item['name']}{qty_str}{price_str}")
+        if len(items) > 8:
+            lines.append(f"<i>...and {len(items)-8} more</i>")
+        lines.append("")
+
+    # Accounting Breakdown
+    acc = record.get('accounting', {})
+    breakdown = []
+    if acc.get('subtotal') and acc['subtotal'] != amount:
+        breakdown.append(f"Subtotal: {acc['subtotal']}")
+    if acc.get('tax') and acc['tax'] not in ("$0.00", "0"):
+        breakdown.append(f"Tax: {acc['tax']}")
+    if acc.get('shipping_fees') and acc['shipping_fees'] not in ("$0.00", "0"):
+        breakdown.append(f"Fees: {acc['shipping_fees']}")
+    if acc.get('discounts') and acc['discounts'] not in ("$0.00", "0"):
+        breakdown.append(f"Saved: {acc['discounts']}")
+        
+    if breakdown:
+        lines.append("📊 <b>Breakdown:</b>")
+        lines.append(" | ".join(breakdown) + "\n")
+
+    # Payment/Order Info
+    pay = record.get('payment', {})
+    meta = record.get('metadata', {})
+    
+    info_parts = []
+    if pay.get('method'):
+        acc_str = f" ({pay['last_4']})" if pay.get('last_4') else ""
+        cardholder = f" [{pay['cardholder']}]" if pay.get('cardholder') else ""
+        info_parts.append(f"💳 {pay['method']}{acc_str}{cardholder}")
+        
+    if meta.get('tracking'):
+        carrier = f"{meta['carrier']}: " if meta.get('carrier') else ""
+        info_parts.append(f"🚚 {carrier}{meta['tracking']}")
+        
+    if info_parts:
+        lines.append("\n".join(info_parts))
+
+    return "\n".join(lines).strip()
+
+
 def send_message(text: str, service: str = None, parse_mode: str = 'HTML', category: str = 'notification', origin: str = None) -> bool:
     """
     Send a message to the configured Telegram channel for the given category.
