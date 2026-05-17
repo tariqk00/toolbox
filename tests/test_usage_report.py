@@ -18,7 +18,7 @@ def test_summarize_cost_records_groups_by_source_and_falls_back_to_run_type():
         },
     ]
 
-    totals = usage_report.summarize_cost_records(records, days=7)
+    totals = usage_report.summarize_cost_records(records, days=None)
 
     assert totals["openclaw"]["records"] == 1
     assert totals["openclaw"]["tokens"] == 1000
