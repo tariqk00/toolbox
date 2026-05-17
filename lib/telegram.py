@@ -228,6 +228,37 @@ def _decode_origin(text: str) -> str | None:
         return None
 
 
+# Standard Service Emojis
+SERVICE_EMOJIS = {
+    "ai-sorter": "📂",
+    "inbox-scanner": "📩",
+    "email-extractor": "⛏️",
+    "token-monitor": "🔐",
+    "google-auth": "🔑",
+    "memory-dedup": "🧠",
+    "weekly-ops": "📊",
+    "error-monitor": "🚨",
+    "default": "🤖"
+}
+
+
+def bold_header(title: str, emoji: str = None) -> str:
+    """Return a standardized bold header."""
+    em = emoji or SERVICE_EMOJIS.get(title.lower(), SERVICE_EMOJIS["default"])
+    return f"<b>{em} {title.upper()}</b>"
+
+
+def standard_footer(origin: str = None, cost: float = None) -> str:
+    """Return a standardized footer with origin, cost, and monit link."""
+    parts = []
+    if origin:
+        parts.append(f"<code>{origin}</code>")
+    if cost is not None and cost > 0:
+        parts.append(f"Cost: ${cost:.4f}")
+    parts.append(monit_link())
+    return f"\n--\n{' | '.join(parts)}"
+
+
 def send_message(text: str, service: str = None, parse_mode: str = 'HTML', category: str = 'notification', origin: str = None) -> bool:
     """
     Send a message to the configured Telegram channel for the given category.
@@ -244,18 +275,29 @@ def send_message(text: str, service: str = None, parse_mode: str = 'HTML', categ
         logger.error("Telegram config missing bot_token or chat_id for category=%s.", category)
         return False
 
+    # Standardize Layout
+    final_text = ""
     if service:
-        text = f"[{service}] {text}"
+        final_text += bold_header(service) + "\n"
+        # Optional separator
+        final_text += "─" * 15 + "\n"
+    
+    final_text += text
 
     # Origin tagging (hidden metadata via zero-width characters)
     tag_origin = origin or service or "toolbox"
-    text = f"{text}{_encode_origin(tag_origin)}"
+    final_text += _encode_origin(tag_origin)
 
-    if not _should_send(text, service, category):
+    # Append footer for notifications (don't clutter errors)
+    if category in _NOTIFICATION_CATEGORIES:
+        # In a future pass, we can pass cost here
+        final_text += standard_footer(origin=tag_origin)
+
+    if not _should_send(final_text, service, category):
         return True
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
+    payload = {"chat_id": chat_id, "text": final_text}
     if parse_mode:
         payload["parse_mode"] = parse_mode
 

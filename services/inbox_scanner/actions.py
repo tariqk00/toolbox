@@ -56,10 +56,11 @@ def write_inquiries(items: list) -> None:
 def send_immediate_alert(item: dict, telegram_service: str) -> None:
     """Send immediate Telegram alert for high-priority action required."""
     msg = (
-        f'<b>Action required [HIGH]:</b> {escape(item["subject"])}\n'
-        f'From: {escape(item["sender"])}\n'
-        f'Why: {escape(item["reason"])}'
+        f'Action required [HIGH]: {escape(item["subject"])}\n'
+        f'<b>From:</b> {escape(item["sender"])}\n'
+        f'<b>Why:</b> {escape(item["reason"])}'
     )
+
     send_message(msg, service=telegram_service, category='notification', origin='inbox-scanner')
 
 

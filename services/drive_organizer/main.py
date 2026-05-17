@@ -71,29 +71,28 @@ class RunStats:
         duration = int(time.time() - self.start_time)
         parts = []
         if self.moved > 0:
-            parts.append(f"📦 Moved {self.moved}")
+            parts.append(f"📦 {self.moved} Moved")
         if self.renamed > 0:
-            # only count renames that weren't also moved
             pure_renames = len([r for r in self.rename_details if r[2] not in self._moved_fids])
             if pure_renames > 0:
-                parts.append(f"✏️ Renamed {pure_renames}")
+                parts.append(f"✏️ {pure_renames} Renamed")
         if self.swept > 0:
-            parts.append(f"🧹 Swept {self.swept}")
+            parts.append(f"🧹 {self.swept} Swept")
         if self.errors > 0:
-            parts.append(f"❌ Errors {self.errors}")
+            parts.append(f"❌ {self.errors} Errors")
             
         if not parts: return None
         
-        header = f"<b>AI Sorter: {', '.join(parts)}</b> ({duration}s)"
-        lines = [header]
+        # Standard summary line
+        lines = [f"<b>{', '.join(parts)}</b> in {duration}s\n"]
         
-        # Add move details
+        # Details list
         for old, new, folder, fid in self.move_details[:10]:
             folder_name = folder.split('/')[-1]
-            lines.append(f"  • {new} → <code>{folder_name}</code>")
+            lines.append(f"• {new} → <code>{folder_name}</code>")
         
         if len(self.move_details) > 10:
-            lines.append(f"  ...and {len(self.move_details)-10} more")
+            lines.append(f"<i>...and {len(self.move_details)-10} more</i>")
             
         return "\n".join(lines)
 
