@@ -244,7 +244,9 @@ SERVICE_EMOJIS = {
 
 def bold_header(title: str, emoji: str = None) -> str:
     """Return a standardized bold header."""
-    em = emoji or SERVICE_EMOJIS.get(title.lower(), SERVICE_EMOJIS["default"])
+    # Normalize: strip suffixes like " · takhan" or " (test)"
+    clean_title = title.split(' ·')[0].split(' (')[0].strip().lower()
+    em = emoji or SERVICE_EMOJIS.get(clean_title, SERVICE_EMOJIS["default"])
     return f"<b>{em} {title.upper()}</b>"
 
 
