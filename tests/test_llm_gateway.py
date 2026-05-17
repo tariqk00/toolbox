@@ -12,6 +12,7 @@ def gateway():
 
 def test_routing_heartbeat(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
     
     mock_provider = MagicMock()
@@ -34,6 +35,7 @@ def test_budget_enforcement_daily(gateway, mocker):
 
 def test_pre_call_budget_block(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     
     # Patch config to have a very low per-task limit
     gateway.config['budgets']['per_task_usd'] = 0.000001
@@ -43,6 +45,7 @@ def test_pre_call_budget_block(gateway, mocker):
 
 def test_token_cap_truncation(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
     
     mock_provider = MagicMock()
@@ -63,6 +66,7 @@ def test_token_cap_truncation(gateway, mocker):
 
 def test_fallback_behavior(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
     
     # Mock first provider failing consistently (3 retries), second succeeding
@@ -86,6 +90,7 @@ def test_fallback_behavior(gateway, mocker):
 
 def test_long_context_routing(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
     
     mock_provider = MagicMock()
@@ -100,12 +105,14 @@ def test_long_context_routing(gateway, mocker):
 
 def test_unknown_route_fails_loudly(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     
     with pytest.raises(ValueError, match="Unknown task_type 'unknown_task'"):
         gateway.call("unknown_task", "hello")
 
 def test_rate_limit_retry_behavior(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
     mocker.patch('time.sleep')
     
@@ -126,6 +133,7 @@ def test_rate_limit_retry_behavior(gateway, mocker):
 
 def test_rate_limit_exhaustion_reports_last_provider_error(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     mocker.patch('time.sleep')
 
     mock_provider = MagicMock()
@@ -143,6 +151,7 @@ def test_rate_limit_exhaustion_reports_last_provider_error(gateway, mocker):
 
 def test_text_plain_content_preservation(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
     
     mock_provider = MagicMock()
@@ -159,6 +168,7 @@ def test_text_plain_content_preservation(gateway, mocker):
 
 def test_source_metadata_is_forwarded_to_usage_log(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     record_usage = mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
 
     mock_provider = MagicMock()
@@ -176,6 +186,7 @@ def test_source_metadata_is_forwarded_to_usage_log(gateway, mocker):
 
 def test_model_specific_cost_lookup(gateway, mocker):
     mocker.patch('toolbox.lib.quota_manager.get_total_usd_used', return_value=0.0)
+    mocker.patch('toolbox.lib.quota_manager.get_degraded_providers', return_value=[])
     mocker.patch('toolbox.lib.quota_manager.record_llm_usage')
     
     mock_provider = MagicMock()
