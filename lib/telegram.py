@@ -247,7 +247,7 @@ def bold_header(title: str, emoji: str = None) -> str:
     # Normalize: strip suffixes like " · takhan" or " (test)"
     clean_title = title.split(' ·')[0].split(' (')[0].strip().lower()
     em = emoji or SERVICE_EMOJIS.get(clean_title, SERVICE_EMOJIS["default"])
-    return f"<b>{em} {title.upper()}</b>"
+    return f"<b>{em} {escape(title.upper())}</b>"
 
 
 def standard_footer(origin: str = None, cost: float = None) -> str:
@@ -259,6 +259,63 @@ def standard_footer(origin: str = None, cost: float = None) -> str:
         parts.append(f"Cost: ${cost:.4f}")
     parts.append(monit_link())
     return f"\n--\n{' | '.join(parts)}"
+
+
+def render_financial_body(record: dict) -> str:
+    """Standardized Telegram body for financial records (Receipts/Orders)."""
+    lines = []
+    
+    # Header summary
+    amount = record.get('accounting', {}).get('total')
+    if amount:
+        lines.append(f"💰 <b>Total: {escape(amount)}</b>\n")
+    
+    # Line Items
+    items = record.get('line_items', [])
+    if items:
+        lines.append("📦 <b>Items:</b>")
+        for item in items[:8]:
+            qty_str = f" x{item['qty']}" if int(item.get('qty', 1)) > 1 else ""
+            price_str = f" — {escape(item['unit_price'])}" if item.get('unit_price') else ""
+            lines.append(f"• {escape(item['name'])}{qty_str}{price_str}")
+        if len(items) > 8:
+            lines.append(f"<i>...and {len(items)-8} more</i>")
+        lines.append("")
+
+    # Accounting Breakdown
+    acc = record.get('accounting', {})
+    breakdown = []
+    if acc.get('subtotal') and acc['subtotal'] != amount:
+        breakdown.append(f"Subtotal: {escape(acc['subtotal'])}")
+    if acc.get('tax') and acc['tax'] not in ("$0.00", "0"):
+        breakdown.append(f"Tax: {escape(acc['tax'])}")
+    if acc.get('fees') and acc['fees'] not in ("$0.00", "0"):
+        breakdown.append(f"Fees: {escape(acc['fees'])}")
+    if acc.get('discounts') and acc['discounts'] not in ("$0.00", "0"):
+        breakdown.append(f"Saved: {escape(acc['discounts'])}")
+        
+    if breakdown:
+        lines.append("📊 <b>Breakdown:</b>")
+        lines.append(" | ".join(breakdown) + "\n")
+
+    # Payment/Order Info
+    pay = record.get('payment', {})
+    meta = record.get('metadata', {})
+    
+    info_parts = []
+    if pay.get('method'):
+        acc_str = f" ({escape(pay['last_4'])})" if pay.get('last_4') else ""
+        cardholder = f" [{escape(pay['cardholder'])}]" if pay.get('cardholder') else ""
+        info_parts.append(f"💳 {escape(pay['method'])}{acc_str}{cardholder}")
+        
+    if meta.get('tracking'):
+        carrier = f"{escape(meta['carrier'])}: " if meta.get('carrier') else ""
+        info_parts.append(f"🚚 {carrier}{escape(meta['tracking'])}")
+        
+    if info_parts:
+        lines.append("\n".join(info_parts))
+
+    return "\n".join(lines).strip()
 
 
 def send_message(text: str, service: str = None, parse_mode: str = 'HTML', category: str = 'notification', origin: str = None) -> bool:
