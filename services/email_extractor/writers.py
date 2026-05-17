@@ -158,7 +158,7 @@ def update_in_memory(category: str, filename: str, old_text: str, new_text: str)
 def render_financial_markdown(record: dict) -> str:
     """Standardized Markdown entry for Memory/Receipts and Memory/Orders."""
     date = record.get('date', 'Unknown')
-    amount = record.get('accounting', {}).get('total', record.get('type', 'Payment'))
+    amount = record.get('accounting', {}).get('total', record.get('record_type', 'Payment'))
     vendor = record.get('vendor', 'Unknown')
     
     lines = [f'## {date} — {amount}']
@@ -170,7 +170,7 @@ def render_financial_markdown(record: dict) -> str:
     lines.append(render_entity_comment(entity_id))
     
     lines.append(f'**Merchant:** {vendor}')
-    lines.append(f'**Type:** [{record.get("type", "Receipt")}] {date}')
+    lines.append(f'**Type:** [{record.get("record_type", "Receipt")}] {date}')
     
     # Payment info
     pay = record.get('payment', {})

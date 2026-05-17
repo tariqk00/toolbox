@@ -1,6 +1,9 @@
 """
 Normalized financial schema for receipts and orders.
 Ensures consistency across LLM extraction and Markdown/Telegram rendering.
+
+Note: Monetary values are currently strings to preserve original formatting 
+from source emails for presentation purposes.
 """
 from typing import List, Optional, Dict
 from dataclasses import dataclass, field, asdict
@@ -9,7 +12,7 @@ from dataclasses import dataclass, field, asdict
 class LineItem:
     name: str
     qty: int = 1
-    unit_price: Optional[str] = ""
+    unit_price: Optional[str] = ""  # Presentation string (e.g. "$10.00")
     total_price: Optional[str] = ""
 
 @dataclass
@@ -27,7 +30,7 @@ class Payment:
     cardholder: Optional[str] = ""  # Tariq, Dawn, Sofia, Thomas
 
 @dataclass
-class OrderMetadata:
+class FinancialMetadata:
     order_number: Optional[str] = ""
     carrier: Optional[str] = ""
     tracking: Optional[str] = ""
@@ -37,11 +40,12 @@ class OrderMetadata:
 class FinancialRecord:
     vendor: str
     date: str  # YYYY-MM-DD
-    type: str  # Payment, Receipt, Order, etc.
+    record_type: str  # e.g. Payment, Receipt, Order, Statement
     line_items: List[LineItem] = field(default_factory=list)
     accounting: Accounting = field(default_factory=Accounting)
     payment: Payment = field(default_factory=Payment)
-    metadata: OrderMetadata = field(default_factory=OrderMetadata)
+    metadata: FinancialMetadata = field(default_factory=FinancialMetadata)
+    category: str = "receipts"  # receipts, orders, etc.
 
     def to_dict(self):
         return asdict(self)
